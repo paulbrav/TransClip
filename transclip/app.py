@@ -273,10 +273,10 @@ class TransClip(QObject):
             pass
 
     def start_recording(self) -> None:
-        """Start recording audio from the selected input device.
+        """Start recording audio from the default input device.
 
-        Attempts to use the Bose QC Earbuds II first, then falls back to the default
-        input device if that fails. Sets up an audio stream and begins recording.
+        Sets up an audio stream with the correct number of channels for the 
+        selected device and begins recording.
         """
         if self.processing:
             logger.warning("Cannot start recording while processing previous audio")
@@ -319,54 +319,32 @@ class TransClip(QObject):
                 logger.debug(f"Adding audio chunk: shape={indata.shape}, max_amplitude={np.max(np.abs(indata))}")
                 self.audio_data.append(indata.copy())
 
-        # TODO: make this support more devices
         try:
-            # Try to use Bose QC Earbuds II first
-            bose_device = sd.query_devices(device=9)
-            logger.info(f"Bose device info: {bose_device}")
-            logger.info("Attempting to query Bose device capabilities:")
-            try:
-                supported_formats = sd.query_devices(device=9, kind='input')
-                logger.info(f"  Supported formats: {supported_formats}")
-            except Exception as e:
-                logger.error(f"  Failed to query device formats: {e}")
+            # Get the default input device
+            default_device = sd.query_devices(kind='input')
+            device_id = default_device['index']
+            device_channels = int(default_device['max_input_channels'])
+            device_sample_rate = int(default_device['default_samplerate'])
+            
+            logger.info(f"Using default input device (id: {device_id})")
+            logger.info(f"  - Channels: {device_channels}")
+            logger.info(f"  - Sample rate: {device_sample_rate} Hz")
 
-            device_sample_rate = int(bose_device['default_samplerate'])
-            logger.info(f"Using Bose device sample rate: {device_sample_rate}")
-            logger.info(f"Attempting to open stream with channels={CHANNELS}")
-
+            # Use the detected number of channels from the device
             self.stream = sd.InputStream(
-                device=9,  # Bose QC Earbuds II
+                device=device_id,
                 samplerate=device_sample_rate,
-                channels=CHANNELS,
+                channels=device_channels,  # Use device-specific channel count
                 dtype=DTYPE,
                 callback=callback
             )
             self.stream.start()
-            logger.info("Successfully started recording with Bose QC Earbuds II")
+            logger.info(f"Successfully started recording with device {device_id}")
             if self.tray:
                 self.tray.setIcon(QIcon.fromTheme("media-record"))
-        except (ValueError, sd.PortAudioError) as _:
-            logger.exception("Failed to start recording with Bose QC Earbuds II")
-            try:
-                # Fallback to default device
-                default_device = sd.query_devices(kind='input')
-                device_sample_rate = int(default_device['default_samplerate'])
-                logger.info(f"Using default device sample rate: {device_sample_rate}")
-
-                self.stream = sd.InputStream(
-                    samplerate=device_sample_rate,
-                    channels=CHANNELS,
-                    dtype=DTYPE,
-                    callback=callback
-                )
-                self.stream.start()
-                logger.info("Successfully started recording with default device")
-                if self.tray:
-                    self.tray.setIcon(QIcon.fromTheme("media-record"))
-            except (ValueError, sd.PortAudioError) as _:
-                logger.exception("Failed to start recording with default device")
-                self.recording = False
+        except Exception as e:
+            logger.exception(f"Failed to start recording: {e}")
+            self.recording = False
 
     def stop_recording(self) -> None:
         """Stop recording and start transcription.
@@ -391,8 +369,8 @@ class TransClip(QObject):
                 self.stream.stop()
                 self.stream.close()
                 logger.info("Audio stream stopped and closed")
-        except (ValueError, sd.PortAudioError) as _:
-            logger.exception("Error stopping recording")
+        except Exception as e:
+            logger.exception(f"Error stopping recording: {e}")
 
         if self.tray:
             self.tray.setIcon(QIcon.fromTheme("audio-input-microphone"))
@@ -413,6 +391,11 @@ class TransClip(QObject):
             if self.stream:
                 device_sample_rate = self.stream.samplerate
                 logger.info(f"Recording sample rate was: {device_sample_rate}")
+
+                # If we have multiple channels, take the mean to get mono audio
+                if audio.shape[1] > 1:
+                    logger.info(f"Converting {audio.shape[1]} channels to mono")
+                    audio = np.mean(audio, axis=1)
 
                 # Normalize audio to be between -1 and 1
                 if np.max(np.abs(audio)) > 0:
@@ -533,7 +516,7 @@ def main() -> int:
         int: Exit code, 0 for success, 1 for error.
     """
     try:
-        app = TransClip(WhisperModelType.LARGE_V3)
+        app = TransClip(WhisperModelType.SMALL)
         return app.run()
     except Exception as e:
         logger.error(f"Application error: {e}")
