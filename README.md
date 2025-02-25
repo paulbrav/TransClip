@@ -51,6 +51,7 @@ cd TransClip
 The installation script will:
 - Create a virtual environment
 - Install all Python dependencies
+- Download the Whisper models for transcription
 - Set up a systemd user service
 - Configure autostart on login
 
@@ -78,6 +79,25 @@ The application starts automatically on system login. You can also:
 Log files are located at:
 - `~/.local/share/transclip/transclip.log` - General application logs
 - `~/.local/share/transclip/transclip.error.log` - Error logs
+
+### Whisper Models
+
+During installation, the base Whisper model is downloaded automatically. You can download additional models manually:
+
+```bash
+# Activate the virtual environment
+source ~/.local/share/transclip/venv/bin/activate
+
+# Download a specific model (tiny, base, small, medium, large)
+python -m transclip.download_models --model small
+```
+
+Available models:
+- `tiny`: ~75MB (fastest, least accurate)
+- `base`: ~150MB (good balance for short phrases)
+- `small`: ~500MB (good balance of speed and accuracy)
+- `medium`: ~1.5GB (slower, more accurate)
+- `large`: ~3GB (slowest, most accurate)
 
 ## Development
 
@@ -114,6 +134,12 @@ ruff check transclip/
   - `app.py` - Core application logic
   - `hotkey.py` - Hotkey management system
   - `__main__.py` - Entry point
+  - `download_models.py` - Utility for downloading Whisper models
+  - `install.sh` - Installation script
+- `tests/` - Test directory
+- `pyproject.toml` - Project configuration and dependencies
+- `transclip.service` - Systemd service file
+- `mypy.ini` - MyPy configuration
 
 ## License
 
