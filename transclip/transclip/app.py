@@ -1,42 +1,44 @@
 """Main application module for TransClip.
 
 This module contains the core functionality for the TransClip application,
-including audio recording, transcription, and system tray integration.
+including audio recording, transcription, and clipboard integration via system tray.
+The application uses the Whisper model for speech-to-text conversion.
 """
 
 import logging
+import subprocess
 import sys
-from enum import Enum
-from typing import List
 import time
+from enum import StrEnum
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pyperclip
 import sounddevice as sd
 from faster_whisper import WhisperModel
 from pynput import keyboard
-from PyQt5.QtCore import QThread, pyqtSignal, QTimer, QObject
+from PyQt5.QtCore import QObject, QThread, pyqtSignal
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (
     QApplication,
     QMenu,
     QSystemTrayIcon,
 )
+from scipy import signal
 
 # Set up logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - [Line %(lineno)d] - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
 
-class WhisperModelType(str, Enum):
+class WhisperModelType(StrEnum):
     """Available Whisper model types with their parameter sizes.
-    
-    Inherits from str and Enum to allow direct string usage without .value accessor.
+
+    Inherits from StrEnum to allow direct string usage without .value accessor.
     The value of each enum is the model identifier string used by faster-whisper.
-    The comment indicates the number of parameters in the model.
     """
     TINY = "tiny"      # 39M parameters
     BASE = "base"      # 74M parameters
@@ -56,7 +58,7 @@ class WhisperModelType(str, Enum):
         Returns:
             str: Description of the model including parameter size.
         """
-        descriptions = {
+        descriptions: Dict[WhisperModelType, str] = {
             cls.TINY: "Tiny (39M parameters)",
             cls.BASE: "Base (74M parameters)",
             cls.SMALL: "Small (244M parameters)",
@@ -69,7 +71,6 @@ class WhisperModelType(str, Enum):
 
 # Configure pyperclip
 try:
-    import subprocess
     # Check if xclip is available
     if subprocess.run(['which', 'xclip'], capture_output=True).returncode == 0:
         logger.info("Found xclip, setting as clipboard mechanism")
@@ -80,24 +81,37 @@ except Exception as e:
     logger.error("Error configuring clipboard mechanism: %s", e)
 
 # Constants
-SAMPLE_RATE = 44100  # Hz - Changed to match default device sample rate
-CHANNELS = 1
-DTYPE = np.float32
+SAMPLE_RATE: int = 44100  # Hz - Changed to match default device sample rate
+CHANNELS: int = 1
+DTYPE: np.dtype = np.float32
 
 class TranscriptionWorker(QThread):
-    """Worker thread for handling audio transcription."""
+    """Worker thread for handling audio transcription.
+
+    This class runs the Whisper model in a separate thread to avoid blocking
+    the main application during transcription processing.
+    """
 
     finished = pyqtSignal(str)
 
     def __init__(self, audio_data: np.ndarray, model: WhisperModel):
-        """Initialize the transcription worker."""
+        """Initialize the transcription worker.
+
+        Args:
+            audio_data: The audio data to transcribe as a numpy array.
+            model: The initialized Whisper model to use for transcription.
+        """
         super().__init__()
         self.audio_data = audio_data
         self.model = model
         logger.info("TranscriptionWorker initialized")
 
-    def run(self):
-        """Run the transcription process."""
+    def run(self) -> None:
+        """Run the transcription process.
+
+        Processes the audio data using the Whisper model and emits the
+        transcribed text when complete. Emits an empty string on error.
+        """
         logger.info("\n=== TranscriptionWorker Run Started ===")
         try:
             # Log audio data properties
@@ -111,7 +125,7 @@ class TranscriptionWorker(QThread):
                 logger.info("Flattened audio data")
 
             logger.info("Starting transcription with Whisper model")
-            segments, info = self.model.transcribe(
+            segments, _info = self.model.transcribe(
                 self.audio_data,
                 language="en",
                 beam_size=5,
@@ -128,7 +142,7 @@ class TranscriptionWorker(QThread):
 
             text = " ".join([segment.text for segment in all_segments])
             logger.info(f"Final combined text: '{text}'")
-            
+
             # Emit the result
             logger.info("Emitting transcription result")
             self.finished.emit(text.strip())
@@ -139,83 +153,32 @@ class TranscriptionWorker(QThread):
             self.finished.emit("")
             logger.info("Empty signal emitted due to error")
 
-    def on_transcription_complete(self, text: str):
-        """Handle completed transcription."""
-        try:
-            logger.info("\n=== Transcription Complete ===")
-            logger.info(f"Thread ID: {QThread.currentThread()}")
-            logger.info(f"Received text: '{text}'")
-
-            self.processing = False  # Reset processing flag
-            
-            if text:
-                logger.info(f"Attempting to copy text (length: {len(text)}) to clipboard")
-                try:
-                    # Get current clipboard mechanism
-                    logger.info(f"Current clipboard mechanism: {pyperclip.determine_clipboard()}")
-
-                    # Attempt copy using subprocess directly
-                    try:
-                        import subprocess
-                        process = subprocess.Popen(['xclip', '-selection', 'clipboard'], 
-                                                 stdin=subprocess.PIPE, 
-                                                 text=True)
-                        process.communicate(input=text)
-                        logger.info("Text copied to clipboard using xclip")
-                    except Exception as e:
-                        logger.error(f"Direct xclip call failed: {e}")
-                        # Fallback to pyperclip
-                        try:
-                            pyperclip.copy(text)
-                            logger.info("Text copied to clipboard using pyperclip")
-                        except Exception as e:
-                            logger.error(f"pyperclip.copy() failed: {e}")
-
-                    # Verify copy
-                    try:
-                        verification = pyperclip.paste()
-                        if verification == text:
-                            logger.info("Clipboard verification successful")
-                        else:
-                            logger.error(f"Clipboard verification failed. Expected '{text}', got '{verification}'")
-                    except Exception as e:
-                        logger.error(f"Could not verify clipboard content: {e}")
-
-                except Exception as e:
-                    logger.error(f"Failed to copy to clipboard: {e}")
-
-                self.tray.showMessage(
-                    'TransClip',
-                    'Transcription copied to clipboard',
-                    QSystemTrayIcon.Information,
-                    2000
-                )
-            else:
-                logger.warning("Empty transcription result")
-                self.tray.showMessage(
-                    'TransClip',
-                    'Transcription failed',
-                    QSystemTrayIcon.Warning,
-                    2000
-                )
-        except Exception as overall_e:
-            logger.error(f"Exception in on_transcription_complete: {overall_e}", exc_info=True)
-
 class TransClip(QObject):
-    """Main TransClip application class."""
+    """Main TransClip application class.
 
-    test_signal = pyqtSignal()  # Define a test signal
+    Handles audio recording, transcription, and clipboard integration.
+    Uses a system tray icon for user interaction.
+    """
 
     def __init__(self, model_type: WhisperModelType = WhisperModelType.BASE):
-        """Initialize the TransClip application."""
+        """Initialize the TransClip application.
+
+        Args:
+            model_type: The Whisper model type to use for transcription.
+                Defaults to WhisperModelType.BASE.
+        """
         super().__init__()
         self.app = QApplication(sys.argv)
         self.recording = False
         self.audio_data: List[np.ndarray] = []
         self.last_recording_time = 0  # Timestamp for the last recording cycle
-        self.key_cooldown = 2.0  # Increased cooldown period in seconds
-        self.processing = False  # Add flag to track if we're processing audio
+        self.key_cooldown = 2.0  # Cooldown period in seconds
+        self.processing = False  # Flag to track if we're processing audio
         self.key_pressed = False  # Track if key is currently pressed
+        self.stream: Optional[sd.InputStream] = None
+        self.transcription_worker: Optional[TranscriptionWorker] = None
+        self.tray: Optional[QSystemTrayIcon] = None
+        self.listener: Optional[keyboard.Listener] = None
 
         # Initialize Whisper model
         logger.info("Initializing Whisper model")
@@ -233,16 +196,8 @@ class TransClip(QObject):
         self.init_tray()
         self.init_keyboard_listener()
 
-        # Ensure signal-slot connections are made in the main thread
-        self.transcription_worker = None
-
-        # Add a timer for testing
-        self.test_timer = QTimer(self)
-        self.test_timer.timeout.connect(self.test_slot)
-        self.test_timer.start(1000)  # Emit every 1 second
-
     def has_cuda(self) -> bool:
-        """Check if CUDA is available.
+        """Check if CUDA is available for GPU acceleration.
 
         Returns:
             bool: True if CUDA is available, False otherwise.
@@ -253,8 +208,11 @@ class TransClip(QObject):
         except ImportError:
             return False
 
-    def init_tray(self):
-        """Initialize the system tray icon and menu."""
+    def init_tray(self) -> None:
+        """Initialize the system tray icon and menu.
+
+        Creates a system tray icon with a context menu containing a quit option.
+        """
         self.tray = QSystemTrayIcon()
         self.tray.setIcon(QIcon.fromTheme('audio-input-microphone'))
 
@@ -265,15 +223,19 @@ class TransClip(QObject):
         self.tray.setContextMenu(menu)
         self.tray.show()
 
-    def init_keyboard_listener(self):
-        """Initialize the keyboard listener for the recording hotkey."""
+    def init_keyboard_listener(self) -> None:
+        """Initialize the keyboard listener for the recording hotkey.
+
+        Sets up a keyboard listener to detect when the Home key is pressed
+        to start and stop recording.
+        """
         self.listener = keyboard.Listener(
             on_press=self.on_press,
             on_release=self.on_release
         )
         self.listener.start()
 
-    def on_press(self, key):
+    def on_press(self, key: Any) -> None:
         """Handle key press events.
 
         Args:
@@ -286,7 +248,7 @@ class TransClip(QObject):
                 not self.key_pressed and  # Ensure key wasn't already pressed
                 key == keyboard.Key.home and 
                 (current_time - self.last_recording_time) > self.key_cooldown):
-                
+
                 logger.info("=== Key Press Event ===")
                 logger.info(f"Time since last recording: {current_time - self.last_recording_time:.2f}s")
                 self.key_pressed = True  # Mark key as pressed
@@ -294,7 +256,7 @@ class TransClip(QObject):
         except AttributeError:
             pass
 
-    def on_release(self, key):
+    def on_release(self, key: Any) -> None:
         """Handle key release events.
 
         Args:
@@ -309,8 +271,12 @@ class TransClip(QObject):
         except AttributeError:
             pass
 
-    def start_recording(self):
-        """Start recording audio."""
+    def start_recording(self) -> None:
+        """Start recording audio from the selected input device.
+
+        Attempts to use the Bose QC Earbuds II first, then falls back to the default
+        input device if that fails. Sets up an audio stream and begins recording.
+        """
         if self.processing:
             logger.warning("Cannot start recording while processing previous audio")
             return
@@ -320,9 +286,9 @@ class TransClip(QObject):
             return
 
         logger.info("=== Starting recording ===")
-        logger.info(f"Previous audio_data length: {len(self.audio_data) if self.audio_data else 0}")
-        logger.info(f"Previous recording state: {self.recording}")
-        
+        logger.debug(f"Previous audio_data length: {len(self.audio_data) if self.audio_data else 0}")
+        logger.debug(f"Previous recording state: {self.recording}")
+
         self.recording = True
         self.audio_data = []  # Clear the buffer
         logger.info("Cleared audio buffer")
@@ -334,8 +300,15 @@ class TransClip(QObject):
         logger.info(f"Available devices: {devices}")
 
         def callback(indata: np.ndarray, frames: int,
-                    time_info: dict, status: sd.CallbackFlags):
-            """Callback for audio recording."""
+                    time_info: Dict[str, Any], status: sd.CallbackFlags) -> None:
+            """Callback for audio recording.
+
+            Args:
+                indata: The input audio data.
+                frames: Number of frames.
+                time_info: Time information dictionary.
+                status: Status flags.
+            """
             if status:
                 logger.warning(f'Recording error: {status}')
                 for flag in dir(status):
@@ -370,7 +343,8 @@ class TransClip(QObject):
             )
             self.stream.start()
             logger.info("Successfully started recording with Bose QC Earbuds II")
-            self.tray.setIcon(QIcon.fromTheme('media-record'))
+            if self.tray:
+                self.tray.setIcon(QIcon.fromTheme('media-record'))
         except Exception as e:
             logger.error(f"Failed to start recording with Bose QC Earbuds II: {e}")
             try:
@@ -387,18 +361,23 @@ class TransClip(QObject):
                 )
                 self.stream.start()
                 logger.info("Successfully started recording with default device")
-                self.tray.setIcon(QIcon.fromTheme('media-record'))
+                if self.tray:
+                    self.tray.setIcon(QIcon.fromTheme('media-record'))
             except Exception as e:
                 logger.error(f"Failed to start recording with default device: {e}")
                 self.recording = False
 
-    def stop_recording(self):
-        """Stop recording and start transcription."""
+    def stop_recording(self) -> None:
+        """Stop recording and start transcription.
+
+        Stops the audio stream, processes the recorded audio data,
+        and starts the transcription process in a separate thread.
+        """
         logger.info("\n=== stop_recording called ===")
         logger.info(f"Current audio_data chunks: {len(self.audio_data)}")
         logger.info(f"Recording state: {self.recording}")
         logger.info(f"Processing state: {self.processing}")
-        
+
         if not self.recording or self.processing:
             logger.warning("stop_recording called but not recording or already processing")
             return
@@ -407,13 +386,15 @@ class TransClip(QObject):
         self.recording = False
         self.processing = True  # Set processing flag
         try:
-            self.stream.stop()
-            self.stream.close()
-            logger.info("Audio stream stopped and closed")
+            if self.stream:
+                self.stream.stop()
+                self.stream.close()
+                logger.info("Audio stream stopped and closed")
         except Exception as e:
             logger.error(f"Error stopping recording: {e}")
 
-        self.tray.setIcon(QIcon.fromTheme('audio-input-microphone'))
+        if self.tray:
+            self.tray.setIcon(QIcon.fromTheme('audio-input-microphone'))
 
         # Convert audio data to numpy array
         if not self.audio_data:
@@ -428,120 +409,128 @@ class TransClip(QObject):
             logger.info("Audio buffer cleared")
 
             # Get the actual sample rate used for recording
-            device_sample_rate = self.stream.samplerate
-            logger.info(f"Recording sample rate was: {device_sample_rate}")
+            if self.stream:
+                device_sample_rate = self.stream.samplerate
+                logger.info(f"Recording sample rate was: {device_sample_rate}")
 
-            # Normalize audio to be between -1 and 1
-            if np.max(np.abs(audio)) > 0:
-                audio = audio / np.max(np.abs(audio))
-                logger.info(f"Normalized audio - new max amplitude: {np.max(np.abs(audio))}")
+                # Normalize audio to be between -1 and 1
+                if np.max(np.abs(audio)) > 0:
+                    audio = audio / np.max(np.abs(audio))
+                    logger.info(f"Normalized audio - new max amplitude: {np.max(np.abs(audio))}")
 
-            # Log audio statistics
-            logger.info(f"Audio statistics: mean={np.mean(audio):.4f}, "
-                       f"std={np.std(audio):.4f}, "
-                       f"min={np.min(audio):.4f}, "
-                       f"max={np.max(audio):.4f}")
+                # Log audio statistics
+                logger.info(f"Audio statistics: mean={np.mean(audio):.4f}, "
+                           f"std={np.std(audio):.4f}, "
+                           f"min={np.min(audio):.4f}, "
+                           f"max={np.max(audio):.4f}")
 
-            # Resample audio to 16000 Hz for Whisper
-            if device_sample_rate != 16000:
-                from scipy import signal
-                audio = signal.resample(audio, int(len(audio) * 16000 / device_sample_rate))
-                logger.info(f"Resampled audio from {device_sample_rate}Hz to 16000Hz, new shape: {audio.shape}")
+                # Resample audio to 16000 Hz for Whisper
+                if device_sample_rate != 16000:
+                    audio = signal.resample(audio, int(len(audio) * 16000 / device_sample_rate))
+                    logger.info(f"Resampled audio from {device_sample_rate}Hz to 16000Hz, new shape: {audio.shape}")
 
-            # Start transcription in a separate thread
-            logger.info("\n=== Starting Transcription ===")
-            self.transcription_worker = TranscriptionWorker(audio, self.model)
-            self.transcription_worker.finished.connect(self.on_transcription_complete)
-            logger.info("Starting worker thread")
-            self.transcription_worker.start()
-            logger.info("Worker thread started successfully")
+                # Start transcription in a separate thread
+                logger.info("\n=== Starting Transcription ===")
+                self.transcription_worker = TranscriptionWorker(audio, self.model)
+                self.transcription_worker.finished.connect(self.on_transcription_complete)
+                logger.debug("Starting worker thread")
+                self.transcription_worker.start()
+                logger.info("Worker thread started successfully")
+            else:
+                logger.error("Stream is None, cannot process audio")
+                self.processing = False
 
         except Exception as e:
             logger.error(f"Error processing audio data: {e}")
             self.processing = False  # Reset processing flag on error
 
-    def on_transcription_complete(self, text: str):
-        """Handle completed transcription."""
+    def on_transcription_complete(self, text: str) -> None:
+        """Handle completed transcription.
+
+        Args:
+            text: The transcribed text to copy to clipboard.
+        """
         try:
             logger.info("\n=== Transcription Complete ===")
-            logger.info(f"Thread ID: {QThread.currentThread()}")
-            logger.info(f"Received text: '{text}'")
+            logger.debug(f"Thread ID: {QThread.currentThread()}")
+            logger.debug(f"Received text: '{text}'")
 
             self.processing = False  # Reset processing flag
-            
-            if text:
-                logger.info(f"Attempting to copy text (length: {len(text)}) to clipboard")
-                try:
-                    # Get current clipboard mechanism
-                    logger.info(f"Current clipboard mechanism: {pyperclip.determine_clipboard()}")
 
-                    # Attempt copy using subprocess directly
+            if text:
+                logger.info(f"Copying text to clipboard (length: {len(text)})")
+                try:
+                    # Try to use xclip directly for Linux
                     try:
                         import subprocess
                         process = subprocess.Popen(['xclip', '-selection', 'clipboard'], 
                                                  stdin=subprocess.PIPE, 
                                                  text=True)
                         process.communicate(input=text)
-                        logger.info("Text copied to clipboard using xclip")
+                        logger.debug("Text copied to clipboard using xclip")
                     except Exception as e:
                         logger.error(f"Direct xclip call failed: {e}")
                         # Fallback to pyperclip
-                        try:
-                            pyperclip.copy(text)
-                            logger.info("Text copied to clipboard using pyperclip")
-                        except Exception as e:
-                            logger.error(f"pyperclip.copy() failed: {e}")
+                        pyperclip.copy(text)
+                        logger.debug("Text copied to clipboard using pyperclip")
 
-                    # Verify copy
-                    try:
-                        verification = pyperclip.paste()
-                        if verification == text:
-                            logger.info("Clipboard verification successful")
-                        else:
-                            logger.error(f"Clipboard verification failed. Expected '{text}', got '{verification}'")
-                    except Exception as e:
-                        logger.error(f"Could not verify clipboard content: {e}")
+                    # Verify copy success
+                    verification = pyperclip.paste()
+                    if verification != text:
+                        logger.error(f"Clipboard verification failed. Text may not be copied correctly.")
 
                 except Exception as e:
                     logger.error(f"Failed to copy to clipboard: {e}")
 
-                self.tray.showMessage(
-                    'TransClip',
-                    'Transcription copied to clipboard',
-                    QSystemTrayIcon.Information,
-                    2000
-                )
+                if self.tray:
+                    self.tray.showMessage(
+                        'TransClip',
+                        'Transcription copied to clipboard',
+                        QSystemTrayIcon.Information,
+                        2000
+                    )
             else:
                 logger.warning("Empty transcription result")
-                self.tray.showMessage(
-                    'TransClip',
-                    'Transcription failed',
-                    QSystemTrayIcon.Warning,
-                    2000
-                )
+                if self.tray:
+                    self.tray.showMessage(
+                        'TransClip',
+                        'Transcription failed',
+                        QSystemTrayIcon.Warning,
+                        2000
+                    )
         except Exception as overall_e:
             logger.error(f"Exception in on_transcription_complete: {overall_e}", exc_info=True)
 
-    def test_slot(self):
-        """Simple slot for testing."""
-        logger.info("Test slot called")
+    def quit(self) -> None:
+        """Quit the application.
 
-    def quit(self):
-        """Quit the application."""
+        Stops recording if active and exits the application.
+        """
         if self.recording:
             self.stop_recording()
         self.app.quit()
 
-    def run(self):
-        """Run the application."""
+    def run(self) -> int:
+        """Run the application.
+
+        Returns:
+            int: The application exit code.
+        """
         return self.app.exec_()
 
-    def __del__(self):
-        """Destructor for TransClip."""
+    def __del__(self) -> None:
+        """Destructor for TransClip.
+
+        Performs cleanup when the TransClip object is destroyed.
+        """
         logger.info("TransClip object being destroyed")
 
-def main():
-    """Main entry point for the application."""
+def main() -> int:
+    """Main entry point for the application.
+
+    Returns:
+        int: Exit code, 0 for success, 1 for error.
+    """
     try:
         app = TransClip(WhisperModelType.LARGE_V3)
         return app.run()

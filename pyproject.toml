@@ -1,1 +1,23 @@
- 
+[project]
+name = "transclip"
+version = "0.1.0"
+description = "Transcription clipboard utility"
+requires-python = ">=3.11"
+dependencies = [
+    "faster-whisper>=0.10.0",
+    "mypy>=1.14.1",
+    "numpy>=1.24.0",
+    "pynput>=1.7.6",
+    "pyperclip>=1.8.2",
+    "pyqt5>=5.15.9",
+    "ruff>=0.9.7",
+    "scipy>=1.10.1",
+    "sounddevice>=0.4.6",
+    "types-pynput>=1.7.7",
+    "types-pyperclip>=1.9.0",
+]
+
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
