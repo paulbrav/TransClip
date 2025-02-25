@@ -12,12 +12,13 @@ import sys
 from pathlib import Path
 
 from faster_whisper import download_model
+
 from transclip.app import WhisperModelType
 
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ def get_model_size_mb(model_type: WhisperModelType) -> int:
         WhisperModelType.MEDIUM: 1500,
         WhisperModelType.LARGE: 3000,
         WhisperModelType.LARGE_V2: 3000,
-        WhisperModelType.LARGE_V3: 3000
+        WhisperModelType.LARGE_V3: 3000,
     }
     return sizes.get(model_type, 3000)
 
@@ -95,7 +96,7 @@ def download_whisper_model(model_type: WhisperModelType, force: bool = False) ->
             cache_dir=cache_dir,
             local_files_only=False
         )
-        
+
         logger.info(f"Successfully downloaded model to {cache_dir}")
         return True
 
@@ -103,8 +104,12 @@ def download_whisper_model(model_type: WhisperModelType, force: bool = False) ->
         logger.error(f"Failed to download model: {e}")
         return False
 
-def main():
-    """Main entry point for the model downloader."""
+def main() -> int:
+    """Download Whisper models for TransClip.
+
+    Returns:
+        int: Exit code, 0 for success, 1 for error.
+    """
     parser = argparse.ArgumentParser(description="Download Whisper models for TransClip")
     parser.add_argument(
         "--model",
@@ -122,9 +127,9 @@ def main():
 
     model_type = WhisperModelType(args.model)
     logger.info(f"Selected model: {WhisperModelType.get_description(model_type)}")
-    
+
     success = download_whisper_model(model_type, args.force)
     return 0 if success else 1
 
 if __name__ == "__main__":
-    sys.exit(main()) 
+    sys.exit(main())

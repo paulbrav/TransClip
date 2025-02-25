@@ -83,7 +83,7 @@ except Exception as e:
 # Constants
 SAMPLE_RATE: int = 44100  # Hz - Changed to match default device sample rate
 CHANNELS: int = 1
-DTYPE: np.dtype = np.float32
+DTYPE = np.float32  # Remove explicit type annotation that causes mypy error
 
 class TranscriptionWorker(QThread):
     """Worker thread for handling audio transcription.
@@ -170,11 +170,11 @@ class TransClip(QObject):
         super().__init__()
         self.app = QApplication(sys.argv)
         self.recording = False
-        self.audio_data: List[np.ndarray] = []
-        self.last_recording_time = 0  # Timestamp for the last recording cycle
-        self.key_cooldown = 2.0  # Cooldown period in seconds
+        self.key_pressed = False
+        self.key_cooldown = 0.5  # seconds
+        self.last_recording_time: float = 0.0  # Timestamp for the last recording cycle
+        self.audio_data: List[np.ndarray] = []  # Add type annotation
         self.processing = False  # Flag to track if we're processing audio
-        self.key_pressed = False  # Track if key is currently pressed
         self.stream: Optional[sd.InputStream] = None
         self.transcription_worker: Optional[TranscriptionWorker] = None
         self.tray: Optional[QSystemTrayIcon] = None
@@ -218,6 +218,7 @@ class TransClip(QObject):
 
         menu = QMenu()
         quit_action = menu.addAction('Quit')
+        assert quit_action is not None
         quit_action.triggered.connect(self.quit)
 
         self.tray.setContextMenu(menu)
@@ -243,10 +244,10 @@ class TransClip(QObject):
         """
         try:
             current_time = time.time()
-            if (not self.recording and 
-                not self.processing and 
+            if (not self.recording and
+                not self.processing and
                 not self.key_pressed and  # Ensure key wasn't already pressed
-                key == keyboard.Key.home and 
+                key == keyboard.Key.home and
                 (current_time - self.last_recording_time) > self.key_cooldown):
 
                 logger.info("=== Key Press Event ===")
@@ -344,9 +345,9 @@ class TransClip(QObject):
             self.stream.start()
             logger.info("Successfully started recording with Bose QC Earbuds II")
             if self.tray:
-                self.tray.setIcon(QIcon.fromTheme('media-record'))
-        except Exception as e:
-            logger.error(f"Failed to start recording with Bose QC Earbuds II: {e}")
+                self.tray.setIcon(QIcon.fromTheme("media-record"))
+        except (ValueError, sd.PortAudioError) as _:
+            logger.exception("Failed to start recording with Bose QC Earbuds II")
             try:
                 # Fallback to default device
                 default_device = sd.query_devices(kind='input')
@@ -362,9 +363,9 @@ class TransClip(QObject):
                 self.stream.start()
                 logger.info("Successfully started recording with default device")
                 if self.tray:
-                    self.tray.setIcon(QIcon.fromTheme('media-record'))
-            except Exception as e:
-                logger.error(f"Failed to start recording with default device: {e}")
+                    self.tray.setIcon(QIcon.fromTheme("media-record"))
+            except (ValueError, sd.PortAudioError) as _:
+                logger.exception("Failed to start recording with default device")
                 self.recording = False
 
     def stop_recording(self) -> None:
@@ -390,11 +391,11 @@ class TransClip(QObject):
                 self.stream.stop()
                 self.stream.close()
                 logger.info("Audio stream stopped and closed")
-        except Exception as e:
-            logger.error(f"Error stopping recording: {e}")
+        except (ValueError, sd.PortAudioError) as _:
+            logger.exception("Error stopping recording")
 
         if self.tray:
-            self.tray.setIcon(QIcon.fromTheme('audio-input-microphone'))
+            self.tray.setIcon(QIcon.fromTheme("audio-input-microphone"))
 
         # Convert audio data to numpy array
         if not self.audio_data:
@@ -463,8 +464,8 @@ class TransClip(QObject):
                     # Try to use xclip directly for Linux
                     try:
                         import subprocess
-                        process = subprocess.Popen(['xclip', '-selection', 'clipboard'], 
-                                                 stdin=subprocess.PIPE, 
+                        process = subprocess.Popen(['xclip', '-selection', 'clipboard'],
+                                                 stdin=subprocess.PIPE,
                                                  text=True)
                         process.communicate(input=text)
                         logger.debug("Text copied to clipboard using xclip")
@@ -477,7 +478,7 @@ class TransClip(QObject):
                     # Verify copy success
                     verification = pyperclip.paste()
                     if verification != text:
-                        logger.error(f"Clipboard verification failed. Text may not be copied correctly.")
+                        logger.error("Clipboard verification failed. Text may not be copied correctly.")
 
                 except Exception as e:
                     logger.error(f"Failed to copy to clipboard: {e}")
@@ -486,7 +487,7 @@ class TransClip(QObject):
                     self.tray.showMessage(
                         'TransClip',
                         'Transcription copied to clipboard',
-                        QSystemTrayIcon.Information,
+                        QSystemTrayIcon.Information,  # Use the enum value
                         2000
                     )
             else:
@@ -495,7 +496,7 @@ class TransClip(QObject):
                     self.tray.showMessage(
                         'TransClip',
                         'Transcription failed',
-                        QSystemTrayIcon.Warning,
+                        QSystemTrayIcon.Warning,  # Use the enum value
                         2000
                     )
         except Exception as overall_e:
@@ -526,7 +527,7 @@ class TransClip(QObject):
         logger.info("TransClip object being destroyed")
 
 def main() -> int:
-    """Main entry point for the application.
+    """Start the application.
 
     Returns:
         int: Exit code, 0 for success, 1 for error.
