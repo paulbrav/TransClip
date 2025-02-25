@@ -16,7 +16,7 @@ A desktop application that transcribes speech to text when you hold down a key. 
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.11+
 - PortAudio (for audio recording)
 - CUDA-capable GPU (optional, for faster transcription)
 - Linux with systemd (for service installation)
