@@ -9,6 +9,7 @@ import logging
 import subprocess
 import sys
 import time
+from collections import deque
 from enum import StrEnum
 from typing import Any, Dict, List, Optional
 
@@ -20,9 +21,15 @@ from pynput import keyboard
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (
+    QActionGroup,
     QApplication,
+    QDialog,
+    QHBoxLayout,
+    QLabel,
     QMenu,
+    QPushButton,
     QSystemTrayIcon,
+    QVBoxLayout,
 )
 from scipy import signal
 
@@ -68,6 +75,9 @@ class WhisperModelType(StrEnum):
             cls.LARGE_V3: "Large-v3 (1.5B parameters, latest)"
         }
         return descriptions[model_type]
+
+DEFAULT_RECORDING_KEY = keyboard.Key.home
+DEFAULT_MODEL_TYPE = WhisperModelType.BASE
 
 # Configure pyperclip
 try:
@@ -160,7 +170,7 @@ class TransClip(QObject):
     Uses a system tray icon for user interaction.
     """
 
-    def __init__(self, model_type: WhisperModelType = WhisperModelType.BASE):
+    def __init__(self, model_type: WhisperModelType = DEFAULT_MODEL_TYPE):
         """Initialize the TransClip application.
 
         Args:
@@ -179,6 +189,12 @@ class TransClip(QObject):
         self.transcription_worker: Optional[TranscriptionWorker] = None
         self.tray: Optional[QSystemTrayIcon] = None
         self.listener: Optional[keyboard.Listener] = None
+
+        # Store recent transcriptions
+        self.recent_transcriptions: deque[str] = deque(maxlen=5)
+        self.recording_key = DEFAULT_RECORDING_KEY  # Default recording key
+
+        self.current_model_type = model_type  # Store the current model type
 
         # Initialize Whisper model
         logger.info("Initializing Whisper model")
@@ -209,20 +225,76 @@ class TransClip(QObject):
             return False
 
     def init_tray(self) -> None:
-        """Initialize the system tray icon and menu.
+        """Initialize the system tray icon and menu with transcriptions and preferences.
 
-        Creates a system tray icon with a context menu containing a quit option.
+        Creates a system tray icon with a context menu containing transcriptions history,
+        preferences options, and a quit option.
         """
         self.tray = QSystemTrayIcon()
         self.tray.setIcon(QIcon.fromTheme('audio-input-microphone'))
 
+        # Create main menu
         menu = QMenu()
+        logger.debug("Created main menu")
+
+        # Create transcriptions submenu
+        self.transcriptions_menu = QMenu('Transcriptions')
+        menu.addMenu(self.transcriptions_menu)
+        logger.debug("Added transcriptions menu")
+
+        # Add a direct action for key binding
+        key_binding_action = menu.addAction("⌨ Configure Key Binding...")
+        assert key_binding_action is not None
+        key_binding_action.triggered.connect(self.show_key_binding_dialog)
+        logger.debug("Added key binding action to main menu")
+
+        # Add direct model selection actions to main menu
+        menu.addSeparator()
+        menu.addAction("🔊 Select Transcription Model:").setEnabled(False)
+
+        # Add model options
+        model_group = QActionGroup(self)
+        model_group.setExclusive(True)
+
+        # Add each model type as a radio button option directly to main menu
+        for model_type in WhisperModelType:
+            model_action = menu.addAction(WhisperModelType.get_description(model_type))
+            assert model_action is not None
+            model_action.setCheckable(True)
+
+            # Check the current model
+            if model_type == self.current_model_type:
+                model_action.setChecked(True)
+
+            # Add to action group and connect
+            model_group.addAction(model_action)
+
+            # Create a separate function for each model type to avoid lambda issues
+            def create_model_handler(m_type):
+                return lambda checked: self.change_model(m_type)
+
+            model_action.triggered.connect(create_model_handler(model_type))
+
+        logger.debug("Added model options directly to main menu")
+
+        # Add separator before quit
+        menu.addSeparator()
+        logger.debug("Added separator")
+
+        # Add quit action
         quit_action = menu.addAction('Quit')
         assert quit_action is not None
         quit_action.triggered.connect(self.quit)
+        logger.debug("Added quit action")
+
+        # Initialize transcriptions list
+        self.update_transcriptions_menu()
+        logger.debug("Updated transcriptions menu")
 
         self.tray.setContextMenu(menu)
+        logger.debug("Set context menu")
         self.tray.show()
+        logger.debug("Showed tray icon")
 
     def init_keyboard_listener(self) -> None:
         """Initialize the keyboard listener for the recording hotkey.
@@ -247,7 +319,7 @@ class TransClip(QObject):
             if (not self.recording and
                 not self.processing and
                 not self.key_pressed and  # Ensure key wasn't already pressed
-                key == keyboard.Key.home and
+                key == self.recording_key and  # Use the configurable recording key
                 (current_time - self.last_recording_time) > self.key_cooldown):
 
                 logger.info("=== Key Press Event ===")
@@ -264,7 +336,7 @@ class TransClip(QObject):
             key: The key that was released.
         """
         try:
-            if self.recording and key == keyboard.Key.home and self.key_pressed:
+            if self.recording and key == self.recording_key and self.key_pressed:
                 logger.info("=== Key Release Event ===")
                 self.key_pressed = False  # Reset key press state
                 self.last_recording_time = time.time()  # Update timestamp after complete cycle
@@ -275,7 +347,7 @@ class TransClip(QObject):
     def start_recording(self) -> None:
         """Start recording audio from the default input device.
 
-        Sets up an audio stream with the correct number of channels for the 
+        Sets up an audio stream with the correct number of channels for the
         selected device and begins recording.
         """
         if self.processing:
@@ -325,7 +397,7 @@ class TransClip(QObject):
             device_id = default_device['index']
             device_channels = int(default_device['max_input_channels'])
             device_sample_rate = int(default_device['default_samplerate'])
-            
+
             logger.info(f"Using default input device (id: {device_id})")
             logger.info(f"  - Channels: {device_channels}")
             logger.info(f"  - Sample rate: {device_sample_rate} Hz")
@@ -442,6 +514,9 @@ class TransClip(QObject):
             self.processing = False  # Reset processing flag
 
             if text:
+                # Store the transcription in recent list
+                self.store_transcription(text)
+
                 logger.info(f"Copying text to clipboard (length: {len(text)})")
                 try:
                     # Try to use xclip directly for Linux
@@ -509,6 +584,208 @@ class TransClip(QObject):
         """
         logger.info("TransClip object being destroyed")
 
+    def store_transcription(self, text: str) -> None:
+        """Store a transcription in the recent transcriptions list.
+
+        Args:
+            text: The transcribed text to store.
+        """
+        # Add new transcription to beginning of list
+        self.recent_transcriptions.appendleft(text)
+
+        # Update the transcriptions menu
+        self.update_transcriptions_menu()
+
+    def update_transcriptions_menu(self) -> None:
+        """Update the transcriptions menu with recent transcriptions."""
+        # Clear existing menu items
+        self.transcriptions_menu.clear()
+
+        if not self.recent_transcriptions:
+            # Add a placeholder if no transcriptions
+            empty_action = self.transcriptions_menu.addAction("No recent transcriptions")
+            assert empty_action is not None
+            empty_action.setEnabled(False)
+            return
+
+        # Add each recent transcription as a menu item
+        for i, text in enumerate(self.recent_transcriptions):
+            # Create a shortened version for the menu (first 30 chars)
+            display_text = text[:30] + ("..." if len(text) > 30 else "")
+
+            # Create the action
+            action = self.transcriptions_menu.addAction(f"{i+1}. {display_text}")
+            assert action is not None
+
+            # Connect to a lambda that copies this specific text
+            action.triggered.connect(lambda checked, t=text: self.copy_to_clipboard(t))
+
+    def copy_to_clipboard(self, text: str) -> None:
+        """Copy the given text to clipboard.
+
+        Args:
+            text: The text to copy to clipboard.
+        """
+        try:
+            # Try to use xclip directly for Linux
+            try:
+                process = subprocess.Popen(['xclip', '-selection', 'clipboard'],
+                                         stdin=subprocess.PIPE,
+                                         text=True)
+                process.communicate(input=text)
+                logger.debug("Text copied to clipboard using xclip")
+            except Exception as e:
+                logger.error(f"Direct xclip call failed: {e}")
+                # Fallback to pyperclip
+                pyperclip.copy(text)
+                logger.debug("Text copied to clipboard using pyperclip")
+
+            # Show notification
+            if self.tray:
+                self.tray.showMessage(
+                    'TransClip',
+                    'Transcription copied to clipboard',
+                    QSystemTrayIcon.Information,
+                    2000
+                )
+        except Exception as e:
+            logger.error(f"Failed to copy to clipboard: {e}")
+
+    def change_model(self, model_type: WhisperModelType) -> None:
+        """Change the Whisper model being used.
+
+        Args:
+            model_type: The WhisperModelType to change to.
+        """
+        if self.recording or self.processing:
+            # Show warning if recording or processing
+            if self.tray:
+                self.tray.showMessage(
+                    'TransClip',
+                    'Cannot change model while recording or processing',
+                    QSystemTrayIcon.Warning,
+                    2000
+                )
+            return
+
+        try:
+            # Reinitialize the model
+            logger.info(f"Changing model to {model_type}")
+            self.model = WhisperModel(
+                model_type,
+                device="cuda" if self.has_cuda() else "cpu",
+                compute_type="float16" if self.has_cuda() else "float32"
+            )
+            self.current_model_type = model_type  # Update the current model type
+            logger.info(f"Using model: {WhisperModelType.get_description(model_type)}")
+
+            # Show success message
+            if self.tray:
+                self.tray.showMessage(
+                    'TransClip',
+                    f'Changed model to {WhisperModelType.get_description(model_type)}',
+                    QSystemTrayIcon.Information,
+                    2000
+                )
+        except Exception as e:
+            logger.error(f"Failed to change model: {e}")
+            # Show error message
+            if self.tray:
+                self.tray.showMessage(
+                    'TransClip',
+                    f'Failed to change model: {str(e)}',
+                    QSystemTrayIcon.Critical,
+                    2000
+                )
+
+    def show_key_binding_dialog(self) -> None:
+        """Show dialog to configure key binding.
+
+        Opens a dialog that allows the user to set a new key for starting/stopping recording.
+        """
+        dialog = QDialog()
+        dialog.setWindowTitle("Configure Key Binding")
+
+        layout = QVBoxLayout()
+
+        # Instructions label
+        label = QLabel("Press a key to set as the recording shortcut:")
+        layout.addWidget(label)
+
+        # Current key label
+        current_key_name = getattr(self.recording_key, 'name', str(self.recording_key))
+        current_key_label = QLabel(f"Current key: {current_key_name}")
+        layout.addWidget(current_key_label)
+
+        # Key capture button
+        key_button = QPushButton("Press to record new key...")
+        layout.addWidget(key_button)
+
+        # Variable to store the new key
+        new_key = [None]  # Use a list to allow modification in the inner function
+
+        # Function to handle key press in the dialog
+        def on_key_capture():
+            key_button.setText("Press any key...")
+            key_button.setEnabled(False)
+
+            # Create a temporary keyboard listener
+            def on_dialog_key_press(key):
+                new_key[0] = key
+                key_name = getattr(key, 'name', str(key))
+                key_button.setText(f"Key captured: {key_name}")
+                key_button.setEnabled(True)
+                return False  # Stop listener
+
+            # Start temporary listener
+            temp_listener = keyboard.Listener(on_press=on_dialog_key_press)
+            temp_listener.start()
+
+        # Connect button to key capture function
+        key_button.clicked.connect(on_key_capture)
+
+        # Button row
+        button_layout = QHBoxLayout()
+        save_button = QPushButton("Save")
+        cancel_button = QPushButton("Cancel")
+        button_layout.addWidget(save_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+
+        # Set the layout
+        dialog.setLayout(layout)
+
+        # Connect buttons
+        def on_save():
+            if new_key[0] is not None:
+                self.change_recording_key(new_key[0])
+            dialog.accept()
+
+        save_button.clicked.connect(on_save)
+        cancel_button.clicked.connect(dialog.reject)
+
+        # Show dialog
+        dialog.exec_()
+
+    def change_recording_key(self, key: Any) -> None:
+        """Change the key used for recording.
+
+        Args:
+            key: The new key to use for recording.
+        """
+        self.recording_key = key
+        key_name = getattr(key, 'name', str(key))
+        logger.info(f"Changed recording key to: {key_name}")
+
+        # Show notification
+        if self.tray:
+            self.tray.showMessage(
+                'TransClip',
+                f'Recording key changed to: {key_name}',
+                QSystemTrayIcon.Information,
+                2000
+            )
+
 def main() -> int:
     """Start the application.
 
@@ -516,7 +793,7 @@ def main() -> int:
         int: Exit code, 0 for success, 1 for error.
     """
     try:
-        app = TransClip(WhisperModelType.SMALL)
+        app = TransClip(DEFAULT_MODEL_TYPE)
         return app.run()
     except Exception as e:
         logger.error(f"Application error: {e}")
