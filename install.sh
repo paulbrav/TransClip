@@ -25,10 +25,29 @@ fi
 
 echo "Installing TransClip..."
 
+# Detect OS
+OS_TYPE=$(uname -s)
+IS_MAC=false
+if [ "$OS_TYPE" = "Darwin" ]; then
+    IS_MAC=true
+    echo "Detected macOS system"
+fi
+
 # Skip system dependencies and Python installation if only testing service config
 if [ "$TEST_SERVICE_CONFIG" = false ]; then
     # Install system dependencies
-    if command -v apt-get &> /dev/null; then
+    if [ "$IS_MAC" = true ]; then
+        # macOS with Homebrew
+        if ! command -v brew &> /dev/null; then
+            echo "Homebrew is required for macOS installation."
+            echo "Please install Homebrew first: https://brew.sh"
+            exit 1
+        fi
+        
+        echo "Installing system dependencies for macOS using Homebrew..."
+        brew install portaudio python
+        brew install xclip || echo "xclip installation failed, using pyperclip fallback"
+    elif command -v apt-get &> /dev/null; then
         # Debian/Ubuntu
         echo "Installing system dependencies for Debian/Ubuntu..."
         sudo apt-get update
@@ -46,7 +65,22 @@ if [ "$TEST_SERVICE_CONFIG" = false ]; then
         echo "Installing uv package manager..."
         curl -LsSf https://astral.sh/uv/install.sh | sh
         # Source the shell configuration to get uv in PATH
-        source ~/.bashrc
+        if [ "$IS_MAC" = true ]; then
+            # Check for common macOS shells
+            if [ -f "${HOME}/.zshrc" ]; then
+                source "${HOME}/.zshrc"
+            elif [ -f "${HOME}/.bash_profile" ]; then
+                source "${HOME}/.bash_profile"
+            fi
+        else
+            # Linux typically uses .bashrc
+            source ~/.bashrc
+        fi
+        
+        # If uv still not in PATH, add it temporarily
+        if ! command -v uv &> /dev/null; then
+            export PATH="${HOME}/.cargo/bin:$PATH"
+        fi
     fi
 
     # Create virtual environment and install dependencies
@@ -135,55 +169,115 @@ if [ "$TEST_SERVICE_CONFIG" = true ]; then
     VENV_PATH="${HOME}/.local/share/transclip/venv"
 fi
 
-# Update systemd service to use the virtual environment's Python
-echo "Configuring systemd service..."
-SYSTEMD_DIR="${HOME}/.config/systemd/user"
-mkdir -p "${SYSTEMD_DIR}"
-mkdir -p "${HOME}/.config/transclip"
-
-# Get the current directory for the WorkingDirectory
-CURRENT_DIR="$(pwd)"
-
-# Copy the systemd service file
-cp transclip.service "${SYSTEMD_DIR}/transclip.service"
-
-# Update the service file with the correct paths
-sed -i "s|ExecStart=.*|ExecStart=${VENV_PATH}/bin/python -m transclip|g" "${SYSTEMD_DIR}/transclip.service"
-sed -i "s|WorkingDirectory=.*|WorkingDirectory=${CURRENT_DIR}|g" "${SYSTEMD_DIR}/transclip.service"
-# If WorkingDirectory line doesn't exist, add it after ExecStart
-if ! grep -q "WorkingDirectory" "${SYSTEMD_DIR}/transclip.service"; then
-    sed -i "/ExecStart=.*/a WorkingDirectory=${CURRENT_DIR}" "${SYSTEMD_DIR}/transclip.service"
-fi
-sed -i "s|Environment=PATH=.*|Environment=PATH=${PATH}:/usr/local/bin|g" "${SYSTEMD_DIR}/transclip.service"
-
-if [ "$TEST_SERVICE_CONFIG" = true ]; then
-    echo "Service configuration test complete."
-    echo "Service file updated at: ${SYSTEMD_DIR}/transclip.service"
-    echo "ExecStart: $(grep ExecStart ${SYSTEMD_DIR}/transclip.service)"
-    echo "WorkingDirectory: $(grep WorkingDirectory ${SYSTEMD_DIR}/transclip.service)"
-    exit 0
-fi
-
 # Create log files
+mkdir -p "${HOME}/.local/share/transclip"
 touch "${HOME}/.local/share/transclip/transclip.log"
 touch "${HOME}/.local/share/transclip/transclip.error.log"
 
-# Stop any existing service
-systemctl --user stop transclip.service || true
+if [ "$IS_MAC" = true ]; then
+    # macOS service setup with launchd
+    echo "Configuring launchd service for macOS..."
+    LAUNCH_AGENTS_DIR="${HOME}/Library/LaunchAgents"
+    mkdir -p "${LAUNCH_AGENTS_DIR}"
+    
+    # Get the current directory for the WorkingDirectory
+    CURRENT_DIR="$(pwd)"
+    
+    # Create plist file for launchd
+    cat > "${LAUNCH_AGENTS_DIR}/com.user.transclip.plist" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.transclip</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${VENV_PATH}/bin/python</string>
+        <string>-m</string>
+        <string>transclip</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>${CURRENT_DIR}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>${PATH}:/usr/local/bin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>${HOME}/.local/share/transclip/transclip.log</string>
+    <key>StandardErrorPath</key>
+    <string>${HOME}/.local/share/transclip/transclip.error.log</string>
+</dict>
+</plist>
+EOF
 
-# Install systemd service
-echo "Installing systemd service..."
-systemctl --user daemon-reload
-systemctl --user enable transclip.service
-systemctl --user start transclip.service
-
-echo -e "\nTransClip has been installed successfully!"
-echo "The application will start automatically on system startup."
-echo "You can control the service with:"
-echo "  Start:   systemctl --user start transclip"
-echo "  Stop:    systemctl --user stop transclip"
-echo "  Restart: systemctl --user restart transclip"
-echo "  Status:  systemctl --user status transclip"
-echo -e "\nLog files are located at:"
-echo "  ${HOME}/.local/share/transclip/transclip.log"
-echo "  ${HOME}/.local/share/transclip/transclip.error.log" 
+    # Load the service
+    echo "Installing and starting the launchd service..."
+    launchctl unload "${LAUNCH_AGENTS_DIR}/com.user.transclip.plist" 2>/dev/null || true
+    launchctl load -w "${LAUNCH_AGENTS_DIR}/com.user.transclip.plist"
+    
+    echo -e "\nTransClip has been installed successfully on macOS!"
+    echo "The application will start automatically on system startup."
+    echo "You can control the service with:"
+    echo "  Start:   launchctl load -w ~/Library/LaunchAgents/com.user.transclip.plist"
+    echo "  Stop:    launchctl unload -w ~/Library/LaunchAgents/com.user.transclip.plist"
+    echo "  Restart: launchctl unload ~/Library/LaunchAgents/com.user.transclip.plist && launchctl load -w ~/Library/LaunchAgents/com.user.transclip.plist"
+    echo -e "\nLog files are located at:"
+    echo "  ${HOME}/.local/share/transclip/transclip.log"
+    echo "  ${HOME}/.local/share/transclip/transclip.error.log"
+    
+else
+    # Linux systemd service setup
+    echo "Configuring systemd service for Linux..."
+    SYSTEMD_DIR="${HOME}/.config/systemd/user"
+    mkdir -p "${SYSTEMD_DIR}"
+    mkdir -p "${HOME}/.config/transclip"
+    
+    # Get the current directory for the WorkingDirectory
+    CURRENT_DIR="$(pwd)"
+    
+    # Copy the systemd service file
+    cp transclip.service "${SYSTEMD_DIR}/transclip.service"
+    
+    # Update the service file with the correct paths
+    sed -i "s|ExecStart=.*|ExecStart=${VENV_PATH}/bin/python -m transclip|g" "${SYSTEMD_DIR}/transclip.service"
+    sed -i "s|WorkingDirectory=.*|WorkingDirectory=${CURRENT_DIR}|g" "${SYSTEMD_DIR}/transclip.service"
+    # If WorkingDirectory line doesn't exist, add it after ExecStart
+    if ! grep -q "WorkingDirectory" "${SYSTEMD_DIR}/transclip.service"; then
+        sed -i "/ExecStart=.*/a WorkingDirectory=${CURRENT_DIR}" "${SYSTEMD_DIR}/transclip.service"
+    fi
+    sed -i "s|Environment=PATH=.*|Environment=PATH=${PATH}:/usr/local/bin|g" "${SYSTEMD_DIR}/transclip.service"
+    
+    if [ "$TEST_SERVICE_CONFIG" = true ]; then
+        echo "Service configuration test complete."
+        echo "Service file updated at: ${SYSTEMD_DIR}/transclip.service"
+        echo "ExecStart: $(grep ExecStart ${SYSTEMD_DIR}/transclip.service)"
+        echo "WorkingDirectory: $(grep WorkingDirectory ${SYSTEMD_DIR}/transclip.service)"
+        exit 0
+    fi
+    
+    # Stop any existing service
+    systemctl --user stop transclip.service || true
+    
+    # Install systemd service
+    echo "Installing systemd service..."
+    systemctl --user daemon-reload
+    systemctl --user enable transclip.service
+    systemctl --user start transclip.service
+    
+    echo -e "\nTransClip has been installed successfully on Linux!"
+    echo "The application will start automatically on system startup."
+    echo "You can control the service with:"
+    echo "  Start:   systemctl --user start transclip"
+    echo "  Stop:    systemctl --user stop transclip"
+    echo "  Restart: systemctl --user restart transclip"
+    echo "  Status:  systemctl --user status transclip"
+    echo -e "\nLog files are located at:"
+    echo "  ${HOME}/.local/share/transclip/transclip.log"
+    echo "  ${HOME}/.local/share/transclip/transclip.error.log"
+fi 
