@@ -6,19 +6,23 @@ The application uses the Whisper model for speech-to-text conversion.
 """
 
 import logging
+import os
+import signal
 import subprocess
 import sys
+import threading
 import time
+import traceback
 from collections import deque
 from enum import StrEnum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union, cast
 
 import numpy as np
 import pyperclip
 import sounddevice as sd
 from faster_whisper import WhisperModel
 from pynput import keyboard
-from PyQt5.QtCore import QObject, QThread, pyqtSignal
+from PyQt5.QtCore import QObject, QThread, QTimer, pyqtSignal
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (
     QActionGroup,
@@ -31,15 +35,31 @@ from PyQt5.QtWidgets import (
     QSystemTrayIcon,
     QVBoxLayout,
 )
-from scipy import signal
+from scipy import signal as scipy_signal
 
 # Set up logging
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - [Line %(lineno)d] - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - [Line %(lineno)d] - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("transclip.log")
+    ]
 )
 logger = logging.getLogger(__name__)
 
+# Global emergency signal handler to prevent crashes
+def emergency_signal_handler(signum, frame):
+    """Handle signals that might terminate the application unexpectedly."""
+    sig_name = signal.Signals(signum).name
+    logger.critical(f"Received signal {sig_name} ({signum}), stack trace follows:")
+    logger.critical(''.join(traceback.format_stack(frame)))
+    logger.critical("NOT exiting, continuing execution")
+    # Do not call sys.exit() here - we want to prevent termination
+
+# Install emergency signal handlers
+signal.signal(signal.SIGINT, emergency_signal_handler)
+signal.signal(signal.SIGTERM, emergency_signal_handler)
 
 class WhisperModelType(StrEnum):
     """Available Whisper model types with their parameter sizes.
@@ -170,47 +190,122 @@ class TransClip(QObject):
     Uses a system tray icon for user interaction.
     """
 
-    def __init__(self, model_type: WhisperModelType = DEFAULT_MODEL_TYPE):
-        """Initialize the TransClip application.
+    def __init__(self, model_type: WhisperModelType = DEFAULT_MODEL_TYPE) -> None:
+        """Initialize the application.
 
         Args:
-            model_type: The Whisper model type to use for transcription.
-                Defaults to WhisperModelType.BASE.
+            model_type: The Whisper model type to use.
         """
         super().__init__()
-        self.app = QApplication(sys.argv)
-        self.recording = False
-        self.key_pressed = False
-        self.key_cooldown = 0.5  # seconds
-        self.last_recording_time: float = 0.0  # Timestamp for the last recording cycle
-        self.audio_data: List[np.ndarray] = []  # Add type annotation
-        self.processing = False  # Flag to track if we're processing audio
-        self.stream: Optional[sd.InputStream] = None
-        self.transcription_worker: Optional[TranscriptionWorker] = None
-        self.tray: Optional[QSystemTrayIcon] = None
+
+        # Initialize instance variables with proper type annotations
+        self.recording_key: Union[keyboard.Key, keyboard.KeyCode] = DEFAULT_RECORDING_KEY
         self.listener: Optional[keyboard.Listener] = None
+        self._listener_changing: bool = False
+        self._listener_restart_complete: bool = True
+        self.tray: Optional[QSystemTrayIcon] = None
+        self.app: Optional[QApplication] = None
 
-        # Store recent transcriptions
-        self.recent_transcriptions: deque[str] = deque(maxlen=5)
-        self.recording_key = DEFAULT_RECORDING_KEY  # Default recording key
-
-        self.current_model_type = model_type  # Store the current model type
-
-        # Initialize Whisper model
-        logger.info("Initializing Whisper model")
         try:
-            self.model = WhisperModel(
-                model_type,  # Use the provided model type
-                device="cuda" if self.has_cuda() else "cpu",
-                compute_type="float16" if self.has_cuda() else "float32"
-            )
-            logger.info(f"Using model: {WhisperModelType.get_description(model_type)}")
+            # Set up signal handlers to log signals received
+            signal.signal(signal.SIGTERM, self._signal_handler)
+            signal.signal(signal.SIGINT, self._signal_handler)
+
+            # Log process and thread info
+            self._log_process_info()
+
+            self.app = QApplication(sys.argv)
+            self.recording = False
+            self.key_pressed = False
+            self.key_cooldown = 0.5  # seconds
+            self.last_recording_time: float = 0.0  # Timestamp for the last recording cycle
+            self.audio_data: List[np.ndarray] = []  # Add type annotation
+            self.processing = False  # Flag to track if we're processing audio
+            self.stream: Optional[sd.InputStream] = None
+            self.transcription_worker: Optional[TranscriptionWorker] = None
+            self.current_model_type = model_type  # Store the current model type
+
+            # Store recent transcriptions
+            self.recent_transcriptions: deque[str] = deque(maxlen=5)
+
+            # Initialize Whisper model
+            logger.info("Initializing Whisper model")
+            try:
+                self.model = WhisperModel(
+                    model_type,  # Use the provided model type
+                    device="cuda" if self.has_cuda() else "cpu",
+                    compute_type="float16" if self.has_cuda() else "float32"
+                )
+                logger.info(f"Using model: {WhisperModelType.get_description(model_type)}")
+            except Exception as e:
+                logger.error(f"Failed to initialize Whisper model: {e}")
+                sys.exit(1)
+
+            self.init_tray()
+            self.init_keyboard_listener()
+
+            # Set up an exit handler for the Qt application
+            self.app.aboutToQuit.connect(self._on_app_quit)
         except Exception as e:
-            logger.error(f"Failed to initialize Whisper model: {e}")
+            logger.error(f"Error initializing TransClip: {e}", exc_info=True)
             sys.exit(1)
 
-        self.init_tray()
-        self.init_keyboard_listener()
+    def _signal_handler(self, signum, frame):
+        """Handle signals to log what's happening.
+
+        Args:
+            signum: The signal number
+            frame: The current stack frame
+        """
+        signal_names = {
+            signal.SIGTERM: "SIGTERM",
+            signal.SIGINT: "SIGINT"
+        }
+        signal_name = signal_names.get(signum, f"Signal {signum}")
+        logger.warning(f"Received {signal_name}. Process will terminate.")
+        self._log_process_info()
+
+    def _log_process_info(self):
+        """Log detailed process and thread information for debugging."""
+        try:
+            # Log basic process info
+            pid = os.getpid()
+            logger.info(f"Process ID: {pid}")
+
+            # Log thread info
+            main_thread = threading.main_thread()
+            current_thread = threading.current_thread()
+            all_threads = threading.enumerate()
+
+            logger.info(f"Main thread: {main_thread.name} (ID: {main_thread.ident})")
+            logger.info(f"Current thread: {current_thread.name} (ID: {current_thread.ident})")
+            logger.info("All threads:")
+            for thread in all_threads:
+                logger.info(f"  - {thread.name} (ID: {thread.ident}, Daemon: {thread.daemon})")
+        except Exception as e:
+            logger.error(f"Error logging process info: {e}")
+
+    def _on_app_quit(self) -> None:
+        """Clean up resources when the application is about to quit."""
+        logger.info("Application is exiting, cleaning up resources")
+
+        # Clean up resources before exiting
+        try:
+            self.stop_listening()
+        except Exception as e:
+            logger.error(f"Error stopping listener during exit: {e}")
+
+        try:
+            if self.stream:
+                self.stream.close()
+        except Exception as e:
+            logger.error(f"Error closing stream during exit: {e}")
+
+        # Ensure the application exits cleanly
+        if self.app is not None:
+            # Use cast to tell the type checker this is definitely a QApplication
+            app = cast(QApplication, self.app)
+            app.quit()
 
     def has_cuda(self) -> bool:
         """Check if CUDA is available for GPU acceleration.
@@ -250,7 +345,9 @@ class TransClip(QObject):
 
         # Add direct model selection actions to main menu
         menu.addSeparator()
-        menu.addAction("🔊 Select Transcription Model:").setEnabled(False)
+        model_header_action = menu.addAction("🔊 Select Transcription Model:")
+        assert model_header_action is not None
+        model_header_action.setEnabled(False)
 
         # Add model options
         model_group = QActionGroup(self)
@@ -277,9 +374,15 @@ class TransClip(QObject):
 
         logger.debug("Added model options directly to main menu")
 
-        # Add separator before quit
+        # Add separator before restart and quit
         menu.addSeparator()
         logger.debug("Added separator")
+
+        # Add restart action
+        restart_action = menu.addAction('🔄 Restart')
+        assert restart_action is not None
+        restart_action.triggered.connect(self.restart)
+        logger.debug("Added restart action")
 
         # Add quit action
         quit_action = menu.addAction('Quit')
@@ -302,11 +405,17 @@ class TransClip(QObject):
         Sets up a keyboard listener to detect when the Home key is pressed
         to start and stop recording.
         """
-        self.listener = keyboard.Listener(
-            on_press=self.on_press,
-            on_release=self.on_release
-        )
-        self.listener.start()
+        try:
+            logger.info("Initializing keyboard listener")
+            self.listener = keyboard.Listener(
+                on_press=self.on_press,
+                on_release=self.on_release,
+                daemon=True  # Set as daemon thread so it doesn't keep app alive
+            )
+            self.listener.start()
+            logger.info(f"Keyboard listener started for key: {getattr(self.recording_key, 'name', str(self.recording_key))}")
+        except Exception as e:
+            logger.error(f"Error initializing keyboard listener: {e}", exc_info=True)
 
     def on_press(self, key: Any) -> None:
         """Handle key press events.
@@ -326,8 +435,12 @@ class TransClip(QObject):
                 logger.info(f"Time since last recording: {current_time - self.last_recording_time:.2f}s")
                 self.key_pressed = True  # Mark key as pressed
                 self.start_recording()
-        except AttributeError:
-            pass
+        except AttributeError as e:
+            # This might happen with special keys
+            logger.debug(f"AttributeError in on_press: {e}")
+        except Exception as e:
+            # Log other errors but don't crash
+            logger.error(f"Error in on_press: {e}", exc_info=True)
 
     def on_release(self, key: Any) -> None:
         """Handle key release events.
@@ -341,8 +454,12 @@ class TransClip(QObject):
                 self.key_pressed = False  # Reset key press state
                 self.last_recording_time = time.time()  # Update timestamp after complete cycle
                 self.stop_recording()
-        except AttributeError:
-            pass
+        except AttributeError as e:
+            # This might happen with special keys
+            logger.debug(f"AttributeError in on_release: {e}")
+        except Exception as e:
+            # Log other errors but don't crash
+            logger.error(f"Error in on_release: {e}", exc_info=True)
 
     def start_recording(self) -> None:
         """Start recording audio from the default input device.
@@ -445,7 +562,9 @@ class TransClip(QObject):
             logger.exception(f"Error stopping recording: {e}")
 
         if self.tray:
-            self.tray.setIcon(QIcon.fromTheme("audio-input-microphone"))
+            # Change icon to indicate processing/transcribing state
+            self.tray.setIcon(QIcon.fromTheme("view-refresh"))
+            # Alternatively use: self.tray.setIcon(QIcon.fromTheme("system-run"))
 
         # Convert audio data to numpy array
         if not self.audio_data:
@@ -482,7 +601,7 @@ class TransClip(QObject):
 
                 # Resample audio to 16000 Hz for Whisper
                 if device_sample_rate != 16000:
-                    audio = signal.resample(audio, int(len(audio) * 16000 / device_sample_rate))
+                    audio = scipy_signal.resample(audio, int(len(audio) * 16000 / device_sample_rate))
                     logger.info(f"Resampled audio from {device_sample_rate}Hz to 16000Hz, new shape: {audio.shape}")
 
                 # Start transcription in a separate thread
@@ -512,6 +631,10 @@ class TransClip(QObject):
             logger.debug(f"Received text: '{text}'")
 
             self.processing = False  # Reset processing flag
+
+            # Change icon back to default
+            if self.tray:
+                self.tray.setIcon(QIcon.fromTheme("audio-input-microphone"))
 
             if text:
                 # Store the transcription in recent list
@@ -565,17 +688,139 @@ class TransClip(QObject):
 
         Stops recording if active and exits the application.
         """
+        logger.info("Quitting application")
+        try:
+            # Stop recording if active
+            if self.recording:
+                logger.info("Stopping recording before quitting")
+                self.stop_recording()
+
+            # Clean up keyboard listener
+            if self.listener:
+                logger.info("Stopping keyboard listener")
+                try:
+                    self.listener.stop()
+                except Exception as e:
+                    logger.error(f"Error stopping listener during quit: {e}")
+
+            logger.info("Quitting application")
+            # Use cast to tell the type checker this is definitely a QApplication
+            app = cast(QApplication, self.app)
+            app.quit()
+        except Exception as e:
+            logger.error(f"Error during application quit: {e}", exc_info=True)
+            # Force quit
+            # Use cast to tell the type checker this is definitely a QApplication
+            app = cast(QApplication, self.app)
+            app.quit()
+
+    def restart(self) -> None:
+        """Restart the application.
+
+        Stops recording if active, quits the current instance,
+        and starts a new instance of the application.
+        """
         if self.recording:
             self.stop_recording()
-        self.app.quit()
+
+        logger.info("Restarting application...")
+
+        # Get the path to the current executable
+        executable = sys.executable
+        args = sys.argv.copy()
+
+        # Prepare to restart by using execv
+        logger.info(f"Restarting with: {executable} {' '.join(args)}")
+
+        # Show notification before restart
+        if self.tray:
+            self.tray.showMessage(
+                'TransClip',
+                'Restarting application...',
+                QSystemTrayIcon.Information,
+                1000
+            )
+
+        # Small delay to allow notification to show
+        time.sleep(0.5)
+
+        # Quit the current instance
+        # Use cast to tell the type checker this is definitely a QApplication
+        app = cast(QApplication, self.app)
+        app.quit()
+
+        # Start a new process
+        try:
+            os.execv(executable, [executable] + args)
+        except Exception as e:
+            logger.error(f"Failed to restart: {e}")
+            # If restart fails, try to start a new process instead
+            try:
+                subprocess.Popen([executable] + args)
+                sys.exit(0)
+            except Exception as e2:
+                logger.error(f"Failed to start new process: {e2}")
 
     def run(self) -> int:
         """Run the application.
-
+        
         Returns:
-            int: The application exit code.
+            The exit code from the Qt event loop.
         """
-        return self.app.exec_()
+        logger.info("Starting application run")
+
+        # Initialize listener change flag
+        self._listener_changing = False
+        self._listener_restart_complete = True
+
+        # Create a QTimer to periodically check the state of the application
+        # This helps keep the main event loop alive and detects problems
+        def check_app_health():
+            logger.debug("Health check: Application is running")
+            self._check_thread_health()
+
+        # Setup periodic health check timer
+        health_timer = QTimer()
+        health_timer.timeout.connect(check_app_health)
+        health_timer.start(5000)  # Check every 5 seconds
+
+        # Install exit handlers
+        original_excepthook = sys.excepthook
+        def exception_handler(exc_type, exc_value, exc_traceback):
+            logger.critical("Unhandled exception:", exc_info=(exc_type, exc_value, exc_traceback))
+            return original_excepthook(exc_type, exc_value, exc_traceback)
+        sys.excepthook = exception_handler
+
+        logger.info("Starting Qt event loop")
+        if self.app is not None:
+            # Use cast to tell the type checker this is definitely a QApplication
+            app = cast(QApplication, self.app)
+            result = app.exec_()
+            logger.info(f"Qt event loop completed with result: {result}")
+            return result
+        else:
+            logger.error("Application instance is None, cannot run event loop")
+            return 1
+
+    def _check_thread_health(self):
+        """Check the health of important threads."""
+        try:
+            thread_count = threading.active_count()
+            if thread_count < 2 and not self._listener_changing:  # At least main thread + keyboard listener
+                logger.warning(f"Thread count is unexpectedly low: {thread_count}")
+
+            # Check keyboard listener specifically
+            if self.listener is None and not self._listener_changing:
+                logger.warning("Keyboard listener is None outside of a key change operation")
+                # Try to restart it
+                self.init_keyboard_listener()
+            elif not self._listener_changing and hasattr(self.listener, 'is_alive') and not self.listener.is_alive():
+                logger.warning("Keyboard listener thread is not alive")
+                # Try to restart it
+                self.init_keyboard_listener()
+
+        except Exception as e:
+            logger.error(f"Error in health check: {e}", exc_info=True)
 
     def __del__(self) -> None:
         """Destructor for TransClip.
@@ -583,6 +828,16 @@ class TransClip(QObject):
         Performs cleanup when the TransClip object is destroyed.
         """
         logger.info("TransClip object being destroyed")
+        try:
+            # Clean up keyboard listener if it exists
+            if hasattr(self, 'listener') and self.listener:
+                logger.info("Stopping keyboard listener in destructor")
+                try:
+                    self.listener.stop()
+                except Exception as e:
+                    logger.error(f"Error stopping listener in destructor: {e}")
+        except Exception as e:
+            logger.error(f"Error in TransClip destructor: {e}")
 
     def store_transcription(self, text: str) -> None:
         """Store a transcription in the recent transcriptions list.
@@ -705,6 +960,7 @@ class TransClip(QObject):
         """
         dialog = QDialog()
         dialog.setWindowTitle("Configure Key Binding")
+        dialog.setMinimumWidth(300)  # Set minimum width for better usability
 
         layout = QVBoxLayout()
 
@@ -721,13 +977,21 @@ class TransClip(QObject):
         key_button = QPushButton("Press to record new key...")
         layout.addWidget(key_button)
 
+        # Status label
+        status_label = QLabel("")
+        status_label.setStyleSheet("color: gray;")
+        layout.addWidget(status_label)
+
         # Variable to store the new key
         new_key = [None]  # Use a list to allow modification in the inner function
+        temp_listener = [None]  # Store the temporary listener
 
         # Function to handle key press in the dialog
         def on_key_capture():
             key_button.setText("Press any key...")
             key_button.setEnabled(False)
+            status_label.setText("Waiting for key press...")
+            status_label.setStyleSheet("color: blue;")
 
             # Create a temporary keyboard listener
             def on_dialog_key_press(key):
@@ -735,11 +999,33 @@ class TransClip(QObject):
                 key_name = getattr(key, 'name', str(key))
                 key_button.setText(f"Key captured: {key_name}")
                 key_button.setEnabled(True)
+                status_label.setText(f"Captured key: {key_name}")
+                status_label.setStyleSheet("color: green;")
+
+                # Stop the listener properly
+                if temp_listener[0] is not None:
+                    temp_listener[0].stop()
                 return False  # Stop listener
 
             # Start temporary listener
-            temp_listener = keyboard.Listener(on_press=on_dialog_key_press)
-            temp_listener.start()
+            try:
+                # Stop existing listener if any
+                if temp_listener[0] is not None:
+                    temp_listener[0].stop()
+
+                # Create new listener
+                temp_listener[0] = keyboard.Listener(
+                    on_press=on_dialog_key_press,
+                    daemon=True  # Set as daemon thread
+                )
+                temp_listener[0].start()
+                logger.debug("Started temporary key capture listener")
+            except Exception as e:
+                logger.error(f"Error creating temporary key listener: {e}")
+                key_button.setText("Error capturing key")
+                key_button.setEnabled(True)
+                status_label.setText(f"Error: {str(e)}")
+                status_label.setStyleSheet("color: red;")
 
         # Connect button to key capture function
         key_button.clicked.connect(on_key_capture)
@@ -757,34 +1043,194 @@ class TransClip(QObject):
 
         # Connect buttons
         def on_save():
+            # Make sure we stop the temporary listener
+            if temp_listener[0] is not None:
+                try:
+                    temp_listener[0].stop()
+                except Exception as e:
+                    logger.error(f"Error stopping temporary listener: {e}")
+
             if new_key[0] is not None:
-                self.change_recording_key(new_key[0])
-            dialog.accept()
+                # Show saving indicator
+                status_label.setText("Saving key binding...")
+                status_label.setStyleSheet("color: blue;")
+                save_button.setEnabled(False)
+                cancel_button.setEnabled(False)
+
+                # Use QTimer to delay dialog closure to allow Qt event processing
+                def complete_save():
+                    self.change_recording_key(new_key[0])
+                    dialog.accept()
+
+                # Use a short delay to allow UI to update
+                QTimer.singleShot(200, complete_save)
+            else:
+                dialog.accept()
+
+        def on_cancel():
+            # Make sure we stop the temporary listener
+            if temp_listener[0] is not None:
+                try:
+                    temp_listener[0].stop()
+                except Exception as e:
+                    logger.error(f"Error stopping temporary listener: {e}")
+            dialog.reject()
 
         save_button.clicked.connect(on_save)
-        cancel_button.clicked.connect(dialog.reject)
+        cancel_button.clicked.connect(on_cancel)
+
+        # Handle dialog close events to ensure listener is stopped
+        dialog.finished.connect(lambda: temp_listener[0] and temp_listener[0].stop())
 
         # Show dialog
         dialog.exec_()
 
-    def change_recording_key(self, key: Any) -> None:
+    def _finish_listener_restart(self, old_listener, key_name):
+        """Finish the listener restart process.
+
+        Args:
+            old_listener: The old keyboard listener to stop.
+            key_name: The name of the new key for notification purposes.
+        """
+        try:
+            # Create the new listener
+            logger.info("Creating new keyboard listener")
+            self.init_keyboard_listener()
+            logger.info(f"New listener created and started: {self.listener}")
+
+            # Now we can stop the old listener more safely
+            if old_listener:
+                logger.info("Stopping the old keyboard listener")
+                try:
+                    # Try to stop the listener gracefully
+                    old_listener.stop()
+                    logger.info("Old listener stopped successfully")
+                    # Give it a moment to clean up
+                    time.sleep(0.1)
+                except Exception as stop_e:
+                    logger.error(f"Error stopping keyboard listener: {stop_e}", exc_info=True)
+
+            # Log final state
+            logger.info("=== KEYBOARD LISTENER RESTART COMPLETE ===")
+            logger.info(f"Thread counts after restart: {threading.active_count()}")
+            self._log_process_info()
+
+            # Clear the protective flag
+            self._listener_changing = False
+            self._listener_restart_complete = True
+
+            # Show notification only after everything is complete
+            if self.tray:
+                self.tray.showMessage(
+                    'TransClip',
+                    f'Recording key changed to: {key_name}',
+                    QSystemTrayIcon.Information,
+                    2000
+                )
+        except Exception as e:
+            logger.error(f"Error in _finish_listener_restart: {e}", exc_info=True)
+            self._listener_changing = False
+
+            if self.tray:
+                self.tray.showMessage(
+                    'TransClip',
+                    f'Error finalizing keyboard listener restart: {str(e)}',
+                    QSystemTrayIcon.Critical,
+                    2000
+                )
+
+    def change_recording_key(self, key: Union[keyboard.Key, keyboard.KeyCode]) -> None:
         """Change the key used for recording.
 
         Args:
             key: The new key to use for recording.
         """
-        self.recording_key = key
-        key_name = getattr(key, 'name', str(key))
-        logger.info(f"Changed recording key to: {key_name}")
+        try:
+            # Log the state before changing keys
+            logger.info("=== STARTING KEY CHANGE OPERATION ===")
+            logger.info(f"Thread counts before key change: {threading.active_count()}")
+            self._log_process_info()
 
-        # Show notification
-        if self.tray:
-            self.tray.showMessage(
-                'TransClip',
-                f'Recording key changed to: {key_name}',
-                QSystemTrayIcon.Information,
-                2000
-            )
+            # Store the new key
+            old_key_name = getattr(self.recording_key, 'name', str(self.recording_key))
+            self.recording_key = key
+            key_name = getattr(key, 'name', str(key))
+            logger.info(f"Changed recording key from {old_key_name} to {key_name}")
+
+            # Create a flag to track listener restart status
+            self._listener_restart_complete = False
+
+            # Define a function to restart the listener
+            def restart_listener():
+                try:
+                    logger.info("=== RESTARTING KEYBOARD LISTENER ===")
+                    logger.info(f"Thread counts during restart: {threading.active_count()}")
+
+                    # Store reference to the old listener
+                    old_listener = self.listener
+                    old_listener_alive = old_listener.is_alive() if old_listener else False
+                    logger.info(f"Old listener alive: {old_listener_alive}")
+
+                    # Set a temporary protective flag
+                    self._listener_changing = True
+
+                    # Create a new listener with the updated key FIRST
+                    # This ensures we have a new listener ready before stopping the old one
+                    logger.info("Creating new keyboard listener with updated key binding")
+
+                    # Set listener to None first to help with garbage collection
+                    self.listener = None
+
+                    # Wait a moment to ensure the old listener is properly dereferenced
+                    QTimer.singleShot(50, lambda: self._finish_listener_restart(old_listener, key_name))
+
+                except Exception as e:
+                    logger.error(f"Error in restart_listener: {e}", exc_info=True)
+                    logger.info("=== ERROR IN KEYBOARD LISTENER RESTART ===")
+                    self._log_process_info()
+                    self._listener_changing = False
+
+                    if self.tray:
+                        self.tray.showMessage(
+                            'TransClip',
+                            f'Failed to restart keyboard listener: {str(e)}',
+                            QSystemTrayIcon.Critical,
+                            2000
+                        )
+
+            # Set up protective flag before scheduling any async operations
+            self._listener_changing = True
+
+            # Use a single-shot timer to handle the listener restart
+            # This ensures we return to Qt's event loop before restarting the listener
+            logger.info("Scheduling listener restart with QTimer")
+            QTimer.singleShot(100, restart_listener)
+            logger.info("QTimer setup complete. Control returning to event loop.")
+
+            # Add a timeout to ensure we don't leave the app in an inconsistent state
+            def check_restart_completion():
+                if not self._listener_restart_complete:
+                    logger.warning("Listener restart timed out - forcing cleanup")
+                    self._listener_changing = False
+                    if self.listener is None:
+                        logger.warning("Recreating listener after timeout")
+                        self.init_keyboard_listener()
+
+            QTimer.singleShot(5000, check_restart_completion)
+
+        except Exception as e:
+            logger.error(f"Error changing recording key: {e}", exc_info=True)
+            logger.info("=== ERROR IN KEY CHANGE OPERATION ===")
+            self._log_process_info()
+            self._listener_changing = False
+
+            if self.tray:
+                self.tray.showMessage(
+                    'TransClip',
+                    f'Failed to change recording key: {str(e)}',
+                    QSystemTrayIcon.Critical,
+                    2000
+                )
 
 def main() -> int:
     """Start the application.
@@ -793,10 +1239,45 @@ def main() -> int:
         int: Exit code, 0 for success, 1 for error.
     """
     try:
+        # Set up essential exception handling
+        def log_unhandled_exception(exc_type, exc_value, exc_traceback):
+            logger.critical("Unhandled exception in main thread:",
+                           exc_info=(exc_type, exc_value, exc_traceback))
+            # Still call the original handler
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+
+        # Install the global exception hook
+        sys.excepthook = log_unhandled_exception
+
+        # Set application name for better integration
+        QApplication.setApplicationName("TransClip")
+        QApplication.setQuitOnLastWindowClosed(False)
+
+        # Set up the Qt application with additional safeguards
         app = TransClip(DEFAULT_MODEL_TYPE)
+
+        # Safety check to ensure we still have a working app
+        if not app.app or not app.app.instance():
+            logger.error("QApplication instance is not valid, cannot start TransClip")
+            return 1
+
+        # Run the application event loop with additional protection
+        logger.info("Starting TransClip application event loop")
         return app.run()
+
     except Exception as e:
-        logger.error(f"Application error: {e}")
+        logger.critical(f"Critical application error: {e}", exc_info=True)
+
+        # Try to clean up any lingering QApplication
+        try:
+            # Get the current QApplication instance if any
+            qapp = QApplication.instance()
+            if qapp:
+                logger.info("Quitting QApplication instance")
+                qapp.quit()
+        except Exception as cleanup_error:
+            logger.error(f"Error during cleanup: {cleanup_error}")
+
         return 1
 
 if __name__ == '__main__':
