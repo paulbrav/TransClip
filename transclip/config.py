@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
 CONFIG_DIR = CONFIG_HOME / "transclip"
@@ -9,6 +9,7 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "recording_key": "Key.home",
+    "auto_paste": False,
 }
 
 
@@ -19,7 +20,7 @@ def load_config() -> Dict[str, Any]:
     """
     try:
         with CONFIG_FILE.open("r", encoding="utf-8") as fh:
-            return json.load(fh)
+            return cast(Dict[str, Any], json.load(fh))
     except FileNotFoundError:
         return {}
     except Exception:

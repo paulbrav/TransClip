@@ -15,13 +15,15 @@ import time
 import traceback
 from collections import deque
 from enum import StrEnum
-from typing import Any, Dict, List, Optional, Union, cast
+from types import FrameType, TracebackType
+from typing import Any, Callable, Dict, List, Optional, Union, cast
 
 import numpy as np
 import pyperclip
 import sounddevice as sd
 from faster_whisper import WhisperModel
 from pynput import keyboard
+from pynput.keyboard import Controller
 from PyQt5.QtCore import QObject, QThread, QTimer, pyqtSignal
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (
@@ -51,7 +53,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Global emergency signal handler to prevent crashes
-def emergency_signal_handler(signum, frame):
+def emergency_signal_handler(signum: int, frame: Optional[FrameType]) -> None:
     """Handle signals that might terminate the application unexpectedly."""
     sig_name = signal.Signals(signum).name
     logger.critical(f"Received signal {sig_name} ({signum}), stack trace follows:")
@@ -119,7 +121,7 @@ SAMPLE_RATE: int = 44100  # Hz - Changed to match default device sample rate
 CHANNELS: int = 1
 DTYPE = np.float32  # Remove explicit type annotation that causes mypy error
 
-class TranscriptionWorker(QThread):
+class TranscriptionWorker(QThread):  # type: ignore[misc]
     """Worker thread for handling audio transcription.
 
     This class runs the Whisper model in a separate thread to avoid blocking
@@ -187,7 +189,7 @@ class TranscriptionWorker(QThread):
             self.finished.emit("")
             logger.info("Empty signal emitted due to error")
 
-class TransClip(QObject):
+class TransClip(QObject):  # type: ignore[misc]
     """Main TransClip application class.
 
     Handles audio recording, transcription, and clipboard integration.
@@ -214,6 +216,7 @@ class TransClip(QObject):
                 self.recording_key = DEFAULT_RECORDING_KEY
         except Exception:
             self.recording_key = DEFAULT_RECORDING_KEY
+        self.auto_paste: bool = bool(config.get("auto_paste", False))
         self.listener: Optional[keyboard.Listener] = None
         self._listener_changing: bool = False
         self._listener_restart_complete: bool = True
@@ -264,7 +267,7 @@ class TransClip(QObject):
             logger.error(f"Error initializing TransClip: {e}", exc_info=True)
             sys.exit(1)
 
-    def _signal_handler(self, signum, frame):
+    def _signal_handler(self, signum: int, frame: Optional[FrameType]) -> None:
         """Handle signals to log what's happening.
 
         Args:
@@ -279,7 +282,7 @@ class TransClip(QObject):
         logger.warning(f"Received {signal_name}. Process will terminate.")
         self._log_process_info()
 
-    def _log_process_info(self):
+    def _log_process_info(self) -> None:
         """Log detailed process and thread information for debugging."""
         try:
             # Log basic process info
@@ -357,6 +360,14 @@ class TransClip(QObject):
         key_binding_action.triggered.connect(self.show_key_binding_dialog)
         logger.debug("Added key binding action to main menu")
 
+        # Auto paste toggle
+        self.auto_paste_action = menu.addAction("📋 Auto Paste After Transcription")
+        assert self.auto_paste_action is not None
+        self.auto_paste_action.setCheckable(True)
+        self.auto_paste_action.setChecked(self.auto_paste)
+        self.auto_paste_action.triggered.connect(self.set_auto_paste)
+        logger.debug("Added auto paste action")
+
         # Add direct model selection actions to main menu
         menu.addSeparator()
         model_header_action = menu.addAction("🔊 Select Transcription Model:")
@@ -381,7 +392,7 @@ class TransClip(QObject):
             model_group.addAction(model_action)
 
             # Create a separate function for each model type to avoid lambda issues
-            def create_model_handler(m_type):
+            def create_model_handler(m_type: WhisperModelType) -> Callable[[bool], None]:
                 return lambda checked: self.change_model(m_type)
 
             model_action.triggered.connect(create_model_handler(model_type))
@@ -687,6 +698,9 @@ class TransClip(QObject):
                     if verification != text:
                         logger.error("Clipboard verification failed. Text may not be copied correctly.")
 
+                    if self.auto_paste:
+                        self.perform_paste()
+
                 except Exception as e:
                     logger.error(f"Failed to copy to clipboard: {e}")
 
@@ -798,7 +812,7 @@ class TransClip(QObject):
 
         # Create a QTimer to periodically check the state of the application
         # This helps keep the main event loop alive and detects problems
-        def check_app_health():
+        def check_app_health() -> None:
             logger.debug("Health check: Application is running")
             self._check_thread_health()
 
@@ -809,9 +823,16 @@ class TransClip(QObject):
 
         # Install exit handlers
         original_excepthook = sys.excepthook
-        def exception_handler(exc_type, exc_value, exc_traceback):
-            logger.critical("Unhandled exception:", exc_info=(exc_type, exc_value, exc_traceback))
-            return original_excepthook(exc_type, exc_value, exc_traceback)
+        def exception_handler(
+            exc_type: type[BaseException],
+            exc_value: BaseException,
+            exc_traceback: TracebackType | None,
+        ) -> None:
+            logger.critical(
+                "Unhandled exception:",
+                exc_info=(exc_type, exc_value, exc_traceback),
+            )
+            original_excepthook(exc_type, exc_value, exc_traceback)
         sys.excepthook = exception_handler
 
         logger.info("Starting Qt event loop")
@@ -825,7 +846,7 @@ class TransClip(QObject):
             logger.error("Application instance is None, cannot run event loop")
             return 1
 
-    def _check_thread_health(self):
+    def _check_thread_health(self) -> None:
         """Check the health of important threads."""
         try:
             thread_count = threading.active_count()
@@ -930,6 +951,28 @@ class TransClip(QObject):
         except Exception as e:
             logger.error(f"Failed to copy to clipboard: {e}")
 
+    def set_auto_paste(self, checked: bool) -> None:
+        """Toggle automatic paste after transcription."""
+        self.auto_paste = checked
+        config = {**load_config()}
+        config["auto_paste"] = self.auto_paste
+        save_config(config)
+
+    def perform_paste(self) -> None:
+        """Simulate the paste keyboard shortcut."""
+        try:
+            ctrl = Controller()
+            if sys.platform == "darwin":
+                with ctrl.pressed(keyboard.Key.cmd):
+                    ctrl.press('v')
+                    ctrl.release('v')
+            else:
+                with ctrl.pressed(keyboard.Key.ctrl):
+                    ctrl.press('v')
+                    ctrl.release('v')
+        except Exception as e:
+            logger.error(f"Failed to auto paste: {e}")
+
     def change_model(self, model_type: WhisperModelType) -> None:
         """Change the Whisper model being used.
 
@@ -1011,14 +1054,14 @@ class TransClip(QObject):
         temp_listener = [None]  # Store the temporary listener
 
         # Function to handle key press in the dialog
-        def on_key_capture():
+        def on_key_capture() -> None:
             key_button.setText("Press any key...")
             key_button.setEnabled(False)
             status_label.setText("Waiting for key press...")
             status_label.setStyleSheet("color: blue;")
 
             # Create a temporary keyboard listener
-            def on_dialog_key_press(key):
+            def on_dialog_key_press(key: Any) -> bool:
                 new_key[0] = key
                 key_name = getattr(key, 'name', str(key))
                 key_button.setText(f"Key captured: {key_name}")
@@ -1066,7 +1109,7 @@ class TransClip(QObject):
         dialog.setLayout(layout)
 
         # Connect buttons
-        def on_save():
+        def on_save() -> None:
             # Make sure we stop the temporary listener
             if temp_listener[0] is not None:
                 try:
@@ -1082,7 +1125,7 @@ class TransClip(QObject):
                 cancel_button.setEnabled(False)
 
                 # Use QTimer to delay dialog closure to allow Qt event processing
-                def complete_save():
+                def complete_save() -> None:
                     self.change_recording_key(new_key[0])
                     dialog.accept()
 
@@ -1091,7 +1134,7 @@ class TransClip(QObject):
             else:
                 dialog.accept()
 
-        def on_cancel():
+        def on_cancel() -> None:
             # Make sure we stop the temporary listener
             if temp_listener[0] is not None:
                 try:
@@ -1109,7 +1152,9 @@ class TransClip(QObject):
         # Show dialog
         dialog.exec_()
 
-    def _finish_listener_restart(self, old_listener, key_name):
+    def _finish_listener_restart(
+        self, old_listener: Optional[keyboard.Listener], key_name: str
+    ) -> None:
         """Finish the listener restart process.
 
         Args:
@@ -1189,7 +1234,7 @@ class TransClip(QObject):
             self._listener_restart_complete = False
 
             # Define a function to restart the listener
-            def restart_listener():
+            def restart_listener() -> None:
                 try:
                     logger.info("=== RESTARTING KEYBOARD LISTENER ===")
                     logger.info(f"Thread counts during restart: {threading.active_count()}")
@@ -1236,7 +1281,7 @@ class TransClip(QObject):
             logger.info("QTimer setup complete. Control returning to event loop.")
 
             # Add a timeout to ensure we don't leave the app in an inconsistent state
-            def check_restart_completion():
+            def check_restart_completion() -> None:
                 if not self._listener_restart_complete:
                     logger.warning("Listener restart timed out - forcing cleanup")
                     self._listener_changing = False
@@ -1268,7 +1313,11 @@ def main() -> int:
     """
     try:
         # Set up essential exception handling
-        def log_unhandled_exception(exc_type, exc_value, exc_traceback):
+        def log_unhandled_exception(
+            exc_type: type[BaseException],
+            exc_value: BaseException,
+            exc_traceback: TracebackType | None,
+        ) -> None:
             logger.critical("Unhandled exception in main thread:",
                            exc_info=(exc_type, exc_value, exc_traceback))
             # Still call the original handler
