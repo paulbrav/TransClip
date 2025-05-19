@@ -5,11 +5,11 @@ combinations.
 """
 
 from collections.abc import Callable
-from typing import cast
+from typing import TypeAlias, cast
 
 from pynput import keyboard
 
-KeyType = keyboard.Key | keyboard.KeyCode
+KeyType: TypeAlias = keyboard.Key | keyboard.KeyCode
 
 class HotkeyManager:
     """Manages hotkey configuration and detection."""

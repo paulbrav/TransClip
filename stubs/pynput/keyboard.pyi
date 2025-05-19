@@ -1,0 +1,13 @@
+from typing import Any, Callable
+
+class Key:
+    name: str
+
+class KeyCode:
+    @staticmethod
+    def from_char(char: str) -> 'KeyCode': ...
+
+class Listener:
+    def __init__(self, *, on_press: Callable[[Any], Any] | None = ..., on_release: Callable[[Any], Any] | None = ..., daemon: bool | None = ...): ...
+    def start(self) -> None: ...
+    def stop(self) -> None: ...

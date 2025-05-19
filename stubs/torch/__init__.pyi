@@ -1,0 +1,3 @@
+class cuda:
+    @staticmethod
+    def is_available() -> bool: ...
