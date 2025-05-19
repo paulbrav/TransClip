@@ -37,6 +37,8 @@ from PyQt5.QtWidgets import (
 )
 from scipy import signal as scipy_signal
 
+from .config import DEFAULT_CONFIG, load_config, save_config
+
 # Set up logging
 logging.basicConfig(
     level=logging.DEBUG,
@@ -74,6 +76,7 @@ class WhisperModelType(StrEnum):
     LARGE = "large"    # 1.5B parameters
     LARGE_V2 = "large-v2"  # 1.5B parameters (improved version)
     LARGE_V3 = "large-v3"  # 1.5B parameters (latest improved version)
+    PARAKEET_TDT_0_6B_V2 = "nvidia/parakeet-tdt-0.6b-v2"  # 0.6B parameters (NVIDIA Parakeet)
 
     @classmethod
     def get_description(cls, model_type: 'WhisperModelType') -> str:
@@ -92,7 +95,8 @@ class WhisperModelType(StrEnum):
             cls.MEDIUM: "Medium (769M parameters)",
             cls.LARGE: "Large (1.5B parameters)",
             cls.LARGE_V2: "Large-v2 (1.5B parameters, improved)",
-            cls.LARGE_V3: "Large-v3 (1.5B parameters, latest)"
+            cls.LARGE_V3: "Large-v3 (1.5B parameters, latest)",
+            cls.PARAKEET_TDT_0_6B_V2: "Parakeet TDT 0.6B v2 (NVIDIA)"
         }
         return descriptions[model_type]
 
@@ -199,7 +203,17 @@ class TransClip(QObject):
         super().__init__()
 
         # Initialize instance variables with proper type annotations
-        self.recording_key: Union[keyboard.Key, keyboard.KeyCode] = DEFAULT_RECORDING_KEY
+        config = {**DEFAULT_CONFIG, **load_config()}
+        key_str = config.get("recording_key", "Key.home")
+        try:
+            if isinstance(key_str, str) and key_str.startswith("Key."):
+                self.recording_key = getattr(keyboard.Key, key_str[4:])
+            elif isinstance(key_str, str):
+                self.recording_key = keyboard.KeyCode.from_char(key_str)
+            else:
+                self.recording_key = DEFAULT_RECORDING_KEY
+        except Exception:
+            self.recording_key = DEFAULT_RECORDING_KEY
         self.listener: Optional[keyboard.Listener] = None
         self._listener_changing: bool = False
         self._listener_restart_complete: bool = True
@@ -413,8 +427,10 @@ class TransClip(QObject):
                 daemon=True  # Set as daemon thread so it doesn't keep app alive
             )
             self.listener.start()
+
             key_name = getattr(self.recording_key, 'name', str(self.recording_key))
             logger.info(f"Keyboard listener started for key: {key_name}")
+
         except Exception as e:
             logger.error(f"Error initializing keyboard listener: {e}", exc_info=True)
 
@@ -1164,6 +1180,10 @@ class TransClip(QObject):
             self.recording_key = key
             key_name = getattr(key, 'name', str(key))
             logger.info(f"Changed recording key from {old_key_name} to {key_name}")
+
+            config = {**load_config()}
+            config["recording_key"] = key_name
+            save_config(config)
 
             # Create a flag to track listener restart status
             self._listener_restart_complete = False

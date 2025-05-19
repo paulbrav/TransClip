@@ -116,6 +116,10 @@ You can change the Whisper model by right-clicking the system tray icon and sele
 
 You can change the recording key by right-clicking the system tray icon and selecting "⌨ Configure Key Binding...".
 
+The chosen key is stored in `~/.config/transclip/config.json` using the
+XDG Base Directory convention so it persists across sessions. You can edit this
+file manually if you want to set the key outside of the application.
+
 ### Accessing Recent Transcriptions
 
 The system tray menu also provides access to recent transcriptions, which you can select to copy again to the clipboard.
@@ -134,7 +138,7 @@ During installation, the base Whisper model is downloaded automatically. You can
 # Activate the virtual environment
 source ~/.local/share/transclip/venv/bin/activate
 
-# Download a specific model (tiny, base, small, medium, large, large-v2, large-v3)
+# Download a specific model (tiny, base, small, medium, large, large-v2, large-v3, parakeet-tdt-0.6b-v2)
 python -m transclip.download_models --model small
 ```
 
@@ -145,6 +149,7 @@ Available models:
 - `medium`: ~1.5GB (slower, more accurate)
 - `large`: ~3GB (slowest, most accurate)
 - `large-v2`, `large-v3`: ~3GB (improved large models)
+- `parakeet-tdt-0.6b-v2`: ~1.2GB (NVIDIA Parakeet model)
 
 ## Development
 
