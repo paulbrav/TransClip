@@ -413,9 +413,19 @@ class TransClip(QObject):
                 daemon=True  # Set as daemon thread so it doesn't keep app alive
             )
             self.listener.start()
-            logger.info(f"Keyboard listener started for key: {getattr(self.recording_key, 'name', str(self.recording_key))}")
+            key_name = getattr(self.recording_key, 'name', str(self.recording_key))
+            logger.info(f"Keyboard listener started for key: {key_name}")
         except Exception as e:
             logger.error(f"Error initializing keyboard listener: {e}", exc_info=True)
+
+    def stop_listening(self) -> None:
+        """Stop and remove the keyboard listener if it is running."""
+        if self.listener:
+            try:
+                self.listener.stop()
+            except Exception as e:
+                logger.error(f"Error stopping keyboard listener: {e}")
+            self.listener = None
 
     def on_press(self, key: Any) -> None:
         """Handle key press events.
@@ -698,10 +708,7 @@ class TransClip(QObject):
             # Clean up keyboard listener
             if self.listener:
                 logger.info("Stopping keyboard listener")
-                try:
-                    self.listener.stop()
-                except Exception as e:
-                    logger.error(f"Error stopping listener during quit: {e}")
+                self.stop_listening()
 
             logger.info("Quitting application")
             # Use cast to tell the type checker this is definitely a QApplication
@@ -763,7 +770,7 @@ class TransClip(QObject):
 
     def run(self) -> int:
         """Run the application.
-        
+
         Returns:
             The exit code from the Qt event loop.
         """
@@ -795,7 +802,7 @@ class TransClip(QObject):
         if self.app is not None:
             # Use cast to tell the type checker this is definitely a QApplication
             app = cast(QApplication, self.app)
-            result = app.exec_()
+            result: int = int(app.exec_())
             logger.info(f"Qt event loop completed with result: {result}")
             return result
         else:
@@ -814,7 +821,11 @@ class TransClip(QObject):
                 logger.warning("Keyboard listener is None outside of a key change operation")
                 # Try to restart it
                 self.init_keyboard_listener()
-            elif not self._listener_changing and hasattr(self.listener, 'is_alive') and not self.listener.is_alive():
+            elif (
+                not self._listener_changing
+                and self.listener is not None
+                and not self.listener.is_alive()
+            ):
                 logger.warning("Keyboard listener thread is not alive")
                 # Try to restart it
                 self.init_keyboard_listener()
@@ -832,10 +843,7 @@ class TransClip(QObject):
             # Clean up keyboard listener if it exists
             if hasattr(self, 'listener') and self.listener:
                 logger.info("Stopping keyboard listener in destructor")
-                try:
-                    self.listener.stop()
-                except Exception as e:
-                    logger.error(f"Error stopping listener in destructor: {e}")
+                self.stop_listening()
         except Exception as e:
             logger.error(f"Error in TransClip destructor: {e}")
 
