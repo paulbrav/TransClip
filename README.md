@@ -179,6 +179,15 @@ mypy --strict transclip/
 ruff check transclip/
 ```
 
+### Running Tests
+
+The test suite uses Python's built-in `unittest` framework. To execute all tests,
+run:
+
+```bash
+python -m unittest discover -s tests
+```
+
 ### Project Structure
 
 - `transclip/` - Main package directory
