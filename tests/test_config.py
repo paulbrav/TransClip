@@ -41,7 +41,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(self.config.load_config(), {})
 
     def test_save_and_load(self):
-        data = {"recording_key": "Key.home"}
+        data = {"recording_key": "Key.home", "auto_paste": True}
         self.config.save_config(data)
         self.assertTrue(self.config_file.exists())
         self.assertEqual(self.config.load_config(), data)
