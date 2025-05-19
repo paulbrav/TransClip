@@ -9,6 +9,7 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "recording_key": "Key.home",
+    "auto_paste": False,
 }
 
 

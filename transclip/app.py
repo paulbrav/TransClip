@@ -22,6 +22,7 @@ import pyperclip
 import sounddevice as sd
 from faster_whisper import WhisperModel
 from pynput import keyboard
+from pynput.keyboard import Controller
 from PyQt5.QtCore import QObject, QThread, QTimer, pyqtSignal
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (
@@ -214,6 +215,7 @@ class TransClip(QObject):
                 self.recording_key = DEFAULT_RECORDING_KEY
         except Exception:
             self.recording_key = DEFAULT_RECORDING_KEY
+        self.auto_paste: bool = bool(config.get("auto_paste", False))
         self.listener: Optional[keyboard.Listener] = None
         self._listener_changing: bool = False
         self._listener_restart_complete: bool = True
@@ -356,6 +358,14 @@ class TransClip(QObject):
         assert key_binding_action is not None
         key_binding_action.triggered.connect(self.show_key_binding_dialog)
         logger.debug("Added key binding action to main menu")
+
+        # Auto paste toggle
+        self.auto_paste_action = menu.addAction("📋 Auto Paste After Transcription")
+        assert self.auto_paste_action is not None
+        self.auto_paste_action.setCheckable(True)
+        self.auto_paste_action.setChecked(self.auto_paste)
+        self.auto_paste_action.triggered.connect(self.set_auto_paste)
+        logger.debug("Added auto paste action")
 
         # Add direct model selection actions to main menu
         menu.addSeparator()
@@ -687,6 +697,9 @@ class TransClip(QObject):
                     if verification != text:
                         logger.error("Clipboard verification failed. Text may not be copied correctly.")
 
+                    if self.auto_paste:
+                        self.perform_paste()
+
                 except Exception as e:
                     logger.error(f"Failed to copy to clipboard: {e}")
 
@@ -929,6 +942,28 @@ class TransClip(QObject):
                 )
         except Exception as e:
             logger.error(f"Failed to copy to clipboard: {e}")
+
+    def set_auto_paste(self, checked: bool) -> None:
+        """Toggle automatic paste after transcription."""
+        self.auto_paste = checked
+        config = {**load_config()}
+        config["auto_paste"] = self.auto_paste
+        save_config(config)
+
+    def perform_paste(self) -> None:
+        """Simulate the paste keyboard shortcut."""
+        try:
+            ctrl = Controller()
+            if sys.platform == "darwin":
+                with ctrl.pressed(keyboard.Key.cmd):
+                    ctrl.press('v')
+                    ctrl.release('v')
+            else:
+                with ctrl.pressed(keyboard.Key.ctrl):
+                    ctrl.press('v')
+                    ctrl.release('v')
+        except Exception as e:
+            logger.error(f"Failed to auto paste: {e}")
 
     def change_model(self, model_type: WhisperModelType) -> None:
         """Change the Whisper model being used.
