@@ -39,6 +39,7 @@ def get_model_size_mb(model_type: WhisperModelType) -> int:
         WhisperModelType.LARGE: 3000,
         WhisperModelType.LARGE_V2: 3000,
         WhisperModelType.LARGE_V3: 3000,
+        WhisperModelType.PARAKEET_TDT_0_6B_V2: 1200,
     }
     return sizes.get(model_type, 3000)
 

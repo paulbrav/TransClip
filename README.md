@@ -134,7 +134,7 @@ During installation, the base Whisper model is downloaded automatically. You can
 # Activate the virtual environment
 source ~/.local/share/transclip/venv/bin/activate
 
-# Download a specific model (tiny, base, small, medium, large, large-v2, large-v3)
+# Download a specific model (tiny, base, small, medium, large, large-v2, large-v3, parakeet-tdt-0.6b-v2)
 python -m transclip.download_models --model small
 ```
 
@@ -145,6 +145,7 @@ Available models:
 - `medium`: ~1.5GB (slower, more accurate)
 - `large`: ~3GB (slowest, most accurate)
 - `large-v2`, `large-v3`: ~3GB (improved large models)
+- `parakeet-tdt-0.6b-v2`: ~1.2GB (NVIDIA Parakeet model)
 
 ## Development
 

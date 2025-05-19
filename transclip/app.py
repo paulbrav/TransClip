@@ -74,6 +74,7 @@ class WhisperModelType(StrEnum):
     LARGE = "large"    # 1.5B parameters
     LARGE_V2 = "large-v2"  # 1.5B parameters (improved version)
     LARGE_V3 = "large-v3"  # 1.5B parameters (latest improved version)
+    PARAKEET_TDT_0_6B_V2 = "nvidia/parakeet-tdt-0.6b-v2"  # 0.6B parameters (NVIDIA Parakeet)
 
     @classmethod
     def get_description(cls, model_type: 'WhisperModelType') -> str:
@@ -92,7 +93,8 @@ class WhisperModelType(StrEnum):
             cls.MEDIUM: "Medium (769M parameters)",
             cls.LARGE: "Large (1.5B parameters)",
             cls.LARGE_V2: "Large-v2 (1.5B parameters, improved)",
-            cls.LARGE_V3: "Large-v3 (1.5B parameters, latest)"
+            cls.LARGE_V3: "Large-v3 (1.5B parameters, latest)",
+            cls.PARAKEET_TDT_0_6B_V2: "Parakeet TDT 0.6B v2 (NVIDIA)"
         }
         return descriptions[model_type]
 
@@ -413,7 +415,8 @@ class TransClip(QObject):
                 daemon=True  # Set as daemon thread so it doesn't keep app alive
             )
             self.listener.start()
-            logger.info(f"Keyboard listener started for key: {getattr(self.recording_key, 'name', str(self.recording_key))}")
+            key_name = getattr(self.recording_key, 'name', str(self.recording_key))
+            logger.info(f"Keyboard listener started for key: {key_name}")
         except Exception as e:
             logger.error(f"Error initializing keyboard listener: {e}", exc_info=True)
 
@@ -763,7 +766,6 @@ class TransClip(QObject):
 
     def run(self) -> int:
         """Run the application.
-        
         Returns:
             The exit code from the Qt event loop.
         """
