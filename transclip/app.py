@@ -37,6 +37,8 @@ from PyQt5.QtWidgets import (
 )
 from scipy import signal as scipy_signal
 
+from .config import DEFAULT_CONFIG, load_config, save_config
+
 # Set up logging
 logging.basicConfig(
     level=logging.DEBUG,
@@ -199,7 +201,17 @@ class TransClip(QObject):
         super().__init__()
 
         # Initialize instance variables with proper type annotations
-        self.recording_key: Union[keyboard.Key, keyboard.KeyCode] = DEFAULT_RECORDING_KEY
+        config = {**DEFAULT_CONFIG, **load_config()}
+        key_str = config.get("recording_key", "Key.home")
+        try:
+            if isinstance(key_str, str) and key_str.startswith("Key."):
+                self.recording_key = getattr(keyboard.Key, key_str[4:])
+            elif isinstance(key_str, str):
+                self.recording_key = keyboard.KeyCode.from_char(key_str)
+            else:
+                self.recording_key = DEFAULT_RECORDING_KEY
+        except Exception:
+            self.recording_key = DEFAULT_RECORDING_KEY
         self.listener: Optional[keyboard.Listener] = None
         self._listener_changing: bool = False
         self._listener_restart_complete: bool = True
@@ -413,7 +425,11 @@ class TransClip(QObject):
                 daemon=True  # Set as daemon thread so it doesn't keep app alive
             )
             self.listener.start()
-            logger.info(f"Keyboard listener started for key: {getattr(self.recording_key, 'name', str(self.recording_key))}")
+            key_desc = getattr(self.recording_key, 'name', str(self.recording_key))
+            logger.info(
+                "Keyboard listener started for key: %s",
+                key_desc,
+            )
         except Exception as e:
             logger.error(f"Error initializing keyboard listener: {e}", exc_info=True)
 
@@ -763,7 +779,7 @@ class TransClip(QObject):
 
     def run(self) -> int:
         """Run the application.
-        
+
         Returns:
             The exit code from the Qt event loop.
         """
@@ -1156,6 +1172,10 @@ class TransClip(QObject):
             self.recording_key = key
             key_name = getattr(key, 'name', str(key))
             logger.info(f"Changed recording key from {old_key_name} to {key_name}")
+
+            config = {**load_config()}
+            config["recording_key"] = key_name
+            save_config(config)
 
             # Create a flag to track listener restart status
             self._listener_restart_complete = False
