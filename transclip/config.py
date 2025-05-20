@@ -15,6 +15,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "cleanup_llm_model": "tinyllama.gguf",
     "cleanup_threads": 4,
     "cleanup_gpu_layers": 0,
+    "cleanup_prompt": (
+        "Rewrite the following transcript into clear, well-punctuated English.\n\n"
+        "INPUT:\n{text}\n\nCLEANED:"
+    ),
 }
 
 
