@@ -81,7 +81,7 @@ The installation script will:
 - Create a virtual environment
 - Install all Python dependencies
 - Download the Whisper base model for transcription
-- Offer to download additional Whisper models
+- Offer to download additional Whisper models (you can select multiple)
 - Set up a systemd service (Linux) or launchd agent (macOS)
 - Configure autostart on login
 
@@ -137,7 +137,7 @@ Log files are located at:
 
 ### Whisper Models
 
-During installation, the base Whisper model is downloaded automatically. You can download additional models manually:
+During installation, the base Whisper model is downloaded automatically and you have the option to grab extra models. You can also download models manually later:
 
 ```bash
 # Activate the virtual environment

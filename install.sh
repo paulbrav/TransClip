@@ -113,55 +113,57 @@ if [ "$TEST_SERVICE_CONFIG" = false ]; then
     echo "Larger models provide better accuracy but require more disk space and memory."
     echo ""
     echo "Available models:"
-    echo "1) tiny   - ~75MB  (fastest, least accurate)"
-    echo "2) base   - ~150MB (already downloaded)"
-    echo "3) small  - ~500MB (good balance of speed and accuracy)"
-    echo "4) medium - ~1.5GB (slower, more accurate)"
-    echo "5) large  - ~3GB   (slowest, most accurate)"
-    echo "6) No additional models"
+    echo "1) tiny          - ~75MB  (fastest, least accurate)"
+    echo "2) small         - ~500MB (good balance of speed and accuracy)"
+    echo "3) medium        - ~1.5GB (slower, more accurate)"
+    echo "4) large         - ~3GB   (slowest, most accurate)"
+    echo "5) large-v2      - ~3GB   (improved large model)"
+    echo "6) large-v3      - ~3GB   (latest large model)"
+    echo "7) parakeet-tdt-0.6b-v2 - ~1.2GB (NVIDIA Parakeet model)"
+    echo "0) No additional models"
     echo ""
-    read -p "Enter your choice (1-6): " model_choice
+    read -ra model_choices -p "Enter numbers of models to download separated by spaces (e.g. 1 3 7 or 0 to skip): "
 
-    case $model_choice in
-        1)
-            echo "Downloading tiny model..."
-            if python -m transclip.download_models --model tiny; then
-                echo "Tiny model downloaded successfully."
-            else
-                echo "Warning: Failed to download tiny model."
-            fi
-            ;;
-        3)
-            echo "Downloading small model..."
-            if python -m transclip.download_models --model small; then
-                echo "Small model downloaded successfully."
-            else
-                echo "Warning: Failed to download small model."
-            fi
-            ;;
-        4)
-            echo "Downloading medium model..."
-            if python -m transclip.download_models --model medium; then
-                echo "Medium model downloaded successfully."
-            else
-                echo "Warning: Failed to download medium model."
-            fi
-            ;;
-        5)
-            echo "Downloading large model..."
-            if python -m transclip.download_models --model large; then
-                echo "Large model downloaded successfully."
-            else
-                echo "Warning: Failed to download large model."
-            fi
-            ;;
-        6)
-            echo "No additional models will be downloaded."
-            ;;
-        *)
-            echo "No additional models will be downloaded."
-            ;;
-    esac
+    models_to_download=()
+    for choice in "${model_choices[@]}"; do
+        case $choice in
+            1)
+                models_to_download+=("tiny")
+                ;;
+            2)
+                models_to_download+=("small")
+                ;;
+            3)
+                models_to_download+=("medium")
+                ;;
+            4)
+                models_to_download+=("large")
+                ;;
+            5)
+                models_to_download+=("large-v2")
+                ;;
+            6)
+                models_to_download+=("large-v3")
+                ;;
+            7)
+                models_to_download+=("nvidia/parakeet-tdt-0.6b-v2")
+                ;;
+            0)
+                # Skip downloading if user entered 0
+                models_to_download=()
+                break
+                ;;
+        esac
+    done
+
+    for model in "${models_to_download[@]}"; do
+        echo "Downloading ${model} model..."
+        if python -m transclip.download_models --model "${model}"; then
+            echo "${model} model downloaded successfully."
+        else
+            echo "Warning: Failed to download ${model} model."
+        fi
+    done
 fi
 
 # Set VENV_PATH for service configuration
