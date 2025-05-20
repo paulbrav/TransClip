@@ -105,6 +105,7 @@ class TransClip(QObject):
         except Exception:
             self.recording_key = DEFAULT_RECORDING_KEY
         self.auto_paste: bool = bool(config.get("auto_paste", False))
+        self.cleanup_enabled: bool = bool(config.get("cleanup_enable", False))
         self.listener: Optional[keyboard.Listener] = None
         self._listener_changing: bool = False
         self._listener_restart_complete: bool = True
@@ -211,9 +212,7 @@ class TransClip(QObject):
 
         # Ensure the application exits cleanly
         if self.app is not None:
-            # Use cast to tell the type checker this is definitely a QApplication
-            app = cast(QApplication, self.app)
-            app.quit()
+            self.app.quit()
 
     def has_cuda(self) -> bool:
         """Check if CUDA is available for GPU acceleration.
@@ -258,6 +257,14 @@ class TransClip(QObject):
         self.auto_paste_action.setChecked(self.auto_paste)
         self.auto_paste_action.triggered.connect(self.set_auto_paste)
         logger.debug("Added auto paste action")
+
+        # Cleanup toggle
+        self.cleanup_action = menu.addAction("🧹 Clean Up Transcript")
+        assert self.cleanup_action is not None
+        self.cleanup_action.setCheckable(True)
+        self.cleanup_action.setChecked(self.cleanup_enabled)
+        self.cleanup_action.triggered.connect(self.set_cleanup_enabled)
+        logger.debug("Added cleanup action")
 
         # Add direct model selection actions to main menu
         menu.addSeparator()
@@ -709,9 +716,7 @@ class TransClip(QObject):
 
         logger.info("Starting Qt event loop")
         if self.app is not None:
-            # Use cast to tell the type checker this is definitely a QApplication
-            app = cast(QApplication, self.app)
-            result: int = int(app.exec_())
+            result: int = int(self.app.exec_())
             logger.info(f"Qt event loop completed with result: {result}")
             return result
         else:
@@ -816,6 +821,14 @@ class TransClip(QObject):
         config = {**load_config()}
         config["auto_paste"] = self.auto_paste
         save_config(config)
+
+    def set_cleanup_enabled(self, checked: bool) -> None:
+        """Toggle transcript cleanup."""
+        self.cleanup_enabled = checked
+        config = {**load_config()}
+        config["cleanup_enable"] = self.cleanup_enabled
+        save_config(config)
+        self.cleaner = Cleaner(config)
 
     def perform_paste(self) -> None:
         """Simulate the paste keyboard shortcut."""
@@ -1068,10 +1081,12 @@ class TransClip(QObject):
             self._log_process_info()
 
             # Store the new key
-            old_key_name = getattr(self.recording_key, 'name', str(self.recording_key))
+            old_key_name = str(self.recording_key)
             self.recording_key = key
-            key_name = getattr(key, 'name', str(key))
-            logger.info(f"Changed recording key from {old_key_name} to {key_name}")
+            key_name = str(key)
+            logger.info(
+                "Changed recording key from %s to %s", old_key_name, key_name
+            )
 
             config = {**load_config()}
             config["recording_key"] = key_name

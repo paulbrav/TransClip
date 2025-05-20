@@ -1,0 +1,6 @@
+from typing import Any
+
+class QIcon:
+    def __init__(self, *args: Any, **kwargs: Any) -> None: ...
+    @classmethod
+    def fromTheme(cls, name: str) -> "QIcon": ...
