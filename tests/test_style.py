@@ -1,6 +1,7 @@
 import subprocess
 import unittest
 
+
 class StyleTests(unittest.TestCase):
     def test_mypy_cleanup(self):
         result = subprocess.run([

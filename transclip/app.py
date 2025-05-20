@@ -19,6 +19,7 @@ from typing import Any, Callable, Dict, List, Optional, Union, cast
 
 import numpy as np
 import sounddevice as sd
+from faster_whisper import WhisperModel
 from pynput import keyboard
 from PyQt5.QtCore import QObject, QThread, QTimer
 from PyQt5.QtGui import QIcon
@@ -76,7 +77,7 @@ CHANNELS: int = 1
 DTYPE = np.float32  # Remove explicit type annotation that causes mypy error
 DEFAULT_RECORDING_KEY = keyboard.Key.home
 
-class TransClip(QObject):  # type: ignore[misc]
+class TransClip(QObject):
     """Main TransClip application class.
 
     Handles audio recording, transcription, and clipboard integration.
@@ -823,46 +824,48 @@ class TransClip(QObject):  # type: ignore[misc]
         except Exception as e:
             logger.error(f"Failed to auto paste: {e}")
 
+
+    def change_model(self, model_type: WhisperModelType) -> None:
+        """Change the active transcription model."""
         if self.recording or self.processing:
-            # Show warning if recording or processing
             if self.tray:
                 self.tray.showMessage(
-                    'TransClip',
-                    'Cannot change model while recording or processing',
+                    "TransClip",
+                    "Cannot change model while recording or processing",
                     QSystemTrayIcon.Warning,
-                    2000
+                    2000,
                 )
             return
 
         try:
-            # Reinitialize the model
-            logger.info(f"Changing model to {model_type}")
+            logger.info("Changing model to %s", model_type)
             self.model = WhisperModel(
                 model_type,
                 device="cuda" if self.has_cuda() else "cpu",
-                compute_type="float16" if self.has_cuda() else "float32"
+                compute_type="float16" if self.has_cuda() else "float32",
             )
-            self.current_model_type = model_type  # Update the current model type
-            logger.info(f"Using model: {WhisperModelType.get_description(model_type)}")
-
-            # Show success message
+            self.current_model_type = model_type
+            logger.info(
+                "Using model: %s",
+                WhisperModelType.get_description(model_type),
+            )
             if self.tray:
                 self.tray.showMessage(
-                    'TransClip',
-                    f'Changed model to {WhisperModelType.get_description(model_type)}',
+                    "TransClip",
+                    f"Changed model to {WhisperModelType.get_description(model_type)}",
                     QSystemTrayIcon.Information,
-                    2000
+                    2000,
                 )
         except Exception as e:
-            logger.error(f"Failed to change model: {e}")
-            # Show error message
+            logger.error("Failed to change model: %s", e)
             if self.tray:
                 self.tray.showMessage(
-                    'TransClip',
-                    f'Failed to change model: {str(e)}',
+                    "TransClip",
+                    f"Failed to change model: {str(e)}",
                     QSystemTrayIcon.Critical,
-                    2000
+                    2000,
                 )
+
 
     def show_key_binding_dialog(self) -> None:
         """Show dialog to configure key binding.

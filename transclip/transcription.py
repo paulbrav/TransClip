@@ -1,14 +1,14 @@
-from __future__ import annotations
-
 """Transcription utilities and model enum."""
+
+from __future__ import annotations
 
 import logging
 from enum import StrEnum
 from typing import Dict
 
 import numpy as np
-from PyQt5.QtCore import QThread, pyqtSignal
 from faster_whisper import WhisperModel
+from PyQt5.QtCore import QThread, pyqtSignal
 
 logger = logging.getLogger(__name__)
 
