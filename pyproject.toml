@@ -21,6 +21,11 @@ dev = [
     "mypy>=1.15.0",
     "ruff>=0.9.7",
 ]
+cleanup = [
+    "onnxruntime>=1.18",
+    "fastpunct>=0.7",
+    "llama_cpp_python>=0.2.27",
+]
 
 [build-system]
 requires = ["setuptools>=61.0.0", "wheel"]
@@ -66,4 +71,8 @@ disable_error_code = ["attr-defined", "call-overload", "unreachable"]
 
 [[tool.mypy.overrides]]
 module = ["sounddevice.*", "faster_whisper.*", "scipy.*", "PyQt5.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["fastpunct.*", "onnxruntime.*", "silero_punctuation.*", "llama_cpp.*"]
 ignore_missing_imports = true

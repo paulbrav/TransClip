@@ -35,14 +35,14 @@ from PyQt5.QtWidgets import (
 )
 from scipy import signal as scipy_signal
 
+from .cleanup import Cleaner
+from .clipboard import copy_to_clipboard, perform_paste
+from .config import DEFAULT_CONFIG, load_config, save_config
 from .transcription import (
     DEFAULT_MODEL_TYPE,
     TranscriptionWorker,
     WhisperModelType,
 )
-from .clipboard import copy_to_clipboard, perform_paste
-
-from .config import DEFAULT_CONFIG, load_config, save_config
 
 # Set up logging
 logging.basicConfig(
@@ -74,6 +74,7 @@ signal.signal(signal.SIGTERM, emergency_signal_handler)
 SAMPLE_RATE: int = 44100  # Hz - Changed to match default device sample rate
 CHANNELS: int = 1
 DTYPE = np.float32  # Remove explicit type annotation that causes mypy error
+DEFAULT_RECORDING_KEY = keyboard.Key.home
 
 class TransClip(QObject):  # type: ignore[misc]
     """Main TransClip application class.
@@ -130,6 +131,9 @@ class TransClip(QObject):  # type: ignore[misc]
 
             # Store recent transcriptions
             self.recent_transcriptions: deque[str] = deque(maxlen=5)
+
+            # Optional transcript cleaner
+            self.cleaner = Cleaner(config)
 
             # Initialize Whisper model
             logger.info("Initializing Whisper model")
@@ -560,11 +564,14 @@ class TransClip(QObject):  # type: ignore[misc]
                 self.tray.setIcon(QIcon.fromTheme("audio-input-microphone"))
 
             if text:
-                # Store the transcription in recent list
-                self.store_transcription(text)
+                # Optionally clean the transcript
+                cleaned = self.cleaner(text)
 
-                logger.info(f"Copying text to clipboard (length: {len(text)})")
-                copy_to_clipboard(text)
+                # Store the transcription in recent list
+                self.store_transcription(cleaned)
+
+                logger.info(f"Copying text to clipboard (length: {len(cleaned)})")
+                copy_to_clipboard(cleaned)
                 if self.auto_paste:
                     perform_paste()
 
