@@ -44,7 +44,7 @@ class WhisperModelType(StrEnum):
 DEFAULT_MODEL_TYPE = WhisperModelType.BASE
 
 
-class TranscriptionWorker(QThread):  # type: ignore[misc]
+class TranscriptionWorker(QThread):
     """Worker thread running Whisper transcription."""
 
     finished = pyqtSignal(str)

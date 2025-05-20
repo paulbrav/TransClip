@@ -10,6 +10,11 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 DEFAULT_CONFIG: Dict[str, Any] = {
     "recording_key": "Key.home",
     "auto_paste": False,
+    "cleanup_enable": False,
+    "cleanup_punct_model": "fastpunct",
+    "cleanup_llm_model": "tinyllama.gguf",
+    "cleanup_threads": 4,
+    "cleanup_gpu_layers": 0,
 }
 
 
