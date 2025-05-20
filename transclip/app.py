@@ -41,9 +41,11 @@ from .clipboard import copy_to_clipboard, perform_paste
 from .config import DEFAULT_CONFIG, load_config, save_config
 from .transcription import (
     DEFAULT_MODEL_TYPE,
+    NeMoTranscriptionWorker,
     TranscriptionWorker,
     WhisperModelType,
     get_model_path,
+    load_nemo_model,
 )
 
 # Set up logging
@@ -129,7 +131,7 @@ class TransClip(QObject):
             self.audio_data: List[np.ndarray] = []  # Add type annotation
             self.processing = False  # Flag to track if we're processing audio
             self.stream: Optional[sd.InputStream] = None
-            self.transcription_worker: Optional[TranscriptionWorker] = None
+            self.transcription_worker: Optional[QThread] = None
             self.current_model_type = model_type  # Store the current model type
 
             # Store recent transcriptions
@@ -138,20 +140,24 @@ class TransClip(QObject):
             # Optional transcript cleaner
             self.cleaner = Cleaner(config)
 
-            # Initialize Whisper model
-            logger.info("Initializing Whisper model")
+            # Initialize transcription model
+            logger.info("Initializing transcription model")
             try:
-                self.model = WhisperModel(
-                    get_model_path(model_type),
-                    device="cuda" if self.has_cuda() else "cpu",
-                    compute_type="float16" if self.has_cuda() else "float32",
-                )
+                if model_type is WhisperModelType.PARAKEET_TDT_0_6B_V2:
+                    self.model = load_nemo_model(model_type)
+                else:
+                    self.model = WhisperModel(
+                        get_model_path(model_type),
+                        device="cuda" if self.has_cuda() else "cpu",
+                        compute_type="float16" if self.has_cuda() else "float32",
+                    )
+
                 logger.info(
                     "Using model: %s",
                     WhisperModelType.get_description(model_type),
                 )
             except Exception as e:
-                logger.error(f"Failed to initialize Whisper model: {e}")
+                logger.error("Failed to initialize model: %s", e)
                 sys.exit(1)
 
             self.init_tray()
@@ -545,7 +551,14 @@ class TransClip(QObject):
 
                 # Start transcription in a separate thread
                 logger.info("\n=== Starting Transcription ===")
-                self.transcription_worker = TranscriptionWorker(audio, self.model)
+                if self.current_model_type is WhisperModelType.PARAKEET_TDT_0_6B_V2:
+                    self.transcription_worker = NeMoTranscriptionWorker(
+                        audio,
+                        16000,
+                        self.model,
+                    )
+                else:
+                    self.transcription_worker = TranscriptionWorker(audio, self.model)
                 self.transcription_worker.finished.connect(self.on_transcription_complete)
                 logger.debug("Starting worker thread")
                 self.transcription_worker.start()
@@ -856,11 +869,14 @@ class TransClip(QObject):
 
         try:
             logger.info("Changing model to %s", model_type)
-            self.model = WhisperModel(
-                get_model_path(model_type),
-                device="cuda" if self.has_cuda() else "cpu",
-                compute_type="float16" if self.has_cuda() else "float32",
-            )
+            if model_type is WhisperModelType.PARAKEET_TDT_0_6B_V2:
+                self.model = load_nemo_model(model_type)
+            else:
+                self.model = WhisperModel(
+                    get_model_path(model_type),
+                    device="cuda" if self.has_cuda() else "cpu",
+                    compute_type="float16" if self.has_cuda() else "float32",
+                )
             self.current_model_type = model_type
             logger.info(
                 "Using model: %s",

@@ -48,13 +48,19 @@ class KeyPersistenceTests(unittest.TestCase):
         modules["transclip.transcription"].WhisperModelType = type(
             "WhisperModelType",
             (),
-            {"BASE": "base", "get_description": classmethod(lambda cls, m: str(m))},
+            {
+                "BASE": "base",
+                "PARAKEET_TDT_0_6B_V2": "nvidia/parakeet-tdt-0.6b-v2",
+                "get_description": classmethod(lambda cls, m: str(m)),
+            },
         )
         modules["transclip.transcription"].get_model_path = lambda m: str(m)
         modules["transclip.transcription"].DEFAULT_MODEL_TYPE = (
             modules["transclip.transcription"].WhisperModelType.BASE
         )
         modules["transclip.transcription"].TranscriptionWorker = object
+        modules["transclip.transcription"].NeMoTranscriptionWorker = object
+        modules["transclip.transcription"].load_nemo_model = lambda m: "nemo_model"
         modules["faster_whisper"].WhisperModel = object
         qtwidgets = modules["PyQt5.QtWidgets"]
         qtwidgets.QSystemTrayIcon = type(

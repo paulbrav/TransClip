@@ -79,3 +79,7 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["fastpunct.*", "onnxruntime.*", "silero_punctuation.*", "llama_cpp.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["nemo.*"]
+ignore_missing_imports = true
