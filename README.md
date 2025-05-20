@@ -129,6 +129,7 @@ file manually if you want to set the key outside of the application.
 ### Customizing Cleanup Prompt
 
 You can modify the instruction used for the optional LLM cleanup stage by
+choosing **"📝 Set Cleanup Prompt..."** from the tray menu or by
 editing the `cleanup_prompt` value in `~/.config/transclip/config.json`.
 Use `{text}` in the string to insert the transcript.
 

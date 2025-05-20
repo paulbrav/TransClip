@@ -28,6 +28,7 @@ from PyQt5.QtWidgets import (
     QApplication,
     QDialog,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMenu,
     QPushButton,
@@ -270,6 +271,12 @@ class TransClip(QObject):
         self.cleanup_action.setChecked(self.cleanup_enabled)
         self.cleanup_action.triggered.connect(self.set_cleanup_enabled)
         logger.debug("Added cleanup action")
+
+        # Cleanup prompt configuration
+        cleanup_prompt_action = menu.addAction("📝 Set Cleanup Prompt...")
+        assert cleanup_prompt_action is not None
+        cleanup_prompt_action.triggered.connect(self.show_cleanup_prompt_dialog)
+        logger.debug("Added cleanup prompt action")
 
         # Add direct model selection actions to main menu
         menu.addSeparator()
@@ -834,6 +841,23 @@ class TransClip(QObject):
         config["cleanup_enable"] = self.cleanup_enabled
         save_config(config)
         self.cleaner = Cleaner(config)
+
+    def show_cleanup_prompt_dialog(self) -> None:
+        """Prompt the user to edit the cleanup prompt."""
+        current_prompt = str(
+            getattr(self.cleaner, "prompt_template", DEFAULT_CONFIG["cleanup_prompt"])
+        )
+        text, ok = QInputDialog.getMultiLineText(
+            None,
+            "Cleanup Prompt",
+            "Use {text} in the string to insert the transcript:",
+            current_prompt,
+        )
+        if ok:
+            config = {**load_config()}
+            config["cleanup_prompt"] = text
+            save_config(config)
+            self.cleaner = Cleaner(config)
 
     def perform_paste(self) -> None:
         """Simulate the paste keyboard shortcut."""
