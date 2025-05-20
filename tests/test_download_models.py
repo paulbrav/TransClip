@@ -24,7 +24,6 @@ class DownloadModelsTests(unittest.TestCase):
             LARGE = "large"
             LARGE_V2 = "large-v2"
             LARGE_V3 = "large-v3"
-            PARAKEET_TDT_0_6B_V2 = "nvidia/parakeet-tdt-0.6b-v2"
 
             @classmethod
             def get_description(cls, model_type: "WhisperModelType") -> str:
@@ -36,7 +35,6 @@ class DownloadModelsTests(unittest.TestCase):
                     cls.LARGE: "Large",
                     cls.LARGE_V2: "Large-v2",
                     cls.LARGE_V3: "Large-v3",
-                    cls.PARAKEET_TDT_0_6B_V2: "Parakeet",
                 }[model_type]
 
         app_module.WhisperModelType = WhisperModelType
@@ -55,7 +53,6 @@ class DownloadModelsTests(unittest.TestCase):
 
     def test_get_model_size_mb(self):
         self.assertEqual(self.dm.get_model_size_mb(self.WhisperModelType.TINY), 75)
-        self.assertEqual(self.dm.get_model_size_mb(self.WhisperModelType.PARAKEET_TDT_0_6B_V2), 1200)
 
     def test_check_disk_space(self):
         usage = namedtuple('usage', ['total', 'used', 'free'])

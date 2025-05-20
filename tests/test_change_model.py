@@ -50,7 +50,6 @@ class ChangeModelTests(unittest.TestCase):
             {
                 "TINY": "tiny",
                 "BASE": "base",
-                "PARAKEET_TDT_0_6B_V2": "nvidia/parakeet-tdt-0.6b-v2",
                 "get_description": classmethod(lambda cls, m: str(m)),
             },
         )

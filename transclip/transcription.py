@@ -29,7 +29,7 @@ class WhisperModelType(StrEnum):
     LARGE = "large"
     LARGE_V2 = "large-v2"
     LARGE_V3 = "large-v3"
-    PARAKEET_TDT_0_6B_V2 = "nvidia/parakeet-tdt-0.6b-v2"
+    # PARAKEET_TDT_0_6B_V2 = "nvidia/parakeet-tdt-0.6b-v2"  # Disabled: unstable on Python 3.11
 
     @classmethod
     def get_description(cls, model_type: "WhisperModelType") -> str:
@@ -42,7 +42,7 @@ class WhisperModelType(StrEnum):
             cls.LARGE: "Large (OpenAI, 1.5B parameters)",
             cls.LARGE_V2: "Large-v2 (OpenAI, 1.5B parameters, improved)",
             cls.LARGE_V3: "Large-v3 (OpenAI, 1.5B parameters, latest)",
-            cls.PARAKEET_TDT_0_6B_V2: "Parakeet TDT 0.6B v2 (NVIDIA)",
+            # cls.PARAKEET_TDT_0_6B_V2: "Parakeet TDT 0.6B v2 (NVIDIA)",
         }
         return descriptions[model_type]
 

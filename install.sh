@@ -119,7 +119,7 @@ if [ "$TEST_SERVICE_CONFIG" = false ]; then
     echo "4) large         - ~3GB   (slowest, most accurate)"
     echo "5) large-v2      - ~3GB   (improved large model)"
     echo "6) large-v3      - ~3GB   (latest large model)"
-    echo "7) parakeet-tdt-0.6b-v2 - ~1.2GB (NVIDIA Parakeet model)"
+    # echo "7) parakeet-tdt-0.6b-v2 - ~1.2GB (NVIDIA Parakeet model)"  # Disabled
     echo "0) No additional models"
     echo ""
     read -ra model_choices -p "Enter numbers of models to download separated by spaces (e.g. 1 3 7 or 0 to skip): "
@@ -145,9 +145,9 @@ if [ "$TEST_SERVICE_CONFIG" = false ]; then
             6)
                 models_to_download+=("large-v3")
                 ;;
-            7)
-                models_to_download+=("nvidia/parakeet-tdt-0.6b-v2")
-                ;;
+            # 7)
+            #     models_to_download+=("nvidia/parakeet-tdt-0.6b-v2")
+            ;;
             0)
                 # Skip downloading if user entered 0
                 models_to_download=()
@@ -156,10 +156,10 @@ if [ "$TEST_SERVICE_CONFIG" = false ]; then
         esac
     done
 
-    if [[ " ${models_to_download[@]} " == *"nvidia/parakeet-tdt-0.6b-v2"* ]]; then
-        echo "Installing nemo_toolkit for Parakeet model..."
-        uv pip install "nemo_toolkit[asr]"
-    fi
+    # if [[ " ${models_to_download[@]} " == *"nvidia/parakeet-tdt-0.6b-v2"* ]]; then
+    #     echo "Installing nemo_toolkit for Parakeet model..."
+    #     uv pip install "nemo_toolkit[asr]"
+    # fi
 
     for model in "${models_to_download[@]}"; do
         echo "Downloading ${model} model..."
