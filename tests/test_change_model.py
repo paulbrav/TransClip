@@ -78,6 +78,9 @@ class ChangeModelTests(unittest.TestCase):
             "QVBoxLayout",
         ]:
             setattr(qtwidgets, name, object)
+        qtwidgets.QInputDialog = type(
+            "QInputDialog", (), {"getMultiLineText": staticmethod(lambda *a, **k: ("", False))}
+        )
         modules["PyQt5.QtGui"].QIcon = object
         qcore = modules["PyQt5.QtCore"]
         qcore.QObject = object
