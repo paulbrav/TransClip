@@ -14,10 +14,10 @@ class ConfigTests(unittest.TestCase):
         self.config_dir = Path(self.temp_dir.name) / "transclip"
         self.config_file = self.config_dir / "config.json"
 
-        # Stub transclip.app to avoid heavy imports when loading the package
-        app_module = types.ModuleType("transclip.app")
-        app_module.WhisperModelType = type("WhisperModelType", (), {})
-        self.app_patch = mock.patch.dict(sys.modules, {"transclip.app": app_module})
+        # Stub transclip.transcription to avoid heavy imports when loading the package
+        trans_module = types.ModuleType("transclip.transcription")
+        trans_module.WhisperModelType = type("WhisperModelType", (), {})
+        self.app_patch = mock.patch.dict(sys.modules, {"transclip.transcription": trans_module})
         self.app_patch.start()
         self.addCleanup(self.app_patch.stop)
 

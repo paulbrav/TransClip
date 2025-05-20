@@ -9,4 +9,5 @@ __version__ = "0.1.0"
 # Define what symbols are exported when using "from transclip import *"
 __all__ = ["WhisperModelType"]
 
-from .app import WhisperModelType  # This makes WhisperModelType available at package level
+# Re-export the model enum for convenience
+from .transcription import WhisperModelType

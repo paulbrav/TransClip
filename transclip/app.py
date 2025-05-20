@@ -14,17 +14,13 @@ import threading
 import time
 import traceback
 from collections import deque
-from enum import StrEnum
 from types import FrameType, TracebackType
 from typing import Any, Callable, Dict, List, Optional, Union, cast
 
 import numpy as np
-import pyperclip
 import sounddevice as sd
-from faster_whisper import WhisperModel
 from pynput import keyboard
-from pynput.keyboard import Controller
-from PyQt5.QtCore import QObject, QThread, QTimer, pyqtSignal
+from PyQt5.QtCore import QObject, QThread, QTimer
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (
     QActionGroup,
@@ -38,6 +34,13 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
 )
 from scipy import signal as scipy_signal
+
+from .transcription import (
+    DEFAULT_MODEL_TYPE,
+    TranscriptionWorker,
+    WhisperModelType,
+)
+from .clipboard import copy_to_clipboard, perform_paste
 
 from .config import DEFAULT_CONFIG, load_config, save_config
 
@@ -65,129 +68,12 @@ def emergency_signal_handler(signum: int, frame: Optional[FrameType]) -> None:
 signal.signal(signal.SIGINT, emergency_signal_handler)
 signal.signal(signal.SIGTERM, emergency_signal_handler)
 
-class WhisperModelType(StrEnum):
-    """Available Whisper model types with their parameter sizes.
 
-    Inherits from StrEnum to allow direct string usage without .value accessor.
-    The value of each enum is the model identifier string used by faster-whisper.
-    """
-    TINY = "tiny"      # 39M parameters
-    BASE = "base"      # 74M parameters
-    SMALL = "small"    # 244M parameters
-    MEDIUM = "medium"  # 769M parameters
-    LARGE = "large"    # 1.5B parameters
-    LARGE_V2 = "large-v2"  # 1.5B parameters (improved version)
-    LARGE_V3 = "large-v3"  # 1.5B parameters (latest improved version)
-    PARAKEET_TDT_0_6B_V2 = "nvidia/parakeet-tdt-0.6b-v2"  # 0.6B parameters (NVIDIA Parakeet)
-
-    @classmethod
-    def get_description(cls, model_type: 'WhisperModelType') -> str:
-        """Get a description of the model including its parameter size.
-
-        Args:
-            model_type: The WhisperModelType to get description for.
-
-        Returns:
-            str: Description of the model including parameter size.
-        """
-        descriptions: Dict[WhisperModelType, str] = {
-            cls.TINY: "Tiny (39M parameters)",
-            cls.BASE: "Base (74M parameters)",
-            cls.SMALL: "Small (244M parameters)",
-            cls.MEDIUM: "Medium (769M parameters)",
-            cls.LARGE: "Large (1.5B parameters)",
-            cls.LARGE_V2: "Large-v2 (1.5B parameters, improved)",
-            cls.LARGE_V3: "Large-v3 (1.5B parameters, latest)",
-            cls.PARAKEET_TDT_0_6B_V2: "Parakeet TDT 0.6B v2 (NVIDIA)"
-        }
-        return descriptions[model_type]
-
-DEFAULT_RECORDING_KEY = keyboard.Key.home
-DEFAULT_MODEL_TYPE = WhisperModelType.BASE
-
-# Configure pyperclip
-try:
-    # Check if xclip is available
-    if subprocess.run(['which', 'xclip'], capture_output=True).returncode == 0:
-        logger.info("Found xclip, setting as clipboard mechanism")
-        pyperclip.set_clipboard("xclip")
-    else:
-        logger.warning("xclip not found, clipboard operations may fail")
-except Exception as e:
-    logger.error("Error configuring clipboard mechanism: %s", e)
 
 # Constants
 SAMPLE_RATE: int = 44100  # Hz - Changed to match default device sample rate
 CHANNELS: int = 1
 DTYPE = np.float32  # Remove explicit type annotation that causes mypy error
-
-class TranscriptionWorker(QThread):  # type: ignore[misc]
-    """Worker thread for handling audio transcription.
-
-    This class runs the Whisper model in a separate thread to avoid blocking
-    the main application during transcription processing.
-    """
-
-    finished = pyqtSignal(str)
-
-    def __init__(self, audio_data: np.ndarray, model: WhisperModel):
-        """Initialize the transcription worker.
-
-        Args:
-            audio_data: The audio data to transcribe as a numpy array.
-            model: The initialized Whisper model to use for transcription.
-        """
-        super().__init__()
-        self.audio_data = audio_data
-        self.model = model
-        logger.info("TranscriptionWorker initialized")
-
-    def run(self) -> None:
-        """Run the transcription process.
-
-        Processes the audio data using the Whisper model and emits the
-        transcribed text when complete. Emits an empty string on error.
-        """
-        logger.info("\n=== TranscriptionWorker Run Started ===")
-        try:
-            # Log audio data properties
-            logger.info(f"Audio data shape: {self.audio_data.shape}")
-            logger.info(f"Non-zero samples: {np.count_nonzero(self.audio_data)}")
-            logger.info(f"Max amplitude: {np.max(np.abs(self.audio_data))}")
-
-            # Ensure audio is the right shape (samples,) instead of (samples, 1)
-            if len(self.audio_data.shape) > 1:
-                self.audio_data = self.audio_data.flatten()
-                logger.info("Flattened audio data")
-
-            logger.info("Starting transcription with Whisper model")
-            segments, _info = self.model.transcribe(
-                self.audio_data,
-                language="en",
-                beam_size=5,
-                initial_prompt="The following is a transcription of spoken English:",
-                vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=500)
-            )
-
-            # Log each segment for debugging
-            all_segments = list(segments)  # Convert generator to list
-            logger.info(f"Transcribed {len(all_segments)} segments")
-            for i, segment in enumerate(all_segments):
-                logger.info(f"Segment {i}: '{segment.text}'")
-
-            text = " ".join([segment.text for segment in all_segments])
-            logger.info(f"Final combined text: '{text}'")
-
-            # Emit the result
-            logger.info("Emitting transcription result")
-            self.finished.emit(text.strip())
-            logger.info("Signal emitted successfully")
-
-        except Exception as e:
-            logger.error(f"Transcription failed: {e}", exc_info=True)  # Include full traceback
-            self.finished.emit("")
-            logger.info("Empty signal emitted due to error")
 
 class TransClip(QObject):  # type: ignore[misc]
     """Main TransClip application class.
@@ -678,31 +564,9 @@ class TransClip(QObject):  # type: ignore[misc]
                 self.store_transcription(text)
 
                 logger.info(f"Copying text to clipboard (length: {len(text)})")
-                try:
-                    # Try to use xclip directly for Linux
-                    try:
-                        import subprocess
-                        process = subprocess.Popen(['xclip', '-selection', 'clipboard'],
-                                                 stdin=subprocess.PIPE,
-                                                 text=True)
-                        process.communicate(input=text)
-                        logger.debug("Text copied to clipboard using xclip")
-                    except Exception as e:
-                        logger.error(f"Direct xclip call failed: {e}")
-                        # Fallback to pyperclip
-                        pyperclip.copy(text)
-                        logger.debug("Text copied to clipboard using pyperclip")
-
-                    # Verify copy success
-                    verification = pyperclip.paste()
-                    if verification != text:
-                        logger.error("Clipboard verification failed. Text may not be copied correctly.")
-
-                    if self.auto_paste:
-                        self.perform_paste()
-
-                except Exception as e:
-                    logger.error(f"Failed to copy to clipboard: {e}")
+                copy_to_clipboard(text)
+                if self.auto_paste:
+                    perform_paste()
 
                 if self.tray:
                     self.tray.showMessage(
@@ -927,20 +791,7 @@ class TransClip(QObject):  # type: ignore[misc]
             text: The text to copy to clipboard.
         """
         try:
-            # Try to use xclip directly for Linux
-            try:
-                process = subprocess.Popen(['xclip', '-selection', 'clipboard'],
-                                         stdin=subprocess.PIPE,
-                                         text=True)
-                process.communicate(input=text)
-                logger.debug("Text copied to clipboard using xclip")
-            except Exception as e:
-                logger.error(f"Direct xclip call failed: {e}")
-                # Fallback to pyperclip
-                pyperclip.copy(text)
-                logger.debug("Text copied to clipboard using pyperclip")
-
-            # Show notification
+            copy_to_clipboard(text)
             if self.tray:
                 self.tray.showMessage(
                     'TransClip',
@@ -961,24 +812,10 @@ class TransClip(QObject):  # type: ignore[misc]
     def perform_paste(self) -> None:
         """Simulate the paste keyboard shortcut."""
         try:
-            ctrl = Controller()
-            if sys.platform == "darwin":
-                with ctrl.pressed(keyboard.Key.cmd):
-                    ctrl.press('v')
-                    ctrl.release('v')
-            else:
-                with ctrl.pressed(keyboard.Key.ctrl):
-                    ctrl.press('v')
-                    ctrl.release('v')
+            perform_paste()
         except Exception as e:
             logger.error(f"Failed to auto paste: {e}")
 
-    def change_model(self, model_type: WhisperModelType) -> None:
-        """Change the Whisper model being used.
-
-        Args:
-            model_type: The WhisperModelType to change to.
-        """
         if self.recording or self.processing:
             # Show warning if recording or processing
             if self.tray:

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from faster_whisper import download_model
 
-from transclip.app import WhisperModelType
+from transclip.transcription import WhisperModelType
 
 # Set up logging
 logging.basicConfig(
