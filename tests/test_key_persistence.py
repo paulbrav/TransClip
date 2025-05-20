@@ -50,6 +50,7 @@ class KeyPersistenceTests(unittest.TestCase):
             (),
             {"BASE": "base", "get_description": classmethod(lambda cls, m: str(m))},
         )
+        modules["transclip.transcription"].get_model_path = lambda m: str(m)
         modules["transclip.transcription"].DEFAULT_MODEL_TYPE = (
             modules["transclip.transcription"].WhisperModelType.BASE
         )

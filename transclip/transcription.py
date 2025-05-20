@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from enum import StrEnum
+from pathlib import Path
 from typing import Dict
 
 import numpy as np
@@ -29,16 +30,23 @@ class WhisperModelType(StrEnum):
     def get_description(cls, model_type: "WhisperModelType") -> str:
         """Return a human friendly description for a model type."""
         descriptions: Dict[WhisperModelType, str] = {
-            cls.TINY: "Tiny (39M parameters)",
-            cls.BASE: "Base (74M parameters)",
-            cls.SMALL: "Small (244M parameters)",
-            cls.MEDIUM: "Medium (769M parameters)",
-            cls.LARGE: "Large (1.5B parameters)",
-            cls.LARGE_V2: "Large-v2 (1.5B parameters, improved)",
-            cls.LARGE_V3: "Large-v3 (1.5B parameters, latest)",
+            cls.TINY: "Tiny (OpenAI, 39M parameters)",
+            cls.BASE: "Base (OpenAI, 74M parameters)",
+            cls.SMALL: "Small (OpenAI, 244M parameters)",
+            cls.MEDIUM: "Medium (OpenAI, 769M parameters)",
+            cls.LARGE: "Large (OpenAI, 1.5B parameters)",
+            cls.LARGE_V2: "Large-v2 (OpenAI, 1.5B parameters, improved)",
+            cls.LARGE_V3: "Large-v3 (OpenAI, 1.5B parameters, latest)",
             cls.PARAKEET_TDT_0_6B_V2: "Parakeet TDT 0.6B v2 (NVIDIA)",
         }
         return descriptions[model_type]
+
+
+def get_model_path(model_type: WhisperModelType) -> str:
+    """Return a local model path if available."""
+    cache_dir = Path.home() / ".cache" / "whisper"
+    model_dir = cache_dir / model_type
+    return str(model_dir) if model_dir.exists() else model_type
 
 
 DEFAULT_MODEL_TYPE = WhisperModelType.BASE
