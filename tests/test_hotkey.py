@@ -62,10 +62,10 @@ class HotkeyManagerTests(unittest.TestCase):
             "pynput.keyboard": keyboard_module,
         }
 
-        # Stub transclip.app before importing the package
-        app_module = types.ModuleType("transclip.app")
+        # Stub transclip.transcription before importing the package
+        app_module = types.ModuleType("transclip.transcription")
         app_module.WhisperModelType = type("WhisperModelType", (), {})
-        patches["transclip.app"] = app_module
+        patches["transclip.transcription"] = app_module
 
         self.module_patch = unittest.mock.patch.dict(sys.modules, patches)
         self.module_patch.start()

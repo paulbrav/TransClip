@@ -12,8 +12,8 @@ class DownloadModelsTests(unittest.TestCase):
         fw_module = types.ModuleType("faster_whisper")
         fw_module.download_model = lambda *args, **kwargs: None
 
-        # Stub transclip.app module with minimal WhisperModelType
-        app_module = types.ModuleType("transclip.app")
+        # Stub transclip.transcription module with minimal WhisperModelType
+        app_module = types.ModuleType("transclip.transcription")
         from enum import Enum
 
         class WhisperModelType(str, Enum):
@@ -43,7 +43,7 @@ class DownloadModelsTests(unittest.TestCase):
 
         self.module_patch = unittest.mock.patch.dict(sys.modules, {
             "faster_whisper": fw_module,
-            "transclip.app": app_module,
+            "transclip.transcription": app_module,
         })
         self.module_patch.start()
         self.addCleanup(self.module_patch.stop)
