@@ -1068,10 +1068,12 @@ class TransClip(QObject):
             self._log_process_info()
 
             # Store the new key
-            old_key_name = getattr(self.recording_key, 'name', str(self.recording_key))
+            old_key_name = str(self.recording_key)
             self.recording_key = key
-            key_name = getattr(key, 'name', str(key))
-            logger.info(f"Changed recording key from {old_key_name} to {key_name}")
+            key_name = str(key)
+            logger.info(
+                "Changed recording key from %s to %s", old_key_name, key_name
+            )
 
             config = {**load_config()}
             config["recording_key"] = key_name
