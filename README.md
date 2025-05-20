@@ -11,6 +11,7 @@ A desktop application that transcribes speech to text when you hold down a key. 
 - Optional automatic pasting into the active window
 - Optional text cleanup with punctuation and language model support
   that can be toggled from the tray menu
+- Customizable cleanup prompt for the language model
 - Configurable key binding
 - Visual feedback during recording (icon changes)
 - Error handling and status notifications
@@ -124,6 +125,12 @@ You can change the recording key by right-clicking the system tray icon and sele
 The chosen key is stored in `~/.config/transclip/config.json` using the
 XDG Base Directory convention so it persists across sessions. You can edit this
 file manually if you want to set the key outside of the application.
+
+### Customizing Cleanup Prompt
+
+You can modify the instruction used for the optional LLM cleanup stage by
+editing the `cleanup_prompt` value in `~/.config/transclip/config.json`.
+Use `{text}` in the string to insert the transcript.
 
 ### Accessing Recent Transcriptions
 

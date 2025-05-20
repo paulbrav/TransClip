@@ -17,6 +17,7 @@ class Cleaner:
         if not self.enabled:
             self.punct = None
             self.llm = None
+            self.prompt_template = ""
             return
 
         # Punctuation stage
@@ -41,6 +42,12 @@ class Cleaner:
 
         # LLM stage
         self.llm = None
+        self.prompt_template = str(
+            cfg.get(
+                "cleanup_prompt",
+                "Rewrite the following transcript into clear, well-punctuated English.\n\nINPUT:\n{text}\n\nCLEANED:",
+            )
+        )
         try:
             from llama_cpp import Llama
 
@@ -67,10 +74,11 @@ class Cleaner:
                 logger.warning("punctuation failed: %s", exc)
 
         if self.llm:
-            prompt = (
-                "Rewrite the following transcript into clear, well-punctuated English.\n\n"
-                f"INPUT:\n{result}\n\nCLEANED:"
-            )
+            try:
+                prompt = self.prompt_template.format(text=result)
+            except Exception as exc:  # pragma: no cover - optional
+                logger.warning("invalid cleanup prompt: %s", exc)
+                prompt = f"{self.prompt_template}\n{result}"
             try:
                 res = self.llm(prompt, max_tokens=256, temperature=0.3)
                 result = res["choices"][0]["text"].strip()
