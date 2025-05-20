@@ -1,9 +1,9 @@
-from __future__ import annotations
-
 """Audio related helpers."""
 
+from __future__ import annotations
+
 import logging
-from typing import Any, Dict
+from typing import Any
 
 import numpy as np
 import sounddevice as sd

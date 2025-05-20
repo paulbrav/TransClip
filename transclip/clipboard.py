@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Clipboard helper functions."""
+
+from __future__ import annotations
 
 import logging
 import subprocess
