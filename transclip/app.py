@@ -43,6 +43,7 @@ from .transcription import (
     DEFAULT_MODEL_TYPE,
     TranscriptionWorker,
     WhisperModelType,
+    get_model_path,
 )
 
 # Set up logging
@@ -141,11 +142,14 @@ class TransClip(QObject):
             logger.info("Initializing Whisper model")
             try:
                 self.model = WhisperModel(
-                    model_type,  # Use the provided model type
+                    get_model_path(model_type),
                     device="cuda" if self.has_cuda() else "cpu",
-                    compute_type="float16" if self.has_cuda() else "float32"
+                    compute_type="float16" if self.has_cuda() else "float32",
                 )
-                logger.info(f"Using model: {WhisperModelType.get_description(model_type)}")
+                logger.info(
+                    "Using model: %s",
+                    WhisperModelType.get_description(model_type),
+                )
             except Exception as e:
                 logger.error(f"Failed to initialize Whisper model: {e}")
                 sys.exit(1)
@@ -853,7 +857,7 @@ class TransClip(QObject):
         try:
             logger.info("Changing model to %s", model_type)
             self.model = WhisperModel(
-                model_type,
+                get_model_path(model_type),
                 device="cuda" if self.has_cuda() else "cpu",
                 compute_type="float16" if self.has_cuda() else "float32",
             )
