@@ -156,6 +156,11 @@ if [ "$TEST_SERVICE_CONFIG" = false ]; then
         esac
     done
 
+    if [[ " ${models_to_download[@]} " == *"nvidia/parakeet-tdt-0.6b-v2"* ]]; then
+        echo "Installing nemo_toolkit for Parakeet model..."
+        uv pip install "nemo_toolkit[asr]"
+    fi
+
     for model in "${models_to_download[@]}"; do
         echo "Downloading ${model} model..."
         if python -m transclip.download_models --model "${model}"; then
