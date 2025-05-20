@@ -8,6 +8,8 @@ A desktop application that transcribes speech to text when you hold down a key. 
 - System tray integration
 - Fast transcription using Faster Whisper
 - Automatic clipboard copying of transcribed text
+- Optional automatic pasting into the active window
+- Optional text cleanup with punctuation and language model support
 - Configurable key binding
 - Visual feedback during recording (icon changes)
 - Error handling and status notifications
@@ -106,7 +108,8 @@ The application starts automatically on system login. You can also:
 3. Speak clearly into your microphone
 4. Release the key to stop recording and start transcription
 5. The transcribed text will automatically be copied to your clipboard
-6. Watch for notification popups for status updates
+6. If auto paste is enabled, the text will also be inserted into the active window
+7. Watch for notification popups for status updates
 
 ### Changing Models
 
