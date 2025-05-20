@@ -44,7 +44,7 @@ def get_model_size_mb(model_type: WhisperModelType) -> int:
         WhisperModelType.LARGE: 3000,
         WhisperModelType.LARGE_V2: 3000,
         WhisperModelType.LARGE_V3: 3000,
-        WhisperModelType.PARAKEET_TDT_0_6B_V2: 1200,
+        # WhisperModelType.PARAKEET_TDT_0_6B_V2: 1200,  # Disabled
     }
     return sizes.get(model_type, 3000)
 
@@ -67,32 +67,32 @@ def check_disk_space(required_mb: int, path: str = ".") -> bool:
         return False
     return True
 
-def _download_parakeet_model(cache_dir: str, force: bool) -> bool:
-    """Download the NVIDIA Parakeet model using NeMo."""
-    if EncDecRNNTModel is None:  # pragma: no cover - runtime guard
-        logger.error(
-            "nemo_toolkit is required for the Parakeet model. Install with 'pip install nemo_toolkit[asr]'"
-        )
-        return False
-
-    model_file = Path(cache_dir) / "nvidia_parakeet-tdt-0.6b-v2.nemo"
-    if model_file.exists() and not force:
-        logger.info("Model nvidia/parakeet-tdt-0.6b-v2 already exists at %s", model_file)
-        return True
-
-    model_size = get_model_size_mb(WhisperModelType.PARAKEET_TDT_0_6B_V2)
-    if not check_disk_space(model_size * 2, cache_dir):
-        return False
-
-    try:
-        logger.info("Downloading nvidia/parakeet-tdt-0.6b-v2 model with NeMo ...")
-        model = EncDecRNNTModel.from_pretrained(model_name="nvidia/parakeet-tdt-0.6b-v2")
-        model.save_to(str(model_file))
-        logger.info("Successfully downloaded model to %s", model_file)
-        return True
-    except Exception as e:  # pragma: no cover - external call
-        logger.error("Failed to download Parakeet model: %s", e)
-        return False
+# def _download_parakeet_model(cache_dir: str, force: bool) -> bool:
+#     """Download the NVIDIA Parakeet model using NeMo."""
+#     if EncDecRNNTModel is None:  # pragma: no cover - runtime guard
+#         logger.error(
+#             "nemo_toolkit is required for the Parakeet model. Install with 'pip install nemo_toolkit[asr]'"
+#         )
+#         return False
+#
+#     model_file = Path(cache_dir) / "nvidia_parakeet-tdt-0.6b-v2.nemo"
+#     if model_file.exists() and not force:
+#         logger.info("Model nvidia/parakeet-tdt-0.6b-v2 already exists at %s", model_file)
+#         return True
+#
+#     model_size = get_model_size_mb(WhisperModelType.PARAKEET_TDT_0_6B_V2)
+#     if not check_disk_space(model_size * 2, cache_dir):
+#         return False
+#
+#     try:
+#         logger.info("Downloading nvidia/parakeet-tdt-0.6b-v2 model with NeMo ...")
+#         model = EncDecRNNTModel.from_pretrained(model_name="nvidia/parakeet-tdt-0.6b-v2")
+#         model.save_to(str(model_file))
+#         logger.info("Successfully downloaded model to %s", model_file)
+#         return True
+#     except Exception as e:  # pragma: no cover - external call
+#         logger.error("Failed to download Parakeet model: %s", e)
+#         return False
 
 
 def download_whisper_model(model_type: WhisperModelType, force: bool = False) -> bool:
@@ -110,8 +110,8 @@ def download_whisper_model(model_type: WhisperModelType, force: bool = False) ->
         cache_dir = os.path.expanduser("~/.cache/whisper")
         os.makedirs(cache_dir, exist_ok=True)
 
-        if model_type is WhisperModelType.PARAKEET_TDT_0_6B_V2:
-            return _download_parakeet_model(cache_dir, force)
+        # if model_type is WhisperModelType.PARAKEET_TDT_0_6B_V2:
+        #     return _download_parakeet_model(cache_dir, force)
 
         # Check if model is already downloaded
         model_dir = Path(cache_dir) / str(model_type)

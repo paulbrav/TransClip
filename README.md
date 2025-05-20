@@ -150,7 +150,7 @@ During installation, the base Whisper model is downloaded automatically and you 
 # Activate the virtual environment
 source ~/.local/share/transclip/venv/bin/activate
 
-# Download a specific model (tiny, base, small, medium, large, large-v2, large-v3, parakeet-tdt-0.6b-v2)
+# Download a specific model (tiny, base, small, medium, large, large-v2, large-v3)
 python -m transclip.download_models --model small
 ```
 
@@ -161,12 +161,12 @@ Available models:
 - `medium`: ~1.5GB (slower, more accurate)
 - `large`: ~3GB (slowest, most accurate)
 - `large-v2`, `large-v3`: ~3GB (improved large models)
-- `parakeet-tdt-0.6b-v2`: ~1.2GB (NVIDIA Parakeet model, requires `nemo_toolkit`)
+# - `parakeet-tdt-0.6b-v2`: ~1.2GB (NVIDIA Parakeet model, requires `nemo_toolkit`)
 
-To use the Parakeet model, install NeMo first:
-```bash
-uv pip install "nemo_toolkit[asr]"
-```
+# To use the Parakeet model, install NeMo first:
+# ```bash
+# uv pip install "nemo_toolkit[asr]"
+# ```
 
 ## Development
 
