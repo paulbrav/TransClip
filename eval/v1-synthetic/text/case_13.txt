@@ -1,0 +1,1 @@
+Clipboard restoration should wait five hundred milliseconds before replacing text.

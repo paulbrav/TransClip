@@ -1,0 +1,231 @@
+{
+  "warmup_cases": [
+    {
+      "audio_path": "audio/warmup.wav",
+      "reference": "PyTorch on ROCm with gfx1151 is ready for the Granite speech benchmark.",
+      "keywords": [
+        "PyTorch",
+        "ROCm",
+        "gfx1151",
+        "Granite"
+      ],
+      "cleanup": true
+    }
+  ],
+  "cases": [
+    {
+      "audio_path": "audio/case_01.wav",
+      "reference": "Please check the Tauri tray icon after the service reports ready.",
+      "keywords": [
+        "Tauri"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_02.wav",
+      "reference": "Set the cleanup runtime to rule for the latency profile.",
+      "keywords": [
+        "cleanup"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_03.wav",
+      "reference": "Granite NAR should stay under seven hundred milliseconds after warm up.",
+      "keywords": [
+        "Granite",
+        "NAR"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_04.wav",
+      "reference": "Add PyTorch, ROCm, and gfx1151 to the keyword glossary.",
+      "keywords": [
+        "PyTorch",
+        "ROCm",
+        "gfx1151"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_05.wav",
+      "reference": "The localhost Python inference service is listening on port eight seven six five.",
+      "keywords": [
+        "Python"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_06.wav",
+      "reference": "Use wtype on Wayland and xdotool on X eleven when paste injection is needed.",
+      "keywords": [
+        "wtype",
+        "Wayland",
+        "xdotool"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_07.wav",
+      "reference": "The macOS menu bar item may need accessibility permission for command V.",
+      "keywords": [
+        "macOS"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_08.wav",
+      "reference": "Do not add cloud fallback or transcript telemetry in version one.",
+      "keywords": [
+        "telemetry"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_09.wav",
+      "reference": "Keep the Gemma cleanup backend available for quality comparisons.",
+      "keywords": [
+        "Gemma"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_10.wav",
+      "reference": "Open the keyword glossary and verify Hugging Face is preserved exactly.",
+      "keywords": [
+        "Hugging Face"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_11.wav",
+      "reference": "Run cargo check after changing the Tauri status shell.",
+      "keywords": [
+        "cargo",
+        "Tauri"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_12.wav",
+      "reference": "The recent transcripts submenu should keep the last five snippets.",
+      "keywords": [
+        "recent transcripts"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_13.wav",
+      "reference": "Clipboard restoration should wait five hundred milliseconds before replacing text.",
+      "keywords": [
+        "Clipboard"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_14.wav",
+      "reference": "The app should hide the secondary status window instead of quitting.",
+      "keywords": [
+        "status window"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_15.wav",
+      "reference": "Use the TheRock nightly index for the Radeon eight zero six zero S.",
+      "keywords": [
+        "TheRock",
+        "Radeon"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_16.wav",
+      "reference": "FlashAttention Triton AMD is required for the Granite NAR backend.",
+      "keywords": [
+        "FlashAttention",
+        "Triton",
+        "AMD",
+        "Granite",
+        "NAR"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_17.wav",
+      "reference": "The debug capture folder should include audio dot wav and timings dot json.",
+      "keywords": [
+        "debug capture"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_18.wav",
+      "reference": "Avoid rewriting llama.cpp as llama.cpp during cleanup.",
+      "keywords": [
+        "llama.cpp"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_19.wav",
+      "reference": "The service health endpoint should include the active hotkey and paste shortcut.",
+      "keywords": [
+        "health endpoint"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_20.wav",
+      "reference": "Do not treat the Dock as the primary home for this app.",
+      "keywords": [
+        "Dock"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_21.wav",
+      "reference": "Use a Linux panel app indicator and a macOS menu bar status item.",
+      "keywords": [
+        "Linux",
+        "macOS"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_22.wav",
+      "reference": "The eval manifest includes warmup cases that are excluded from metrics.",
+      "keywords": [
+        "eval manifest"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_23.wav",
+      "reference": "Keyword preservation should improve recognition of Qwen, MLX, and Transformers.",
+      "keywords": [
+        "Qwen",
+        "MLX",
+        "Transformers"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_24.wav",
+      "reference": "Stop recording when the global shortcut is released.",
+      "keywords": [
+        "global shortcut"
+      ],
+      "cleanup": true
+    },
+    {
+      "audio_path": "audio/case_25.wav",
+      "reference": "Leave the transcript on the clipboard when paste simulation fails.",
+      "keywords": [
+        "clipboard"
+      ],
+      "cleanup": true
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+FlashAttention Triton AMD is required for the Granite NAR backend.

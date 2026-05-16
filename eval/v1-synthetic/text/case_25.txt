@@ -1,0 +1,1 @@
+Leave the transcript on the clipboard when paste simulation fails.

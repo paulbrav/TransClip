@@ -1,0 +1,416 @@
+{
+  "summary": {
+    "cases": 25,
+    "mean_wer": 0.08563969363969365,
+    "mean_raw_asr_wer": 0.18125896325896326,
+    "mean_cleanup_drift_wer_delta": 0.0,
+    "cleanup_semantic_drift_failures": 0,
+    "mean_keyword_preservation": 0.992,
+    "mean_release_to_ready_ms": 289.84368,
+    "under_700ms": 25,
+    "under_1500ms": 25,
+    "warmup_cases": 1
+  },
+  "results": [
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_01.wav",
+      "text": "Please check the Tauri tray icon after the service report ready.",
+      "raw_asr": "please check the ti tray icon after the service report ready.",
+      "reference": "Please check the Tauri tray icon after the service reports ready.",
+      "wer": 0.09090909090909091,
+      "raw_asr_wer": 0.18181818181818182,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 293.15,
+        "cleanup": 0.343,
+        "end_to_end": 293.563
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_02.wav",
+      "text": "Set the cleanup runtime to rule for the latency profile.",
+      "raw_asr": "set the cleanup runtime to rule for the latency profile.",
+      "reference": "Set the cleanup runtime to rule for the latency profile.",
+      "wer": 0.0,
+      "raw_asr_wer": 0.0,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 255.361,
+        "cleanup": 0.181,
+        "end_to_end": 255.596
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_03.wav",
+      "text": "Granite NAR should stay under 700 milliseconds after warm up.",
+      "raw_asr": "granite nar should stay under 700 milliseconds after warm up.",
+      "reference": "Granite NAR should stay under seven hundred milliseconds after warm up.",
+      "wer": 0.18181818181818182,
+      "raw_asr_wer": 0.18181818181818182,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 327.062,
+        "cleanup": 0.288,
+        "end_to_end": 327.408
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_04.wav",
+      "text": "Add PyTorch, ROCm, and gfx1151 to the keyword glossary.",
+      "raw_asr": "add pytorch, rockham, and gfx 1151 to the keyword glossary.",
+      "reference": "Add PyTorch, ROCm, and gfx1151 to the keyword glossary.",
+      "wer": 0.0,
+      "raw_asr_wer": 0.3333333333333333,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 326.048,
+        "cleanup": 0.114,
+        "end_to_end": 326.218
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_05.wav",
+      "text": "The localhost Python inference service is listening on port 8675.",
+      "raw_asr": "the localhost python inference service is listening on port 8675.",
+      "reference": "The localhost Python inference service is listening on port eight seven six five.",
+      "wer": 0.3076923076923077,
+      "raw_asr_wer": 0.3076923076923077,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 299.919,
+        "cleanup": 0.185,
+        "end_to_end": 300.167
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_06.wav",
+      "text": "Use wtype on Wayland and xdotool on x11 when paste injection is needed.",
+      "raw_asr": "use w type on wayland and xool on x11 when paste injection is needed.",
+      "reference": "Use wtype on Wayland and xdotool on X eleven when paste injection is needed.",
+      "wer": 0.14285714285714285,
+      "raw_asr_wer": 0.35714285714285715,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 369.674,
+        "cleanup": 0.465,
+        "end_to_end": 370.199
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_07.wav",
+      "text": "The macOS menu bar item may need accessibility permission for command-v.",
+      "raw_asr": "the mac os menu bar item may need accessibility permission for command-v.",
+      "reference": "The macOS menu bar item may need accessibility permission for command V.",
+      "wer": 0.16666666666666666,
+      "raw_asr_wer": 0.3333333333333333,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 314.248,
+        "cleanup": 0.293,
+        "end_to_end": 314.603
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_08.wav",
+      "text": "Do not add cloud fallback or transcript telemetry in version 1.",
+      "raw_asr": "do not add cloud fallback or transcript telemetry in version 1.",
+      "reference": "Do not add cloud fallback or transcript telemetry in version one.",
+      "wer": 0.09090909090909091,
+      "raw_asr_wer": 0.09090909090909091,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 280.987,
+        "cleanup": 0.19,
+        "end_to_end": 281.231
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_09.wav",
+      "text": "Keep the Gemma cleanup backend available for quality comparisons.",
+      "raw_asr": "keep the gemma cleanup backend available for quality comparisons.",
+      "reference": "Keep the Gemma cleanup backend available for quality comparisons.",
+      "wer": 0.0,
+      "raw_asr_wer": 0.0,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 319.616,
+        "cleanup": 0.181,
+        "end_to_end": 319.849
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_10.wav",
+      "text": "Open the keyword glossary and verify Hugging Face is preserved exactly.",
+      "raw_asr": "open the keyword glossary and verify hugging face is preserved exactly.",
+      "reference": "Open the keyword glossary and verify Hugging Face is preserved exactly.",
+      "wer": 0.0,
+      "raw_asr_wer": 0.0,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 272.539,
+        "cleanup": 0.237,
+        "end_to_end": 272.829
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_11.wav",
+      "text": "Run cargo check after changing the Tauri status shell.",
+      "raw_asr": "run cargo check after changing the torory status shell.",
+      "reference": "Run cargo check after changing the Tauri status shell.",
+      "wer": 0.0,
+      "raw_asr_wer": 0.1111111111111111,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 244.045,
+        "cleanup": 0.203,
+        "end_to_end": 244.302
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_12.wav",
+      "text": "The recent transcripts submenu should keep the last five snippets.",
+      "raw_asr": "the recent transcripts submenu should keep the last five snippets.",
+      "reference": "The recent transcripts submenu should keep the last five snippets.",
+      "wer": 0.0,
+      "raw_asr_wer": 0.0,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 302.056,
+        "cleanup": 0.255,
+        "end_to_end": 302.362
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_13.wav",
+      "text": "Clipboard restoration should wait 500 milliseconds before replacing text.",
+      "raw_asr": "clipboard restoration should wait 500 milliseconds before replacing text.",
+      "reference": "Clipboard restoration should wait five hundred milliseconds before replacing text.",
+      "wer": 0.2,
+      "raw_asr_wer": 0.2,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 281.386,
+        "cleanup": 0.18,
+        "end_to_end": 281.62
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_14.wav",
+      "text": "The app should hide the secondary status window instead of quitting.",
+      "raw_asr": "the app should hide the secondary status window instead of quitting.",
+      "reference": "The app should hide the secondary status window instead of quitting.",
+      "wer": 0.0,
+      "raw_asr_wer": 0.0,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 297.542,
+        "cleanup": 0.243,
+        "end_to_end": 297.835
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_15.wav",
+      "text": "Use the TheRock knight index for the Radeon 80660s.",
+      "raw_asr": "use the the rock knight index for the radian 80660s.",
+      "reference": "Use the TheRock nightly index for the Radeon eight zero six zero S.",
+      "wer": 0.46153846153846156,
+      "raw_asr_wer": 0.6923076923076923,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 272.864,
+        "cleanup": 0.365,
+        "end_to_end": 273.287
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_16.wav",
+      "text": "FlashAttention Triton AMD is required for the Granite and backend.",
+      "raw_asr": "flash attention triton amd is required for the granite and backend.",
+      "reference": "FlashAttention Triton AMD is required for the Granite NAR backend.",
+      "wer": 0.1,
+      "raw_asr_wer": 0.3,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 0.8,
+      "timings_ms": {
+        "asr": 266.373,
+        "cleanup": 0.389,
+        "end_to_end": 266.814
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_17.wav",
+      "text": "The debug capture folder should include audio. Wav and timing. Json.",
+      "raw_asr": "the debug capture folder should include audio.wav and timing.json.",
+      "reference": "The debug capture folder should include audio dot wav and timings dot json.",
+      "wer": 0.3076923076923077,
+      "raw_asr_wer": 0.46153846153846156,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 336.597,
+        "cleanup": 0.245,
+        "end_to_end": 336.895
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_18.wav",
+      "text": "Avoid rewriting llama.cpp as llama.cpp during cleanup.",
+      "raw_asr": "avoid rewriting llama.cpp as llama cpp during cleanup.",
+      "reference": "Avoid rewriting llama.cpp as llama.cpp during cleanup.",
+      "wer": 0.0,
+      "raw_asr_wer": 0.2857142857142857,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 270.732,
+        "cleanup": 0.451,
+        "end_to_end": 271.235
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_19.wav",
+      "text": "The service health endpoint should include the active hotkey and paste shortcut.",
+      "raw_asr": "the service health endpoint should include the active hotkey and paste shortcut.",
+      "reference": "The service health endpoint should include the active hotkey and paste shortcut.",
+      "wer": 0.0,
+      "raw_asr_wer": 0.0,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 280.831,
+        "cleanup": 0.244,
+        "end_to_end": 281.128
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_20.wav",
+      "text": "Do not treat the Dock as the primary home for this app.",
+      "raw_asr": "do not treat the dock as the primary home for this app.",
+      "reference": "Do not treat the Dock as the primary home for this app.",
+      "wer": 0.0,
+      "raw_asr_wer": 0.0,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 259.939,
+        "cleanup": 0.183,
+        "end_to_end": 260.179
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_21.wav",
+      "text": "Use a Linux panel app indicator and a macOS menu bar status item.",
+      "raw_asr": "use a linux panel app indicator and a mac os menu bar status item.",
+      "reference": "Use a Linux panel app indicator and a macOS menu bar status item.",
+      "wer": 0.0,
+      "raw_asr_wer": 0.15384615384615385,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 276.111,
+        "cleanup": 0.204,
+        "end_to_end": 276.368
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_22.wav",
+      "text": "The eval manifest includes warm-up cases that are excluded from metrics.",
+      "raw_asr": "the eval manifest includes warm-up cases that are excluded from metrics.",
+      "reference": "The eval manifest includes warmup cases that are excluded from metrics.",
+      "wer": 0.09090909090909091,
+      "raw_asr_wer": 0.09090909090909091,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 274.207,
+        "cleanup": 0.24,
+        "end_to_end": 274.503
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_23.wav",
+      "text": "Keyword preservation should improve recognition of Qwen, MLX, and Transformers.",
+      "raw_asr": "keyword preservation should improve recognition of qn, mlxx, and transformers.",
+      "reference": "Keyword preservation should improve recognition of Qwen, MLX, and Transformers.",
+      "wer": 0.0,
+      "raw_asr_wer": 0.2,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 297.176,
+        "cleanup": 0.427,
+        "end_to_end": 297.654
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_24.wav",
+      "text": "Stop recording when the global shortcut is released.",
+      "raw_asr": "stop recording when the global sh get is released.",
+      "reference": "Stop recording when the global shortcut is released.",
+      "wer": 0.0,
+      "raw_asr_wer": 0.25,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 255.078,
+        "cleanup": 0.339,
+        "end_to_end": 255.47
+      }
+    },
+    {
+      "audio_path": "eval/v1-synthetic/audio/case_25.wav",
+      "text": "Leave the transcript on the clipboard when paste simulation fails.",
+      "raw_asr": "leave the transcript on the clipboard when paste simulation fails.",
+      "reference": "Leave the transcript on the clipboard when paste simulation fails.",
+      "wer": 0.0,
+      "raw_asr_wer": 0.0,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
+      "keyword_preservation": 1.0,
+      "timings_ms": {
+        "asr": 264.538,
+        "cleanup": 0.188,
+        "end_to_end": 264.777
+      }
+    }
+  ]
+}

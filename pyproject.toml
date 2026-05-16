@@ -1,0 +1,23 @@
+[project]
+name = "granite-speach"
+version = "0.1.0"
+description = "Local-only push-to-talk dictation with Granite ASR-oriented harnesses."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.optional-dependencies]
+audio = ["sounddevice>=0.5", "numpy>=1.26"]
+models = ["transformers>=4.52.1", "torch>=2.5", "torchaudio>=2.5", "torchcodec>=0.5", "torchvision>=0.20", "accelerate>=1.0", "soundfile>=0.12", "pillow>=10"]
+llama = ["llama-cpp-python>=0.3"]
+dev = []
+
+[project.scripts]
+granite-speach = "granite_speach.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,1 @@
+Avoid rewriting llama.cpp as llama.cpp during cleanup.

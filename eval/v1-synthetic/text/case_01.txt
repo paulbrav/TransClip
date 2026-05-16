@@ -1,0 +1,1 @@
+Please check the Tauri tray icon after the service reports ready.

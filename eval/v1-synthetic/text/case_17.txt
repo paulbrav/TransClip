@@ -1,0 +1,1 @@
+The debug capture folder should include audio dot wav and timings dot json.

@@ -1,0 +1,1 @@
+Do not add cloud fallback or transcript telemetry in version one.

@@ -1,0 +1,1 @@
+Granite NAR should stay under seven hundred milliseconds after warm up.

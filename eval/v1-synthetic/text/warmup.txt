@@ -1,0 +1,1 @@
+PyTorch on ROCm with gfx1151 is ready for the Granite speech benchmark.

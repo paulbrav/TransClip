@@ -1,0 +1,1 @@
+Use a Linux panel app indicator and a macOS menu bar status item.

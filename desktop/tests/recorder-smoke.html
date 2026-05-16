@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Recorder Smoke</title>
+  </head>
+  <body>
+    <pre id="result">RUNNING</pre>
+    <script type="module">
+      import { WavRecorder } from "/src/recorder.ts";
+
+      const result = document.querySelector("#result");
+
+      function ascii(bytes, start, end) {
+        return String.fromCharCode(...bytes.slice(start, end));
+      }
+
+      function delay(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      async function run() {
+        const recorder = new WavRecorder();
+        await recorder.start();
+        await delay(800);
+        const wavBase64 = await recorder.stop();
+        const bytes = Uint8Array.from(atob(wavBase64), (char) => char.charCodeAt(0));
+        const view = new DataView(bytes.buffer);
+        const summary = {
+          riff: ascii(bytes, 0, 4),
+          wave: ascii(bytes, 8, 12),
+          channels: view.getUint16(22, true),
+          sampleRate: view.getUint32(24, true),
+          bitsPerSample: view.getUint16(34, true),
+          dataBytes: view.getUint32(40, true),
+        };
+        if (summary.riff !== "RIFF" || summary.wave !== "WAVE") {
+          throw new Error(`bad wav header: ${JSON.stringify(summary)}`);
+        }
+        if (summary.channels !== 1 || summary.bitsPerSample !== 16) {
+          throw new Error(`bad wav format: ${JSON.stringify(summary)}`);
+        }
+        if (summary.sampleRate < 8000 || summary.dataBytes < 8000) {
+          throw new Error(`empty or invalid recording: ${JSON.stringify(summary)}`);
+        }
+        result.textContent = `PASS ${JSON.stringify(summary)}`;
+      }
+
+      try {
+        await run();
+      } catch (error) {
+        result.textContent = `FAIL ${error.stack || error}`;
+      }
+    </script>
+  </body>
+</html>

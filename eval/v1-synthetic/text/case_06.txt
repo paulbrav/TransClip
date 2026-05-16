@@ -1,0 +1,1 @@
+Use wtype on Wayland and xdotool on X eleven when paste injection is needed.

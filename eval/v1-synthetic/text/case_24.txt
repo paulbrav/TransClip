@@ -1,0 +1,1 @@
+Stop recording when the global shortcut is released.

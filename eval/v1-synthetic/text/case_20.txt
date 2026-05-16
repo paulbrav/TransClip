@@ -1,0 +1,1 @@
+Do not treat the Dock as the primary home for this app.

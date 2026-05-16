@@ -1,0 +1,1 @@
+The service health endpoint should include the active hotkey and paste shortcut.

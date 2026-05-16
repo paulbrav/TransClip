@@ -1,0 +1,1 @@
+Open the keyword glossary and verify Hugging Face is preserved exactly.

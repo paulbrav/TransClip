@@ -1,0 +1,1 @@
+Run cargo check after changing the Tauri status shell.

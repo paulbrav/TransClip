@@ -1,0 +1,21 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.venv*/
+
+# Local-only runtime artifacts
+debug-captures/
+.local-tools/
+*.wav
+
+# Tauri/frontend build artifacts
+desktop/node_modules/
+desktop/dist/
+desktop/src-tauri/target/
