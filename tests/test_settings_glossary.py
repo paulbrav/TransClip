@@ -16,7 +16,7 @@ class SettingsGlossaryTests(unittest.TestCase):
             settings = load_settings(settings_file)
             terms = load_keywords(keywords_file)
 
-            self.assertEqual(settings.hotkey_linux, "Ctrl+Space")
+            self.assertEqual(settings.hotkey_linux, "<Super><Shift>XF86TouchpadOff")
             self.assertEqual(settings.max_recording_seconds, 60)
             self.assertEqual(settings.asr_backend, "granite_nar")
             self.assertEqual(settings.asr_model, "ibm-granite/granite-speech-4.1-2b-nar")
@@ -36,7 +36,7 @@ class SettingsGlossaryTests(unittest.TestCase):
 
     def test_platform_helpers_have_defaults(self):
         settings = Settings()
-        self.assertIn("Space", settings.active_hotkey)
+        self.assertIn("XF86TouchpadOff", settings.active_hotkey)
         self.assertIn("V", settings.paste_shortcut)
 
 

@@ -24,14 +24,23 @@ SERVICE_PORT = 8765
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Smoke-test Tauri global Ctrl+Space hold-to-record wiring on Linux.",
+        description="Smoke-test Tauri global hold-to-record wiring on Linux.",
     )
+    parser.add_argument("--hotkey", default="Ctrl+Alt+Space")
     parser.add_argument("--timeout", type=float, default=90.0)
     parser.add_argument("--log", type=Path, default=Path("/tmp/granite-speach-tauri-hotkey-smoke.log"))
     args = parser.parse_args(argv)
 
     if sys.platform != "linux":
         print("tauri global hotkey smoke currently runs on Linux", file=sys.stderr)
+        return 2
+    backend = selected_hotkey_backend()
+    if backend == "linux-evdev" and not readable_input_events():
+        print(
+            "linux-evdev hotkey smoke requires readable /dev/input/event* devices; "
+            "run: sudo usermod -aG input $USER, then log out and back in",
+            file=sys.stderr,
+        )
         return 2
     ydotool = shutil.which("ydotool")
     if not ydotool:
@@ -41,6 +50,7 @@ def main(argv: list[str] | None = None) -> int:
         print("port 8765 is already in use; stop the real service before this smoke", file=sys.stderr)
         return 2
 
+    FakeServiceHandler.hotkey = args.hotkey
     FakeServiceHandler.reset()
     fake_service = ThreadingHTTPServer((SERVICE_HOST, SERVICE_PORT), FakeServiceHandler)
     threading.Thread(target=fake_service.serve_forever, daemon=True).start()
@@ -63,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
         deadline = time.monotonic() + args.timeout
         wait_for(lambda: FakeServiceHandler.health_count > 0, deadline, "frontend did not call /health")
         time.sleep(0.5)
-        subprocess.run([ydotool, "key", "ctrl+space"], check=True)
+        subprocess.run([ydotool, "key", to_ydotool_hotkey(args.hotkey)], check=True)
         wait_for(lambda: FakeServiceHandler.start_count > 0, deadline, "hotkey did not call /record/start")
         wait_for(lambda: FakeServiceHandler.stop_count > 0, deadline, "hotkey did not call /record/stop")
         result = {
@@ -71,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
             "health_count": FakeServiceHandler.health_count,
             "start_count": FakeServiceHandler.start_count,
             "stop_count": FakeServiceHandler.stop_count,
+            "backend": backend,
             "log": str(args.log),
         }
         print(json.dumps(result, indent=2, sort_keys=True))
@@ -96,6 +107,7 @@ class FakeServiceHandler(BaseHTTPRequestHandler):
     start_count = 0
     stop_count = 0
     recording = False
+    hotkey = "Ctrl+Alt+Space"
 
     @classmethod
     def reset(cls) -> None:
@@ -118,7 +130,7 @@ class FakeServiceHandler(BaseHTTPRequestHandler):
             200,
             {
                 "status": "recording" if type(self).recording else "ready",
-                "hotkey": "Ctrl+Space",
+                "hotkey": type(self).hotkey,
                 "max_recording_seconds": 60,
                 "min_recording_ms": 0,
                 "clipboard_restore_delay_ms": 0,
@@ -182,6 +194,30 @@ def service_is_running() -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(0.2)
         return sock.connect_ex((SERVICE_HOST, SERVICE_PORT)) == 0
+
+
+def selected_hotkey_backend() -> str:
+    session = os.environ.get("XDG_SESSION_TYPE", "").lower()
+    if session == "wayland" or (not session and os.environ.get("WAYLAND_DISPLAY")):
+        return "linux-evdev"
+    return "tauri-global-shortcut"
+
+
+def readable_input_events(input_dir: Path = Path("/dev/input")) -> list[Path]:
+    return [path for path in sorted(input_dir.glob("event*")) if os.access(path, os.R_OK)]
+
+
+def to_ydotool_hotkey(hotkey: str) -> str:
+    parts = []
+    for part in hotkey.split("+"):
+        normalized = part.strip().lower()
+        if normalized == "control":
+            normalized = "ctrl"
+        elif normalized == "option":
+            normalized = "alt"
+        if normalized:
+            parts.append(normalized)
+    return "+".join(parts)
 
 
 if __name__ == "__main__":

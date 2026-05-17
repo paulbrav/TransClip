@@ -24,7 +24,7 @@ DEFAULT_KEYWORDS = [
 
 @dataclass(slots=True)
 class Settings:
-    hotkey_linux: str = "Ctrl+Space"
+    hotkey_linux: str = "<Super><Shift>XF86TouchpadOff"
     hotkey_macos: str = "Option+Space"
     language: str = "en"
     asr_model: str = "ibm-granite/granite-speech-4.1-2b-nar"

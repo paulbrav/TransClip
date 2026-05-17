@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Granite Speach records microphone audio only while you hold the configured dictation hotkey.</string>
+  <string>Granite Speach records microphone audio when you start dictation and stops when you toggle it off.</string>
   <key>NSAppleEventsUsageDescription</key>
   <string>Granite Speach uses local paste automation to insert the latest transcript into the focused app.</string>
 </dict>

@@ -88,6 +88,26 @@ class InferenceEngine:
         result["duration_ms"] = duration_ms
         return result
 
+    def toggle_recording(
+        self,
+        cleanup: bool | None = None,
+        keywords: list[str] | None = None,
+    ) -> dict[str, Any]:
+        with self._recording_lock:
+            recording = self._recorder is not None
+            started_at = self._recording_started_at
+        if not recording:
+            result = self.start_recording()
+            result["action"] = "started"
+            return result
+
+        duration_ms = (perf_counter() - started_at) * 1000
+        discard = duration_ms < self.settings.min_recording_ms
+        result = self.stop_recording(cleanup=cleanup, keywords=keywords, discard=discard)
+        result["status"] = "ready"
+        result["action"] = "discarded" if discard else "stopped"
+        return result
+
     def cleanup_text(self, text: str, keywords: list[str] | None = None) -> dict[str, Any]:
         active_keywords = self.keywords if keywords is None else keywords
         result = self.cleanup_backend.cleanup(text, active_keywords)
@@ -174,6 +194,15 @@ def create_server(
                             cleanup=body.get("cleanup"),
                             keywords=_keywords_from_request(body),
                             discard=bool(body.get("discard")),
+                        ),
+                    )
+                    return
+                if path == "/record/toggle":
+                    self._json(
+                        200,
+                        engine.toggle_recording(
+                            cleanup=body.get("cleanup"),
+                            keywords=_keywords_from_request(body),
                         ),
                     )
                     return

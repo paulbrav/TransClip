@@ -40,6 +40,8 @@ class ClientTests(unittest.TestCase):
             response = client.transcribe(__file__, cleanup=False)
             self.assertEqual(response["text"], "ok")
             self.assertFalse(response["payload"]["cleanup"])
+            toggled = client.record_toggle(cleanup=True)
+            self.assertTrue(toggled["payload"]["cleanup"])
         finally:
             server.shutdown()
             server.server_close()

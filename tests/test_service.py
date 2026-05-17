@@ -182,6 +182,72 @@ class ServiceTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=2)
 
+    def test_http_record_toggle_starts_and_stops(self):
+        settings = Settings(
+            host="127.0.0.1",
+            port=0,
+            cleanup_runtime="test_rule",
+            min_recording_ms=0,
+        )
+        engine = InferenceEngine(
+            settings,
+            asr_backend=FakeASR(),
+            cleanup_backend=FaithfulRuleCleanupBackend(),
+            keywords=["ROCm"],
+        )
+        server = create_server(settings, engine)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        host, port = server.server_address
+        base_url = f"http://{host}:{port}"
+        try:
+            with patch("granite_speach.service.AudioRecorder", FakeRecorder):
+                started = http_json("POST", f"{base_url}/record/toggle", {})
+                stopped = http_json("POST", f"{base_url}/record/toggle", {"cleanup": True})
+
+            self.assertEqual(started["status"], "recording")
+            self.assertEqual(started["action"], "started")
+            self.assertEqual(stopped["status"], "ready")
+            self.assertEqual(stopped["action"], "stopped")
+            self.assertEqual(stopped["text"], "Hello from ROCm.")
+            self.assertIn("duration_ms", stopped)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+    def test_http_record_toggle_discards_under_minimum_duration(self):
+        settings = Settings(
+            host="127.0.0.1",
+            port=0,
+            cleanup_runtime="test_rule",
+            min_recording_ms=10_000,
+        )
+        engine = InferenceEngine(
+            settings,
+            asr_backend=FakeASR(),
+            cleanup_backend=FaithfulRuleCleanupBackend(),
+            keywords=["ROCm"],
+        )
+        server = create_server(settings, engine)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        host, port = server.server_address
+        base_url = f"http://{host}:{port}"
+        try:
+            with patch("granite_speach.service.AudioRecorder", FakeRecorder):
+                http_json("POST", f"{base_url}/record/toggle", {})
+                stopped = http_json("POST", f"{base_url}/record/toggle", {})
+
+            self.assertEqual(stopped["status"], "ready")
+            self.assertEqual(stopped["action"], "discarded")
+            self.assertTrue(stopped["discarded"])
+            self.assertIn("duration_ms", stopped)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
     def test_debug_capture_writes_error_logs_for_http_failures(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(

@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "tauri_service_record_smoke.py"
@@ -71,6 +72,23 @@ class TauriServiceRecordSmokeTests(unittest.TestCase):
         self.assertEqual(tauri_global_hotkey_smoke.FakeServiceHandler.start_count, 0)
         self.assertEqual(tauri_global_hotkey_smoke.FakeServiceHandler.stop_count, 0)
         self.assertFalse(tauri_global_hotkey_smoke.FakeServiceHandler.recording)
+
+    def test_hotkey_smoke_converts_configured_shortcut_for_ydotool(self):
+        self.assertEqual(
+            tauri_global_hotkey_smoke.to_ydotool_hotkey("Control+Option+Space"),
+            "ctrl+alt+space",
+        )
+
+    def test_hotkey_smoke_selects_evdev_backend_on_wayland(self):
+        with patch.dict("os.environ", {"XDG_SESSION_TYPE": "wayland"}, clear=True):
+            self.assertEqual(tauri_global_hotkey_smoke.selected_hotkey_backend(), "linux-evdev")
+
+    def test_hotkey_smoke_selects_tauri_backend_on_x11(self):
+        with patch.dict("os.environ", {"XDG_SESSION_TYPE": "x11"}, clear=True):
+            self.assertEqual(
+                tauri_global_hotkey_smoke.selected_hotkey_backend(),
+                "tauri-global-shortcut",
+            )
 
 
 if __name__ == "__main__":

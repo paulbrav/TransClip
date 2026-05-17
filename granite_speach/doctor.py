@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
+import os
 from pathlib import Path
 import json
 import platform
@@ -8,6 +9,10 @@ import shutil
 import subprocess
 
 from .device import torch_cuda_usable, torch_mps_available
+from .gnome_shortcut import (
+    GRANITE_SHORTCUT_BINDING,
+    get_gnome_shortcut_status,
+)
 from .settings import Settings, default_config_dir, keywords_path, settings_path
 
 
@@ -23,6 +28,7 @@ def run_checks(settings: Settings, config_dir: Path | None = None) -> list[Check
         check_config_files(config_dir),
         check_clipboard_tools(),
         check_paste_tools(),
+        check_hotkey_readiness(),
         check_microphone_devices(),
         check_tauri_linux_libs(),
         check_model_cache(settings),
@@ -100,6 +106,148 @@ def check_paste_tools() -> Check:
     if wtype:
         return Check("paste_tools", False, "wtype is installed, but non-Wayland sessions require xdotool or ydotool; apt: xdotool ydotool")
     return Check("paste_tools", False, "requires wtype, xdotool, or ydotool; apt: xdotool ydotool")
+
+
+def check_hotkey_readiness() -> Check:
+    system = platform.system()
+    if system == "Darwin":
+        return Check(
+            "hotkey_readiness",
+            True,
+            "macOS uses the legacy Tauri global-shortcut backend",
+        )
+    if system != "Linux":
+        return Check("hotkey_readiness", True, f"not checked on {system}")
+
+    session = (os_environ("XDG_SESSION_TYPE") or "unknown").lower()
+    desktop = (
+        os_environ("XDG_CURRENT_DESKTOP")
+        or os_environ("XDG_SESSION_DESKTOP")
+        or os_environ("DESKTOP_SESSION")
+        or "unknown"
+    )
+    if not shutil.which("gsettings"):
+        return Check(
+            "hotkey_readiness",
+            False,
+            f"session={session}; desktop={desktop}; GNOME shortcut setup requires gsettings",
+        )
+
+    try:
+        status = get_gnome_shortcut_status()
+    except subprocess.CalledProcessError as exc:
+        return Check(
+            "hotkey_readiness",
+            False,
+            f"session={session}; desktop={desktop}; could not inspect GNOME custom shortcuts: {exc}",
+        )
+
+    detail = (
+        f"session={session}; desktop={desktop}; installed={status.installed}; "
+        f"binding={status.binding or 'missing'}; command_exists={status.command_exists}"
+    )
+    if not status.installed:
+        return Check(
+            "hotkey_readiness",
+            False,
+            detail + "; run: granite-speach install-gnome-shortcut",
+        )
+    if status.binding != GRANITE_SHORTCUT_BINDING:
+        return Check(
+            "hotkey_readiness",
+            False,
+            detail + f"; expected binding={GRANITE_SHORTCUT_BINDING}",
+        )
+    if not status.command_exists:
+        return Check(
+            "hotkey_readiness",
+            False,
+            detail + f"; command={status.command or 'missing'}",
+        )
+    return Check(
+        "hotkey_readiness",
+        True,
+        detail + f"; command={status.command}",
+    )
+
+
+def check_evdev_hold_to_talk_readiness() -> Check:
+    system = platform.system()
+    if system != "Linux":
+        return Check("evdev_hold_to_talk", True, f"not checked on {system}")
+
+    session = (os_environ("XDG_SESSION_TYPE") or "unknown").lower()
+    portal_present = global_shortcuts_portal_present()
+    event_paths, readable_paths = readable_input_events()
+    portal_detail = f"GlobalShortcuts portal present: {portal_present}"
+    if readable_paths:
+        return Check(
+            "evdev_hold_to_talk",
+            True,
+            f"session={session}; {portal_detail}; readable /dev/input events: {len(readable_paths)}",
+        )
+    if event_paths:
+        return Check(
+            "evdev_hold_to_talk",
+            False,
+            "session="
+            + session
+            + "; "
+            + portal_detail
+            + "; no readable /dev/input/event* devices. Run: sudo usermod -aG input $USER, then log out and back in",
+        )
+    return Check(
+        "evdev_hold_to_talk",
+        False,
+        "session="
+        + session
+        + "; "
+        + portal_detail
+        + "; no /dev/input/event* devices found. Check Linux input device permissions and container/session access",
+    )
+
+
+def global_shortcuts_portal_present() -> bool:
+    if shutil.which("busctl"):
+        result = subprocess.run(
+            [
+                "busctl",
+                "--user",
+                "--no-pager",
+                "introspect",
+                "org.freedesktop.portal.Desktop",
+                "/org/freedesktop/portal/desktop",
+                "org.freedesktop.portal.GlobalShortcuts",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return result.returncode == 0
+    if shutil.which("gdbus"):
+        result = subprocess.run(
+            [
+                "gdbus",
+                "introspect",
+                "--session",
+                "--dest",
+                "org.freedesktop.portal.Desktop",
+                "--object-path",
+                "/org/freedesktop/portal/desktop",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            check=False,
+        )
+        return result.returncode == 0 and "org.freedesktop.portal.GlobalShortcuts" in result.stdout
+    return False
+
+
+def readable_input_events(input_dir: Path = Path("/dev/input")) -> tuple[list[Path], list[Path]]:
+    event_paths = sorted(input_dir.glob("event*"))
+    readable_paths = [path for path in event_paths if os.access(path, os.R_OK)]
+    return event_paths, readable_paths
 
 
 def check_microphone_devices() -> Check:

@@ -1,13 +1,13 @@
 # Granite Speach
 
-Local-only push-to-talk dictation for Linux and macOS, oriented around Granite
+Local-only toggle-to-talk dictation for Linux and macOS, oriented around Granite
 ASR and faithful cleanup for technical notes.
 
 The repository has two runnable layers:
 
 - `granite_speach/`: Python inference service, settings, glossary, audio capture,
   cleanup, paste injection, debug capture, and eval harness.
-- `desktop/`: Tauri 2 desktop shell with tray actions, global hotkey capture,
+- `desktop/`: Tauri 2 desktop shell with tray actions,
   service status, and latest transcript copy/paste controls.
 
 ## Quick Start
@@ -77,6 +77,17 @@ Then transcribe a WAV:
 uv run -m granite_speach.cli transcribe sample.wav
 ```
 
+Install the default GNOME shortcut for the Copilot key toggle workflow:
+
+```bash
+uv run -m granite_speach.cli install-gnome-shortcut
+```
+
+This creates or updates the GNOME custom shortcut `Granite Speach Toggle`.
+On this HP ZBook, `wev` reports the Copilot key as
+`<Super><Shift>XF86TouchpadOff`. Press once to start recording; press again to
+stop, transcribe, and paste.
+
 ## Desktop
 
 Build the Tauri frontend:
@@ -113,6 +124,11 @@ sudo apt install -y \
 ```bash
 npm run tauri dev
 ```
+
+Linux GNOME sessions use the native custom shortcut installed above. No
+`/dev/input` group membership is required for the default toggle workflow.
+Legacy hold-to-talk diagnostics remain in the codebase, but they are not the
+default hotkey path.
 
 On a Linux session with a StatusNotifier/AppIndicator host, the tray
 registration path can be smoke-tested without loading local models:
@@ -221,3 +237,39 @@ Check host readiness:
 ```bash
 uv run -m granite_speach.cli doctor
 ```
+
+## ChatGPT UI Bridge
+
+For ChatGPT-only model modes that are visible in the web app but not exposed as
+Codex/API model IDs, `scripts/chatgpt_ui_ask.py` can drive the visible ChatGPT
+browser UI with Playwright. It uses a dedicated persistent browser profile and
+does not extract or replay browser auth tokens.
+
+Install the optional dependency and browser support:
+
+```bash
+uv run --extra chatgpt-ui playwright install chrome
+```
+
+First run with the browser left open, then log in and select any account prompts
+manually:
+
+```bash
+uv run --extra chatgpt-ui scripts/chatgpt_ui_ask.py --keep-open "Say ready."
+```
+
+After the profile is logged in, ask through the visible UI:
+
+```bash
+uv run --extra chatgpt-ui scripts/chatgpt_ui_ask.py --model "Extended Pro" "Analyze this prompt."
+```
+
+Use stdin for larger prompts:
+
+```bash
+cat prompt.txt | uv run --extra chatgpt-ui scripts/chatgpt_ui_ask.py --model "Extended Pro"
+```
+
+The bridge defaults to `~/.cache/granite-speach-chatgpt-ui`. Use `--profile` to
+keep a separate login/profile, `--reuse-current-chat` to continue the current
+conversation, and `--keep-open` to inspect or repair the browser state.

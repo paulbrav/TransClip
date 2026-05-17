@@ -26,6 +26,12 @@ class InferenceClient:
     def cleanup_transcribe(self, wav_path: Path) -> dict:
         return self._post("/cleanup/transcribe", {"audio_path": str(wav_path)})
 
+    def record_toggle(self, cleanup: bool | None = None) -> dict:
+        payload: dict[str, object] = {}
+        if cleanup is not None:
+            payload["cleanup"] = cleanup
+        return self._post("/record/toggle", payload)
+
     def _get(self, path: str) -> dict:
         with request.urlopen(f"{self.base_url}{path}", timeout=5) as response:
             return json.loads(response.read().decode("utf-8"))

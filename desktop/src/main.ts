@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   CheckMenuItem,
   Menu,
@@ -9,7 +10,6 @@ import {
 import { TrayIcon } from "@tauri-apps/api/tray";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import { WavRecorder } from "./recorder";
 
 const serviceUrl = "http://127.0.0.1:8765";
@@ -22,6 +22,7 @@ const serviceRecordSmokeUrl = import.meta.env
 const pasteSmokeText =
   (import.meta.env.VITE_GRANITE_TAURI_PASTE_SMOKE_TEXT as string | undefined) ??
   "Granite Speach paste smoke";
+const gnomeShortcutLabel = "Copilot key via GNOME custom shortcut";
 
 type Health = {
   status: string;
@@ -39,10 +40,17 @@ let healthPayload: Health | null = null;
 let recording = false;
 let trayIcon: TrayIcon | null = null;
 let currentStatus = "Loading";
-let registeredShortcut = "";
+let configuredShortcut = "";
+let hotkeyBackend = "";
 let recordingStartedAt = 0;
 let maxRecordingTimer: number | undefined;
 const recentTranscripts: string[] = [];
+
+type HotkeyEventPayload = {
+  state: "Pressed" | "Released";
+  shortcut: string;
+  backend: string;
+};
 
 function mustGet<T extends HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -68,6 +76,7 @@ function showError(context: string, error: unknown) {
   mustGet<HTMLParagraphElement>("#error").textContent = `${context}: ${message}`;
   mustGet<HTMLPreElement>("#health").textContent = `${context}: ${message}`;
   console.error(context, error);
+  void refreshTrayMenu();
 }
 
 function formatError(error: unknown): string {
@@ -94,10 +103,12 @@ function rememberTranscript(value: string) {
   recentTranscripts.splice(5);
 }
 
-async function refreshHealth() {
+async function refreshHealth(options: { showLoading?: boolean } = {}) {
   const health = mustGet<HTMLPreElement>("#health");
   clearError();
-  setStatus("Loading");
+  if (options.showLoading ?? true) {
+    setStatus("Loading");
+  }
   try {
     const response = await fetch(`${serviceUrl}/health`);
     const payload = await response.json();
@@ -105,12 +116,17 @@ async function refreshHealth() {
     health.textContent = JSON.stringify(payload, null, 2);
     cleanupEnabled = Boolean(payload.cleanup_enabled);
     mustGet<HTMLInputElement>("#cleanup").checked = cleanupEnabled;
-    setStatus(payload.status === "ready" ? "Ready" : "Error");
-    try {
-      await registerHotkey(payload.hotkey);
-    } catch (error) {
-      showError("Hotkey registration failed; manual Record still works", error);
+    const wasRecording = recording;
+    recording = payload.status === "recording";
+    if (!recording) {
+      window.clearTimeout(maxRecordingTimer);
+      maxRecordingTimer = undefined;
+    } else if (!wasRecording) {
+      recordingStartedAt = Date.now();
     }
+    configuredShortcut = gnomeShortcutLabel;
+    hotkeyBackend = "";
+    setStatus(recording ? "Recording" : "Ready");
   } catch (error) {
     showError("Health check failed", error);
     setStatus("Error");
@@ -130,31 +146,12 @@ async function startService() {
   }
 }
 
-async function registerHotkey(hotkey: string) {
-  const shortcut = toTauriShortcut(hotkey);
-  if (!shortcut || shortcut === registeredShortcut) {
-    return;
+async function handleHotkeyState(state: "Pressed" | "Released") {
+  if (state === "Pressed") {
+    await startRecording();
+  } else {
+    await stopRecording(true);
   }
-  await unregisterAll();
-  await register(shortcut, async (event) => {
-    if (event.state === "Pressed") {
-      await startRecording();
-    } else {
-      await stopRecording(true);
-    }
-  });
-  registeredShortcut = shortcut;
-}
-
-function toTauriShortcut(value: string): string {
-  return value
-    .split("+")
-    .map((part) => {
-      if (part === "Control") return "Ctrl";
-      if (part === "Option") return "Alt";
-      return part;
-    })
-    .join("+");
 }
 
 async function startRecording() {
@@ -166,6 +163,7 @@ async function startRecording() {
     recording = true;
     recordingStartedAt = Date.now();
     updateRecordingControls();
+    await refreshHealth({ showLoading: false });
     void refreshTrayMenu();
     window.clearTimeout(maxRecordingTimer);
     maxRecordingTimer = window.setTimeout(
@@ -189,6 +187,7 @@ async function stopRecording(pasteAfter: boolean, keepClipboardAfterPaste = fals
       await fetchJson("/record/stop", { discard: true });
       recording = false;
       setStatus("Ready");
+      await refreshHealth({ showLoading: false });
     } catch (error) {
       recording = false;
       setStatus("Error");
@@ -210,6 +209,7 @@ async function stopRecording(pasteAfter: boolean, keepClipboardAfterPaste = fals
       await copyLatest();
       setStatus("Ready");
     }
+    await refreshHealth({ showLoading: false });
   } catch (error) {
     recording = false;
     setStatus("Error");
@@ -263,6 +263,7 @@ async function pasteTranscript(text: string, keepClipboardAfterPaste = false) {
 }
 
 async function showStatusWindow() {
+  await refreshHealth({ showLoading: false });
   const appWindow = getCurrentWindow();
   await appWindow.show();
   await appWindow.setFocus();
@@ -272,13 +273,22 @@ async function setupTray() {
   trayIcon = await TrayIcon.new({
     tooltip: "Granite Speach",
     menuOnLeftClick: true,
+    action: () => {
+      void refreshHealth({ showLoading: false });
+    },
   });
   await refreshTrayMenu();
 }
 
 async function refreshTrayMenu() {
   if (!trayIcon) return;
-  await trayIcon.setTooltip(`Granite Speach - ${currentStatus}`);
+  const shortcut = configuredShortcut || healthPayload?.hotkey || "";
+  const backend = hotkeyBackend ? ` via ${hotkeyBackend}` : "";
+  await trayIcon.setTooltip(
+    shortcut
+      ? `Granite Speach - ${currentStatus} - ${shortcut}${backend}`
+      : `Granite Speach - ${currentStatus}`,
+  );
   await trayIcon.setMenu(await buildTrayMenu());
 }
 
@@ -296,6 +306,11 @@ async function buildTrayMenu() {
       await MenuItem.new({
         id: "status",
         text: `Status: ${currentStatus}`,
+        enabled: false,
+      }),
+      await MenuItem.new({
+        id: "hotkey",
+        text: `Shortcut: ${configuredShortcut || gnomeShortcutLabel}`,
         enabled: false,
       }),
       await PredefinedMenuItem.new({ item: "Separator" }),
@@ -546,7 +561,7 @@ window.addEventListener("DOMContentLoaded", () => {
     void appWindow.hide();
   });
   mustGet<HTMLParagraphElement>("#service-url").textContent = serviceUrl;
-  mustGet<HTMLButtonElement>("#refresh").addEventListener("click", refreshHealth);
+  mustGet<HTMLButtonElement>("#refresh").addEventListener("click", () => refreshHealth());
   mustGet<HTMLButtonElement>("#start-service").addEventListener("click", startService);
   mustGet<HTMLButtonElement>("#record-start").addEventListener("click", startRecording);
   mustGet<HTMLButtonElement>("#record-stop-paste").addEventListener("click", () =>
@@ -561,11 +576,20 @@ window.addEventListener("DOMContentLoaded", () => {
   });
   updateRecordingControls();
   setupTray();
+  void listen<HotkeyEventPayload>("granite-hotkey", (event) =>
+    handleHotkeyEvent(event.payload),
+  ).catch((error) => showError("Hotkey listener failed", error));
   refreshHealth();
   void maybeRunTauriRecorderSmoke();
   void maybeRunTauriPasteSmoke();
   void maybeRunTauriServiceRecordSmoke();
 });
+
+function handleHotkeyEvent(payload: HotkeyEventPayload) {
+  configuredShortcut = payload.shortcut;
+  hotkeyBackend = payload.backend;
+  void handleHotkeyState(payload.state);
+}
 
 window.addEventListener("error", (event) => {
   showError("Unhandled frontend error", event.error ?? event.message);

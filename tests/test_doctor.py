@@ -8,6 +8,8 @@ from granite_speach.doctor import (
     Check,
     check_asr_runtime,
     check_config_files,
+    check_evdev_hold_to_talk_readiness,
+    check_hotkey_readiness,
     check_microphone_devices,
     check_model_cache,
     check_paste_tools,
@@ -16,6 +18,7 @@ from granite_speach.doctor import (
     checks_as_text,
     hf_cache_dir,
 )
+from granite_speach.gnome_shortcut import GnomeShortcutStatus
 from granite_speach.settings import Settings
 
 
@@ -124,6 +127,67 @@ class DoctorTests(unittest.TestCase):
 
         self.assertTrue(check.ok)
         self.assertIn("ydotool", check.detail)
+
+    def test_gnome_hotkey_check_reports_installed_shortcut(self):
+        status = GnomeShortcutStatus(
+            installed=True,
+            path="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/granite-speach-toggle/",
+            name="Granite Speach Toggle",
+            binding="<Super><Shift>XF86TouchpadOff",
+            command="/usr/bin/python -m granite_speach.cli toggle-record --paste",
+            command_exists=True,
+        )
+        with (
+            patch("granite_speach.doctor.platform.system", return_value="Linux"),
+            patch("granite_speach.doctor.os_environ", side_effect=lambda name: {"XDG_SESSION_TYPE": "wayland", "XDG_CURRENT_DESKTOP": "GNOME"}.get(name)),
+            patch("granite_speach.doctor.shutil.which", return_value="/usr/bin/gsettings"),
+            patch("granite_speach.doctor.get_gnome_shortcut_status", return_value=status),
+        ):
+            check = check_hotkey_readiness()
+
+        self.assertTrue(check.ok)
+        self.assertIn("session=wayland", check.detail)
+        self.assertIn("binding=<Super><Shift>XF86TouchpadOff", check.detail)
+        self.assertIn("command_exists=True", check.detail)
+
+    def test_gnome_hotkey_check_recommends_installer_when_missing(self):
+        status = GnomeShortcutStatus(False, None, None, None, None, False)
+        with (
+            patch("granite_speach.doctor.platform.system", return_value="Linux"),
+            patch("granite_speach.doctor.os_environ", side_effect=lambda name: {"XDG_SESSION_TYPE": "wayland", "XDG_CURRENT_DESKTOP": "GNOME"}.get(name)),
+            patch("granite_speach.doctor.shutil.which", return_value="/usr/bin/gsettings"),
+            patch("granite_speach.doctor.get_gnome_shortcut_status", return_value=status),
+        ):
+            check = check_hotkey_readiness()
+
+        self.assertFalse(check.ok)
+        self.assertIn("granite-speach install-gnome-shortcut", check.detail)
+
+    def test_evdev_hold_to_talk_check_reports_readable_input_events(self):
+        with (
+            patch("granite_speach.doctor.platform.system", return_value="Linux"),
+            patch("granite_speach.doctor.os_environ", return_value="wayland"),
+            patch("granite_speach.doctor.global_shortcuts_portal_present", return_value=False),
+            patch("granite_speach.doctor.readable_input_events", return_value=([Path("/dev/input/event0")], [Path("/dev/input/event0")])),
+        ):
+            check = check_evdev_hold_to_talk_readiness()
+
+        self.assertTrue(check.ok)
+        self.assertIn("session=wayland", check.detail)
+        self.assertIn("readable /dev/input events", check.detail)
+
+    def test_evdev_hold_to_talk_check_recommends_input_group(self):
+        with (
+            patch("granite_speach.doctor.platform.system", return_value="Linux"),
+            patch("granite_speach.doctor.os_environ", return_value="wayland"),
+            patch("granite_speach.doctor.global_shortcuts_portal_present", return_value=False),
+            patch("granite_speach.doctor.readable_input_events", return_value=([Path("/dev/input/event0")], [])),
+        ):
+            check = check_evdev_hold_to_talk_readiness()
+
+        self.assertFalse(check.ok)
+        self.assertIn("sudo usermod -aG input $USER", check.detail)
+        self.assertIn("GlobalShortcuts portal present: False", check.detail)
 
     def test_microphone_check_uses_arecord_devices(self):
         output = """**** List of CAPTURE Hardware Devices ****

@@ -11,10 +11,6 @@
     "core:window:allow-show",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
-    "global-shortcut:allow-is-registered",
-    "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister",
-    "global-shortcut:allow-unregister-all",
     "opener:default"
   ]
 }

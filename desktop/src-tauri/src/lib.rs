@@ -6,6 +6,8 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use tauri::Manager;
 
+mod hotkey;
+
 static MANAGED_SERVICE: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
 
 #[tauri::command]
@@ -95,6 +97,7 @@ fn start_service() -> Result<String, String> {
 
 #[tauri::command]
 fn quit(app: tauri::AppHandle) {
+    hotkey::stop_hotkey(&app);
     stop_managed_service();
     app.exit(0);
 }
@@ -273,7 +276,7 @@ fn escape_osascript(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-const DEFAULT_SETTINGS: &str = r#"hotkey_linux = "Ctrl+Space"
+const DEFAULT_SETTINGS: &str = r#"hotkey_linux = "<Super><Shift>XF86TouchpadOff"
 hotkey_macos = "Option+Space"
 language = "en"
 
@@ -362,6 +365,7 @@ pub fn run() {
             simulate_paste,
             open_config_file,
             start_service,
+            hotkey::configure_hotkey,
             show_notification,
             quit
         ])
