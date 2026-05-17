@@ -31,17 +31,17 @@ class CleanupTests(unittest.TestCase):
         )
         self.assertEqual(
             conservative_cleanup(
-                "fix the tory status shell and release the global short get",
-                ["Tauri", "global shortcut"],
+                "fix the app indicator tray and release the global short get",
+                ["AppIndicator", "global shortcut"],
             ),
-            "Fix the Tauri status shell and release the global shortcut.",
+            "Fix the AppIndicator tray and release the global shortcut.",
         )
         self.assertEqual(
             conservative_cleanup(
-                "avoid llama. Cpp, torory, radian, and global sh get",
-                ["llama.cpp", "Tauri", "Radeon", "global shortcut"],
+                "avoid llama. Cpp, app indicator, radian, and global sh get",
+                ["llama.cpp", "AppIndicator", "Radeon", "global shortcut"],
             ),
-            "Avoid llama.cpp, Tauri, Radeon, and global shortcut.",
+            "Avoid llama.cpp, AppIndicator, Radeon, and global shortcut.",
         )
 
     def test_cleanup_backend_returns_timing(self):
@@ -53,9 +53,7 @@ class CleanupTests(unittest.TestCase):
     def test_cleanup_backend_selection_is_explicit(self):
         backend = build_cleanup_backend(Settings(model_cache_dir="/models"))
         self.assertIsInstance(backend, FaithfulRuleCleanupBackend)
-        gemma = build_cleanup_backend(
-            Settings(cleanup_runtime="transformers", model_cache_dir="/models")
-        )
+        gemma = build_cleanup_backend(Settings(cleanup_runtime="transformers", model_cache_dir="/models"))
         self.assertIsInstance(gemma, GemmaTransformersCleanupBackend)
         self.assertTrue(gemma.local_files_only)
         self.assertEqual(gemma.cache_dir, "/models")

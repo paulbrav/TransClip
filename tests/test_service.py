@@ -1,15 +1,17 @@
-from pathlib import Path
 import base64
 import json
 import tempfile
 import threading
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 from urllib import request
 
 from granite_speach.asr import TranscriptionResult
 from granite_speach.cleanup import FaithfulRuleCleanupBackend
+from granite_speach.history import read_history
 from granite_speach.service import InferenceEngine, create_server
+from granite_speach.service_routes import dispatch_post
 from granite_speach.settings import Settings
 
 
@@ -37,6 +39,18 @@ class FakeRecorder:
 
 
 class ServiceTests(unittest.TestCase):
+    def setUp(self):
+        self._history_tmp = tempfile.TemporaryDirectory()
+        self._history_patch = patch(
+            "granite_speach.history.history_path",
+            return_value=Path(self._history_tmp.name) / "history.jsonl",
+        )
+        self._history_patch.start()
+
+    def tearDown(self):
+        self._history_patch.stop()
+        self._history_tmp.cleanup()
+
     def test_engine_health_and_transcribe(self):
         with tempfile.TemporaryDirectory() as tmp:
             wav = Path(tmp) / "audio.wav"
@@ -88,15 +102,71 @@ class ServiceTests(unittest.TestCase):
                 self.assertEqual(transcribed["text"], "Hello from ROCm.")
                 self.assertEqual(transcribed_clean["text"], "Hello from ROCm.")
                 self.assertIn("Request must include audio_path", missing["error"])
+                events = read_history(path=Path(self._history_tmp.name) / "history.jsonl")
+                self.assertEqual(events[0]["source"], "/cleanup/transcribe")
+                self.assertEqual(events[1]["source"], "/transcribe")
             finally:
                 server.shutdown()
                 server.server_close()
                 thread.join(timeout=2)
 
+    def test_route_dispatch_can_exercise_endpoint_without_socket(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wav = Path(tmp) / "audio.wav"
+            wav.write_bytes(b"not really wav")
+            engine = InferenceEngine(
+                Settings(cleanup_runtime="test_rule"),
+                asr_backend=FakeASR(),
+                cleanup_backend=FaithfulRuleCleanupBackend(),
+                keywords=["ROCm"],
+            )
+
+            response = dispatch_post(engine, "/transcribe", {"audio_path": str(wav)})
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.payload["text"], "Hello from ROCm.")
+
+    def test_route_dispatch_removes_base64_temp_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wav = Path(tmp) / "audio.wav"
+            wav.write_bytes(b"not really wav")
+            asr = FakeASR()
+            engine = InferenceEngine(
+                Settings(cleanup_runtime="test_rule"),
+                asr_backend=asr,
+                cleanup_backend=FaithfulRuleCleanupBackend(),
+                keywords=["ROCm"],
+            )
+
+            response = dispatch_post(
+                engine,
+                "/cleanup/transcribe",
+                {"audio_base64": base64.b64encode(wav.read_bytes()).decode("ascii")},
+            )
+
+            self.assertEqual(response.status, 200)
+            self.assertFalse(asr.wav_path.exists())
+
+    def test_history_write_failure_does_not_fail_transcription(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wav = Path(tmp) / "audio.wav"
+            wav.write_bytes(b"not really wav")
+            engine = InferenceEngine(
+                Settings(cleanup_runtime="test_rule"),
+                asr_backend=FakeASR(),
+                cleanup_backend=FaithfulRuleCleanupBackend(),
+                keywords=["ROCm"],
+            )
+            with patch("granite_speach.service.append_transcript_history", side_effect=OSError("history full")):
+                result = engine.transcribe(wav, record_history=True)
+
+            self.assertEqual(result["text"], "Hello from ROCm.")
+            self.assertIn("history full", result["history_error"])
+
     def test_engine_loads_keywords_from_explicit_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             keyword_file = Path(tmp) / "keywords.txt"
-            keyword_file.write_text("Tauri\nROCm\n", encoding="utf-8")
+            keyword_file.write_text("AppIndicator\nROCm\n", encoding="utf-8")
             wav = Path(tmp) / "audio.wav"
             wav.write_bytes(b"not really wav")
             asr = FakeASR()
@@ -109,7 +179,7 @@ class ServiceTests(unittest.TestCase):
 
             engine.transcribe(wav, cleanup=False)
 
-            self.assertEqual(asr.keywords, ["Tauri", "ROCm"])
+            self.assertEqual(asr.keywords, ["AppIndicator", "ROCm"])
 
     def test_transcribe_can_override_keywords_per_request(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -123,9 +193,9 @@ class ServiceTests(unittest.TestCase):
                 keywords=["ROCm"],
             )
 
-            engine.transcribe(wav, cleanup=False, keywords=["Tauri"])
+            engine.transcribe(wav, cleanup=False, keywords=["AppIndicator"])
 
-            self.assertEqual(asr.keywords, ["Tauri"])
+            self.assertEqual(asr.keywords, ["AppIndicator"])
 
     def test_http_record_start_and_stop_transcribes_service_audio(self):
         settings = Settings(host="127.0.0.1", port=0, cleanup_runtime="test_rule")
@@ -188,6 +258,7 @@ class ServiceTests(unittest.TestCase):
             port=0,
             cleanup_runtime="test_rule",
             min_recording_ms=0,
+            toggle_cooldown_ms=0,
         )
         engine = InferenceEngine(
             settings,
@@ -222,6 +293,7 @@ class ServiceTests(unittest.TestCase):
             port=0,
             cleanup_runtime="test_rule",
             min_recording_ms=10_000,
+            toggle_cooldown_ms=0,
         )
         engine = InferenceEngine(
             settings,
@@ -279,6 +351,30 @@ class ServiceTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
                 thread.join(timeout=2)
+
+    def test_record_toggle_cooldown_ignores_immediate_second_toggle(self):
+        settings = Settings(
+            host="127.0.0.1",
+            port=0,
+            cleanup_runtime="test_rule",
+            min_recording_ms=0,
+            toggle_cooldown_ms=500,
+        )
+        engine = InferenceEngine(
+            settings,
+            asr_backend=FakeASR(),
+            cleanup_backend=FaithfulRuleCleanupBackend(),
+            keywords=["ROCm"],
+        )
+        with patch("granite_speach.service.AudioRecorder", FakeRecorder):
+            started = engine.toggle_recording()
+            ignored = engine.toggle_recording()
+
+        self.assertEqual(started["action"], "started")
+        self.assertEqual(ignored["status"], "recording")
+        self.assertEqual(ignored["action"], "ignored")
+        self.assertEqual(ignored["reason"], "toggle_cooldown")
+        self.assertEqual(ignored["cooldown_ms"], 500)
 
 
 def http_json(method: str, url: str, payload: dict | None = None) -> dict:

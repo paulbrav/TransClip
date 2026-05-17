@@ -3,12 +3,16 @@
 Local-only toggle-to-talk dictation for Linux and macOS, oriented around Granite
 ASR and faithful cleanup for technical notes.
 
-The repository has two runnable layers:
+The default path is now the pure-Python dictation daemon:
 
-- `granite_speach/`: Python inference service, settings, glossary, audio capture,
-  cleanup, paste injection, debug capture, and eval harness.
-- `desktop/`: Tauri 2 desktop shell with tray actions,
-  service status, and latest transcript copy/paste controls.
+```text
+shortcut -> granite-speach toggle-record --paste -> Python service -> clipboard -> paste
+```
+
+The runnable app lives in `granite_speach/`: Python inference service,
+settings, glossary, audio capture, cleanup, paste injection, daemon
+install/status/log commands, debug capture, Python AppIndicator tray, and eval
+harness.
 
 ## Quick Start
 
@@ -21,7 +25,51 @@ uv run -m granite_speach.cli init-config
 This writes `settings.toml` and `keywords.txt` under the platform config
 directory.
 
-Run the local inference service:
+Install the daemon and native shortcut:
+
+```bash
+uv run -m granite_speach.cli install
+```
+
+On Linux this writes `~/.config/systemd/user/granite-speach.service`, enables
+and starts it with `systemctl --user`, and installs the GNOME custom shortcut
+`Granite Speach Toggle`. On this HP ZBook, `wev` reports the Copilot key as
+`<Super><Shift>XF86TouchpadOff`; press once to start recording and again to
+stop, transcribe, copy, and paste.
+
+Check readiness and logs:
+
+```bash
+uv run -m granite_speach.cli status
+uv run -m granite_speach.cli doctor
+uv run -m granite_speach.cli smoke-test
+uv run -m granite_speach.cli logs
+```
+
+Run the Python tray:
+
+```bash
+granite-speach tray
+```
+
+On Linux this uses PyGObject/Ayatana AppIndicator. When running through `uv`,
+the command hands off to system Python if the project virtual environment does
+not expose `gi`. Install the system bindings if missing:
+
+```bash
+sudo apt install -y python3-gi gir1.2-ayatanaappindicator3-0.1
+```
+
+Service controls:
+
+```bash
+uv run -m granite_speach.cli start
+uv run -m granite_speach.cli stop
+uv run -m granite_speach.cli restart
+uv run -m granite_speach.cli uninstall
+```
+
+To run the service manually instead of using the service manager:
 
 ```bash
 uv run -m granite_speach.cli serve
@@ -77,52 +125,28 @@ Then transcribe a WAV:
 uv run -m granite_speach.cli transcribe sample.wav
 ```
 
-Install the default GNOME shortcut for the Copilot key toggle workflow:
+Install or refresh only the default GNOME shortcut for the Copilot key toggle
+workflow:
 
 ```bash
 uv run -m granite_speach.cli install-gnome-shortcut
 ```
 
-This creates or updates the GNOME custom shortcut `Granite Speach Toggle`.
-On this HP ZBook, `wev` reports the Copilot key as
-`<Super><Shift>XF86TouchpadOff`. Press once to start recording; press again to
-stop, transcribe, and paste.
+This creates or updates the same `Granite Speach Toggle` shortcut while
+preserving unrelated custom shortcuts.
 
-## Desktop
-
-Build the Tauri frontend:
-
-```bash
-cd desktop
-npm install
-npm run build
-```
-
-Run the Tauri shell after installing Linux Tauri prerequisites (`libsoup-3.0`,
-`javascriptcoregtk-4.1`, WebKitGTK, rsvg) or on macOS with the normal Tauri
-toolchain. The shell can start the Python localhost service from the status menu
-or secondary status/debug window; set `GRANITE_SPEACH_UV` first when it
-should use a specific `uv` binary.
+## Linux Desktop
 
 ```bash
 sudo apt update
 sudo apt install -y \
-  libwebkit2gtk-4.1-dev \
-  build-essential \
-  curl \
-  wget \
-  file \
-  libxdo-dev \
-  libssl-dev \
   libayatana-appindicator3-dev \
-  librsvg2-dev \
+  gir1.2-ayatanaappindicator3-0.1 \
+  python3-gi \
+  wl-clipboard \
   wtype \
   xdotool \
   ydotool
-```
-
-```bash
-npm run tauri dev
 ```
 
 Linux GNOME sessions use the native custom shortcut installed above. No
@@ -130,16 +154,10 @@ Linux GNOME sessions use the native custom shortcut installed above. No
 Legacy hold-to-talk diagnostics remain in the codebase, but they are not the
 default hotkey path.
 
-On a Linux session with a StatusNotifier/AppIndicator host, the tray
-registration path can be smoke-tested without loading local models:
-
-```bash
-uv run scripts/linux_tray_smoke.py
-```
-
-See `docs/v1-completion-audit.md` for the current implementation and
-verification matrix, and `docs/v1-live-validation.md` for the remaining
-interactive Linux/macOS checks.
+On GNOME Wayland, clipboard copy/read requires `wl-clipboard` (`wl-copy` and
+`wl-paste`). Paste injection uses `wtype` when the compositor supports the
+virtual keyboard protocol, then `ydotool` if configured. `xclip`/`xdotool` are
+X11-only fallbacks.
 
 ## Eval Harness
 
@@ -218,24 +236,19 @@ VIRTUAL_ENV=$PWD/.venv-gfx1151 uv run --active scripts/run_keyword_ablation.py \
 ```bash
 uv run -m unittest discover -s tests -v
 uv run -m compileall scripts granite_speach tests
-cd desktop && npm run build
-cd desktop && npm run test:recorder
-cd desktop && npm run test:tauri-recorder
-cd desktop && npm run test:tauri-service-record
-cd desktop && npm run test:tauri-paste
 VIRTUAL_ENV=$PWD/.venv-gfx1151 uv run --active scripts/check_v1_completion.py
 ```
 
-`cargo check` for `desktop/src-tauri` requires system Tauri/WebKitGTK
-prerequisites on Linux. On Wayland, `wtype` is only usable when the compositor
-supports the virtual keyboard protocol; GNOME Wayland may reject it. `ydotool`
-can be used as a lower-level fallback when its daemon/uinput permissions are
-configured. On X11 or an XWayland-oriented session, use `xdotool`.
+On Wayland, `wtype` is only usable when the compositor supports the virtual
+keyboard protocol; GNOME Wayland may reject it. `ydotool` can be used as a
+lower-level fallback when its daemon/uinput permissions are configured. On X11
+or an XWayland-oriented session, use `xdotool`.
 
 Check host readiness:
 
 ```bash
 uv run -m granite_speach.cli doctor
+uv run -m granite_speach.cli doctor --fix
 ```
 
 ## ChatGPT UI Bridge

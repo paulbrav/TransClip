@@ -1,18 +1,23 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
-import os
-from pathlib import Path
 import json
 import platform
 import shutil
 import subprocess
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from urllib.error import URLError
 
+from .audio import recording_debug
+from .client import InferenceClient
+from .daemon import last_toggle_log_event, service_state, toggle_log_path
 from .device import torch_cuda_usable, torch_mps_available
 from .gnome_shortcut import (
     GRANITE_SHORTCUT_BINDING,
     get_gnome_shortcut_status,
 )
+from .models import model_cache_root, required_model_cache_paths
+from .platform_capabilities import clipboard_capability, paste_capability, session_info
 from .settings import Settings, default_config_dir, keywords_path, settings_path
 
 
@@ -23,89 +28,126 @@ class Check:
     detail: str
 
 
-def run_checks(settings: Settings, config_dir: Path | None = None) -> list[Check]:
-    return [
+def run_checks(
+    settings: Settings,
+    config_dir: Path | None = None,
+    include_audio_debug: bool = False,
+) -> list[Check]:
+    checks = [
         check_config_files(config_dir),
+        check_service_manager(),
+        check_service_active(),
+        check_service_health(settings),
+        check_session_type(),
         check_clipboard_tools(),
         check_paste_tools(),
         check_hotkey_readiness(),
         check_microphone_devices(),
-        check_tauri_linux_libs(),
         check_model_cache(settings),
         check_torch_runtime(settings),
         check_asr_runtime(settings),
+        check_last_shortcut_log_event(),
     ]
+    if include_audio_debug:
+        checks.append(check_audio_debug(settings))
+    return checks
 
 
 def check_config_files(config_dir: Path | None = None) -> Check:
-    missing = [
-        str(path)
-        for path in (settings_path(config_dir), keywords_path(config_dir))
-        if not path.exists()
-    ]
+    missing = [str(path) for path in (settings_path(config_dir), keywords_path(config_dir)) if not path.exists()]
     if not missing:
         return Check("config_files", True, f"found files in {config_dir or default_config_dir()}")
     return Check("config_files", False, "missing: " + ", ".join(missing))
 
 
 def check_clipboard_tools() -> Check:
-    system = platform.system()
-    if system == "Darwin":
-        return Check("clipboard_tools", bool(shutil.which("pbcopy") and shutil.which("pbpaste")), "requires pbcopy and pbpaste")
-    tools = [tool for tool in ("wl-copy", "wl-paste", "xclip", "xsel") if shutil.which(tool)]
-    return Check(
-        "clipboard_tools",
-        bool(tools),
-        "found: " + ", ".join(tools) if tools else "requires wl-clipboard, xclip, or xsel; apt: wl-clipboard xclip",
-    )
+    capability = clipboard_capability(which=shutil.which, info=session_info(system=platform.system()))
+    return Check("clipboard_tools", capability.ok, capability.detail)
 
 
 def check_paste_tools() -> Check:
+    capability = paste_capability(
+        runner=subprocess.run,
+        which=shutil.which,
+        info=session_info(
+            environ={
+                "XDG_SESSION_TYPE": os_environ("XDG_SESSION_TYPE") or "",
+                "XDG_CURRENT_DESKTOP": os_environ("XDG_CURRENT_DESKTOP") or "",
+                "XDG_SESSION_DESKTOP": os_environ("XDG_SESSION_DESKTOP") or "",
+                "DESKTOP_SESSION": os_environ("DESKTOP_SESSION") or "",
+            },
+            system=platform.system(),
+        ),
+    )
+    return Check("paste_tools", capability.ok, capability.detail)
+
+
+def check_service_manager() -> Check:
     system = platform.system()
-    if system == "Darwin":
-        return Check("paste_tools", bool(shutil.which("osascript")), "requires osascript and Accessibility permission")
-    session = (os_environ("XDG_SESSION_TYPE") or "").lower()
-    wtype = shutil.which("wtype")
-    xdotool = shutil.which("xdotool")
-    ydotool = shutil.which("ydotool")
-    if session == "wayland":
-        details = []
-        if wtype:
-            result = subprocess.run(
-                [wtype, "-M", "ctrl", "-m", "ctrl"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                check=False,
-            )
-            if result.returncode == 0:
-                return Check("paste_tools", True, "wtype found and compositor accepts virtual keyboard events")
-            detail = result.stdout.strip() or f"exit status {result.returncode}"
-            details.append(f"wtype unusable: {detail}")
-        if ydotool:
-            return Check(
-                "paste_tools",
-                True,
-                "ydotool found; requires ydotoold/uinput permissions to inject paste",
-            )
-        if not details:
-            return Check(
-                "paste_tools",
-                False,
-                "Wayland paste injection requires wtype or ydotool; apt: wtype ydotool",
-            )
+    if system == "Linux":
+        installed = bool(service_state()["installed"])
         return Check(
-            "paste_tools",
-            False,
-            "; ".join(details) + "; fallback requires ydotool with ydotoold/uinput permissions",
+            "service_manager",
+            installed,
+            "systemd user unit installed" if installed else "missing systemd user unit; run: granite-speach install",
         )
-    if xdotool:
-        return Check("paste_tools", True, "found: xdotool")
-    if ydotool:
-        return Check("paste_tools", True, "found: ydotool")
-    if wtype:
-        return Check("paste_tools", False, "wtype is installed, but non-Wayland sessions require xdotool or ydotool; apt: xdotool ydotool")
-    return Check("paste_tools", False, "requires wtype, xdotool, or ydotool; apt: xdotool ydotool")
+    if system == "Darwin":
+        installed = bool(service_state()["installed"])
+        return Check(
+            "service_manager",
+            installed,
+            "LaunchAgent installed" if installed else "missing LaunchAgent; run: granite-speach install",
+        )
+    return Check("service_manager", True, f"not checked on {system}")
+
+
+def check_service_active() -> Check:
+    state = service_state()
+    return Check(
+        "service_active",
+        bool(state["active"]),
+        f"active={state['active']}; {state['detail']}",
+    )
+
+
+def check_service_health(settings: Settings) -> Check:
+    try:
+        health = InferenceClient(settings).health()
+    except URLError as exc:
+        return Check("service_health", False, f"/health failed: {exc}")
+    except Exception as exc:
+        return Check("service_health", False, f"/health failed: {exc}")
+    status = health.get("status")
+    return Check(
+        "service_health",
+        status in {"ready", "recording"},
+        f"/health status={status}; asr={health.get('asr_backend')}; cleanup={health.get('cleanup_backend')}",
+    )
+
+
+def check_session_type() -> Check:
+    info = session_info(
+        environ={
+            "XDG_SESSION_TYPE": os_environ("XDG_SESSION_TYPE") or "",
+            "XDG_CURRENT_DESKTOP": os_environ("XDG_CURRENT_DESKTOP") or "",
+            "XDG_SESSION_DESKTOP": os_environ("XDG_SESSION_DESKTOP") or "",
+            "DESKTOP_SESSION": os_environ("DESKTOP_SESSION") or "",
+        },
+        system=platform.system(),
+    )
+    if info.system not in {"Linux", "Darwin"}:
+        return Check("session_type", True, f"not checked on {info.system}")
+    if info.system == "Darwin":
+        return Check("session_type", True, "macOS")
+    return Check("session_type", info.session != "unknown", f"session={info.session}; desktop={info.desktop}")
+
+
+def check_last_shortcut_log_event() -> Check:
+    event = last_toggle_log_event()
+    if event is None:
+        return Check("last_shortcut_log_event", False, f"no toggle log at {toggle_log_path()}")
+    action = event.get("action") or event.get("unparsed", "unknown")
+    return Check("last_shortcut_log_event", "unparsed" not in event, f"last action={action}; log={toggle_log_path()}")
 
 
 def check_hotkey_readiness() -> Check:
@@ -114,23 +156,25 @@ def check_hotkey_readiness() -> Check:
         return Check(
             "hotkey_readiness",
             True,
-            "macOS uses the legacy Tauri global-shortcut backend",
+            "macOS hotkey helper is not installed by the Python daemon",
         )
     if system != "Linux":
         return Check("hotkey_readiness", True, f"not checked on {system}")
 
-    session = (os_environ("XDG_SESSION_TYPE") or "unknown").lower()
-    desktop = (
-        os_environ("XDG_CURRENT_DESKTOP")
-        or os_environ("XDG_SESSION_DESKTOP")
-        or os_environ("DESKTOP_SESSION")
-        or "unknown"
+    info = session_info(
+        environ={
+            "XDG_SESSION_TYPE": os_environ("XDG_SESSION_TYPE") or "",
+            "XDG_CURRENT_DESKTOP": os_environ("XDG_CURRENT_DESKTOP") or "",
+            "XDG_SESSION_DESKTOP": os_environ("XDG_SESSION_DESKTOP") or "",
+            "DESKTOP_SESSION": os_environ("DESKTOP_SESSION") or "",
+        },
+        system=platform.system(),
     )
     if not shutil.which("gsettings"):
         return Check(
             "hotkey_readiness",
             False,
-            f"session={session}; desktop={desktop}; GNOME shortcut setup requires gsettings",
+            f"session={info.session}; desktop={info.desktop}; GNOME shortcut setup requires gsettings",
         )
 
     try:
@@ -139,11 +183,11 @@ def check_hotkey_readiness() -> Check:
         return Check(
             "hotkey_readiness",
             False,
-            f"session={session}; desktop={desktop}; could not inspect GNOME custom shortcuts: {exc}",
+            f"session={info.session}; desktop={info.desktop}; could not inspect GNOME custom shortcuts: {exc}",
         )
 
     detail = (
-        f"session={session}; desktop={desktop}; installed={status.installed}; "
+        f"session={info.session}; desktop={info.desktop}; installed={status.installed}; "
         f"binding={status.binding or 'missing'}; command_exists={status.command_exists}"
     )
     if not status.installed:
@@ -171,92 +215,13 @@ def check_hotkey_readiness() -> Check:
     )
 
 
-def check_evdev_hold_to_talk_readiness() -> Check:
-    system = platform.system()
-    if system != "Linux":
-        return Check("evdev_hold_to_talk", True, f"not checked on {system}")
-
-    session = (os_environ("XDG_SESSION_TYPE") or "unknown").lower()
-    portal_present = global_shortcuts_portal_present()
-    event_paths, readable_paths = readable_input_events()
-    portal_detail = f"GlobalShortcuts portal present: {portal_present}"
-    if readable_paths:
-        return Check(
-            "evdev_hold_to_talk",
-            True,
-            f"session={session}; {portal_detail}; readable /dev/input events: {len(readable_paths)}",
-        )
-    if event_paths:
-        return Check(
-            "evdev_hold_to_talk",
-            False,
-            "session="
-            + session
-            + "; "
-            + portal_detail
-            + "; no readable /dev/input/event* devices. Run: sudo usermod -aG input $USER, then log out and back in",
-        )
-    return Check(
-        "evdev_hold_to_talk",
-        False,
-        "session="
-        + session
-        + "; "
-        + portal_detail
-        + "; no /dev/input/event* devices found. Check Linux input device permissions and container/session access",
-    )
-
-
-def global_shortcuts_portal_present() -> bool:
-    if shutil.which("busctl"):
-        result = subprocess.run(
-            [
-                "busctl",
-                "--user",
-                "--no-pager",
-                "introspect",
-                "org.freedesktop.portal.Desktop",
-                "/org/freedesktop/portal/desktop",
-                "org.freedesktop.portal.GlobalShortcuts",
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        return result.returncode == 0
-    if shutil.which("gdbus"):
-        result = subprocess.run(
-            [
-                "gdbus",
-                "introspect",
-                "--session",
-                "--dest",
-                "org.freedesktop.portal.Desktop",
-                "--object-path",
-                "/org/freedesktop/portal/desktop",
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            check=False,
-        )
-        return result.returncode == 0 and "org.freedesktop.portal.GlobalShortcuts" in result.stdout
-    return False
-
-
-def readable_input_events(input_dir: Path = Path("/dev/input")) -> tuple[list[Path], list[Path]]:
-    event_paths = sorted(input_dir.glob("event*"))
-    readable_paths = [path for path in event_paths if os.access(path, os.R_OK)]
-    return event_paths, readable_paths
-
-
 def check_microphone_devices() -> Check:
     system = platform.system()
     if system == "Darwin":
         return Check(
             "microphone_devices",
             True,
-            "macOS microphone visibility is checked by the Tauri/WebAudio permission prompt",
+            "macOS microphone visibility is checked by the operating system permission prompt",
         )
     if system != "Linux":
         return Check("microphone_devices", True, f"not checked on {system}")
@@ -272,11 +237,7 @@ def check_microphone_devices() -> Check:
         )
         output = result.stdout.strip()
         if result.returncode == 0 and "card " in output and "device " in output:
-            devices = [
-                line.strip()
-                for line in output.splitlines()
-                if line.strip().startswith("card ")
-            ]
+            devices = [line.strip() for line in output.splitlines() if line.strip().startswith("card ")]
             return Check("microphone_devices", True, "found: " + "; ".join(devices))
         return Check(
             "microphone_devices",
@@ -297,34 +258,33 @@ def check_microphone_devices() -> Check:
     return Check("microphone_devices", False, "requires arecord or wpctl to inspect microphone devices")
 
 
-def check_tauri_linux_libs() -> Check:
-    if platform.system() != "Linux":
-        return Check("tauri_linux_libs", True, "not a Linux host")
-    missing = [
-        package
-        for package in ("libsoup-3.0", "javascriptcoregtk-4.1", "webkit2gtk-4.1")
-        if not pkg_config_exists(package)
-    ]
-    if not missing:
-        return Check("tauri_linux_libs", True, "pkg-config found Tauri WebKitGTK libraries")
-    apt = (
-        "apt: libwebkit2gtk-4.1-dev build-essential curl wget file "
-        "libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev"
-    )
-    return Check("tauri_linux_libs", False, "missing pkg-config packages: " + ", ".join(missing) + "; " + apt)
-
-
 def check_model_cache(settings: Settings) -> Check:
-    cache_root = Path(settings.model_cache_dir).expanduser() if settings.model_cache_dir else Path.home() / ".cache" / "huggingface" / "hub"
-    required_paths = [cache_root / hf_cache_dir(settings.asr_model)]
-    if settings.cleanup_runtime == "llama_cpp":
-        required_paths.append(Path(settings.cleanup_model_path).expanduser())
-    elif settings.cleanup_runtime == "transformers":
-        required_paths.append(cache_root / hf_cache_dir(settings.cleanup_model))
+    cache_root = model_cache_root(settings)
+    required_paths = required_model_cache_paths(settings)
     missing = [str(path) for path in required_paths if not path.exists()]
     if not missing:
         return Check("model_cache", True, f"found model artifacts under {cache_root}")
-    return Check("model_cache", False, "missing local model artifacts: " + ", ".join(missing))
+    return Check(
+        "model_cache",
+        False,
+        "missing local model artifacts: "
+        + ", ".join(missing)
+        + f"; run: granite-speach models prefetch --model {settings.asr_model}",
+    )
+
+
+def check_audio_debug(settings: Settings) -> Check:
+    try:
+        measurement = recording_debug(settings)
+    except Exception as exc:
+        return Check("audio_debug", False, f"recording debug failed: {exc}")
+    detail = (
+        f"device={measurement['device']}; sample_rate={measurement['sample_rate']}; "
+        f"channels={measurement['channel_count']}; frames={measurement['frame_count']}; "
+        f"duration={measurement['duration']:.3f}; peak={measurement['peak_amplitude']:.3f}; "
+        f"rms={measurement['rms_amplitude']:.3f}; silent={measurement['silent']}"
+    )
+    return Check("audio_debug", not measurement["silent"], detail)
 
 
 def check_torch_runtime(settings: Settings) -> Check:
@@ -357,6 +317,7 @@ def check_asr_runtime(settings: Settings) -> Check:
         return Check("asr_runtime", True, f"{settings.asr_backend} has no extra runtime checks")
     try:
         import os
+
         import torch
     except ImportError:
         return Check("asr_runtime", False, "torch is not installed")
@@ -367,19 +328,6 @@ def check_asr_runtime(settings: Settings) -> Check:
     except ImportError as exc:
         return Check("asr_runtime", False, f"Granite NAR requires flash-attn; import failed: {exc}")
     return Check("asr_runtime", True, "Granite NAR flash-attn runtime import passed")
-
-
-def hf_cache_dir(model_id: str) -> str:
-    return "models--" + model_id.replace("/", "--")
-
-
-def pkg_config_exists(package: str) -> bool:
-    return subprocess.run(
-        ["pkg-config", "--exists", package],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    ).returncode == 0
 
 
 def os_environ(name: str) -> str | None:

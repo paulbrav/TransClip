@@ -8,6 +8,7 @@ from granite_speach.gnome_shortcut import (
     GRANITE_SHORTCUT_BINDING,
     GRANITE_SHORTCUT_NAME,
     GRANITE_SHORTCUT_PATH,
+    build_toggle_command,
     command_exists,
     install_gnome_shortcut,
 )
@@ -51,16 +52,20 @@ class GnomeShortcutTests(unittest.TestCase):
         self.assertEqual(paths.count(GRANITE_SHORTCUT_PATH), 1)
         self.assertEqual(first.path, GRANITE_SHORTCUT_PATH)
         self.assertEqual(second.path, GRANITE_SHORTCUT_PATH)
-        schema = (
-            "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:"
-            + GRANITE_SHORTCUT_PATH
-        )
+        schema = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:" + GRANITE_SHORTCUT_PATH
         self.assertEqual(fake.values[(schema, "name")], GRANITE_SHORTCUT_NAME)
         self.assertEqual(fake.values[(schema, "binding")], GRANITE_SHORTCUT_BINDING)
         self.assertEqual(fake.values[(schema, "command")], command)
 
     def test_command_exists_checks_absolute_program(self):
         self.assertFalse(command_exists("/definitely/missing/granite-speach toggle-record"))
+
+    def test_build_toggle_command_is_logging_wrapper(self):
+        command = build_toggle_command()
+
+        self.assertTrue(command.startswith("/bin/sh -lc "))
+        self.assertIn("toggle-record --paste", command)
+        self.assertIn("toggle-record.log", command)
 
 
 if __name__ == "__main__":

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import asdict, is_dataclass
-from datetime import datetime, timezone
 import json
-from pathlib import Path
 import shutil
 import traceback
+from dataclasses import asdict, is_dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from .settings import Settings
@@ -68,7 +68,7 @@ class DebugCapture:
         return root
 
     def _root(self) -> Path:
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         root = Path(self.settings.debug_capture_dir) / stamp
         suffix = 1
         while root.exists():

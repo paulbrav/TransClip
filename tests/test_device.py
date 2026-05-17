@@ -15,9 +15,11 @@ class DeviceTests(unittest.TestCase):
             self.assertEqual(resolve_torch_device("auto"), "cpu")
 
     def test_rocm_request_requires_working_cuda_compatible_torch(self) -> None:
-        with patch("granite_speach.device.torch_cuda_usable", return_value=False):
-            with self.assertRaisesRegex(RuntimeError, "CUDA/ROCm was requested"):
-                resolve_torch_device("rocm")
+        with (
+            patch("granite_speach.device.torch_cuda_usable", return_value=False),
+            self.assertRaisesRegex(RuntimeError, "CUDA/ROCm was requested"),
+        ):
+            resolve_torch_device("rocm")
 
     def test_auto_uses_cuda_when_gpu_smoke_passes(self) -> None:
         with patch("granite_speach.device.torch_cuda_usable", return_value=True):

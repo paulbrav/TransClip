@@ -15,9 +15,9 @@
   "cases": [
     {
       "audio_path": "audio/case_01.wav",
-      "reference": "Please check the Tauri tray icon after the service reports ready.",
+      "reference": "Please check the Python tray icon after the service reports ready.",
       "keywords": [
-        "Tauri"
+        "Python tray"
       ],
       "cleanup": true
     },
@@ -100,10 +100,9 @@
     },
     {
       "audio_path": "audio/case_11.wav",
-      "reference": "Run cargo check after changing the Tauri status shell.",
+      "reference": "Run the unit tests after changing the Python tray.",
       "keywords": [
-        "cargo",
-        "Tauri"
+        "Python tray"
       ],
       "cleanup": true
     },

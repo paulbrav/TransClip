@@ -1,1 +1,1 @@
-Please check the Tauri tray icon after the service reports ready.
+Please check the Python tray icon after the service reports ready.

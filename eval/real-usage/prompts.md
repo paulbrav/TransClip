@@ -10,9 +10,9 @@ Keywords: PyTorch, ROCm, gfx1151, Granite
 
 ## 2. case_01
 
-Please check the Tauri tray icon after the service reports ready.
+Please check the Python tray icon after the service reports ready.
 
-Keywords: Tauri
+Keywords: Python tray
 
 ## 3. case_02
 
@@ -70,9 +70,9 @@ Keywords: Hugging Face
 
 ## 12. case_11
 
-Run cargo check after changing the Tauri status shell.
+Run the unit tests after changing the Python tray.
 
-Keywords: cargo, Tauri
+Keywords: Python tray
 
 ## 13. case_12
 

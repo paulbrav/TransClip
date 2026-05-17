@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 
 from .device import resolve_torch_device
 from .glossary import preserve_terms_instruction
@@ -43,9 +43,7 @@ class LlamaCppCleanupBackend(CleanupBackend):
         try:
             from llama_cpp import Llama
         except ImportError as exc:
-            raise RuntimeError(
-                "llama-cpp-python is not installed. Install granite-speach[llama]."
-            ) from exc
+            raise RuntimeError("llama-cpp-python is not installed. Install granite-speach[llama].") from exc
         self.model_name = model_name
         self.model_path = model_path
         self.llm = Llama(model_path=model_path, n_ctx=4096, verbose=False)
@@ -203,7 +201,7 @@ def _capitalize_sentence_starts(text: str) -> str:
 
 def _restore_keyword_spellings(text: str, keywords: list[str]) -> str:
     restored = text
-    for keyword in sorted(keywords, key=len, reverse=True):
+    for keyword in sorted(keywords, key=lambda value: len(value), reverse=True):
         aliases = _keyword_aliases(keyword)
         for alias in aliases:
             restored = re.sub(
@@ -232,7 +230,6 @@ def _keyword_aliases(keyword: str) -> list[str]:
 _KNOWN_KEYWORD_ALIASES = {
     "rocm": [r"rockham", r"rock\s*m", r"roc\s*m"],
     "gfx1151": [r"gfx\s*1151", r"gfxfx\s*1151", r"g\s*f\s*x\s*1151"],
-    "tauri": [r"ti", r"tori", r"tory", r"torory"],
     "nar": [r"n\s*ar", r"and\s+ar"],
     "macos": [r"mac\s*os"],
     "wtype": [r"w\s*type"],

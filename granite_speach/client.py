@@ -32,6 +32,19 @@ class InferenceClient:
             payload["cleanup"] = cleanup
         return self._post("/record/toggle", payload)
 
+    def record_start(self) -> dict:
+        return self._post("/record/start", {})
+
+    def record_stop(
+        self,
+        cleanup: bool | None = None,
+        discard: bool = False,
+    ) -> dict:
+        payload: dict[str, object] = {"discard": discard}
+        if cleanup is not None:
+            payload["cleanup"] = cleanup
+        return self._post("/record/stop", payload)
+
     def _get(self, path: str) -> dict:
         with request.urlopen(f"{self.base_url}{path}", timeout=5) as response:
             return json.loads(response.read().decode("utf-8"))

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import shutil
 import subprocess
 import sys
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EVAL_DIR = ROOT / "eval" / "v1-synthetic"
@@ -22,8 +21,8 @@ CASES = [
     ),
     (
         "case_01",
-        "Please check the Tauri tray icon after the service reports ready.",
-        ["Tauri"],
+        "Please check the Python tray icon after the service reports ready.",
+        ["Python tray"],
     ),
     (
         "case_02",
@@ -72,8 +71,8 @@ CASES = [
     ),
     (
         "case_11",
-        "Run cargo check after changing the Tauri status shell.",
-        ["cargo", "Tauri"],
+        "Run the unit tests after changing the Python tray.",
+        ["Python tray"],
     ),
     (
         "case_12",

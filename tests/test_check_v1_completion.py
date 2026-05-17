@@ -1,11 +1,10 @@
 import importlib.util
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 from granite_speach.doctor import Check
-
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "check_v1_completion.py"
 SPEC = importlib.util.spec_from_file_location("check_v1_completion", SCRIPT_PATH)

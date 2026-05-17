@@ -4,19 +4,20 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(ROOT))
 
-from check_eval_results import check_results  # noqa: E402
-from check_v1_completion import check_completion  # noqa: E402
 from granite_speach.doctor import run_checks  # noqa: E402
 from granite_speach.settings import default_config_dir, load_settings  # noqa: E402
+
+from check_eval_results import check_results  # noqa: E402
+from check_v1_completion import check_completion  # noqa: E402
 from prepare_real_eval import build_manifest, load_keyword_file  # noqa: E402
 
 
@@ -60,15 +61,12 @@ def main(argv: list[str] | None = None) -> int:
             args.clip_dir,
             output_path=args.manifest,
             warmup_stem=args.warmup_stem,
-            global_keywords=load_keyword_file(args.global_keywords)
-            if args.global_keywords.exists()
-            else [],
+            global_keywords=load_keyword_file(args.global_keywords) if args.global_keywords.exists() else [],
         )
     except ValueError as exc:
         print(f"real eval clips are not ready: {exc}", file=sys.stderr)
         print(
-            "record them with: uv run scripts/record_real_eval_session.py "
-            f"{args.clip_dir.expanduser()} --manual-stop",
+            f"record them with: uv run scripts/record_real_eval_session.py {args.clip_dir.expanduser()} --manual-stop",
             file=sys.stderr,
         )
         return 1

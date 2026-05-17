@@ -3,10 +3,9 @@ from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
 import sys
 import time
-
+from pathlib import Path
 
 CHATGPT_URL = "https://chatgpt.com/"
 DEFAULT_PROFILE = Path("~/.cache/granite-speach-chatgpt-ui").expanduser()
@@ -125,7 +124,7 @@ def wait_for_composer(page, timeout: float) -> None:
     selectors = [
         '[contenteditable="true"]',
         'textarea[placeholder*="Ask"]',
-        'textarea',
+        "textarea",
     ]
     while time.monotonic() < deadline:
         if login_visible(page):

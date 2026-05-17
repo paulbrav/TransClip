@@ -1,8 +1,7 @@
 import importlib.util
-from pathlib import Path
 import tempfile
 import unittest
-
+from pathlib import Path
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "prepare_real_eval.py"
 SPEC = importlib.util.spec_from_file_location("prepare_real_eval", SCRIPT_PATH)
@@ -21,12 +20,6 @@ SESSION_SPEC = importlib.util.spec_from_file_location("record_real_eval_session"
 record_real_eval_session = importlib.util.module_from_spec(SESSION_SPEC)
 assert SESSION_SPEC and SESSION_SPEC.loader
 SESSION_SPEC.loader.exec_module(record_real_eval_session)
-
-TRAY_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "linux_tray_smoke.py"
-TRAY_SPEC = importlib.util.spec_from_file_location("linux_tray_smoke", TRAY_SCRIPT_PATH)
-linux_tray_smoke = importlib.util.module_from_spec(TRAY_SPEC)
-assert TRAY_SPEC and TRAY_SPEC.loader
-TRAY_SPEC.loader.exec_module(linux_tray_smoke)
 
 
 class PrepareRealEvalTests(unittest.TestCase):
@@ -142,8 +135,8 @@ class PrepareRealEvalTests(unittest.TestCase):
 
         self.assertIn("# Granite Speach V1 Real-Usage Eval Prompts", sheet)
         self.assertIn("## 1. case_01", sheet)
-        self.assertIn("Please check the Tauri tray icon", sheet)
-        self.assertIn("Keywords: Tauri", sheet)
+        self.assertIn("Please check the Python tray icon", sheet)
+        self.assertIn("Keywords: Python tray", sheet)
 
     def test_real_eval_session_manual_record_starts_and_stops_recorder(self):
         class FakeRecorder:
@@ -175,27 +168,6 @@ class PrepareRealEvalTests(unittest.TestCase):
             self.assertEqual(recorder.output_path, wav_path)
             self.assertEqual(wav_path.read_bytes(), b"wav")
             self.assertEqual(prompts, ["Recording... press Enter to stop: "])
-
-    def test_tray_layout_parser_extracts_ids_labels_and_enabled_state(self):
-        layout = (
-            'u(ia{sv}av) 3 0 1 "children-display" s "submenu" 4 '
-            '(ia{sv}av) 20 2 "enabled" b false "label" s "Status: Ready" 0 '
-            '(ia{sv}av) 21 3 "toggle-state" i 1 "toggle-type" s "checkmark" "label" s "Cleanup" 0 '
-            '(ia{sv}av) 22 1 "label" s "Record" 0 '
-            '(ia{sv}av) 23 2 "enabled" b false "label" s "Stop" 0'
-        )
-
-        entries = linux_tray_smoke.menu_entries_from_layout(layout)
-
-        self.assertEqual(
-            entries,
-            [
-                {"id": 20, "label": "Status: Ready", "enabled": False},
-                {"id": 21, "label": "Cleanup", "enabled": True},
-                {"id": 22, "label": "Record", "enabled": True},
-                {"id": 23, "label": "Stop", "enabled": False},
-            ],
-        )
 
 
 if __name__ == "__main__":

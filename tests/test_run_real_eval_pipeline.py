@@ -1,10 +1,9 @@
 import importlib.util
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
-
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "run_real_eval_pipeline.py"
 SPEC = importlib.util.spec_from_file_location("run_real_eval_pipeline", SCRIPT_PATH)

@@ -22,8 +22,7 @@ class ASRBackend(Protocol):
     name: str
     model: str
 
-    def transcribe(self, wav_path: Path, keywords: list[str]) -> TranscriptionResult:
-        ...
+    def transcribe(self, wav_path: Path, keywords: list[str]) -> TranscriptionResult: ...
 
 
 class GraniteSpeechTransformersBackend:
@@ -71,8 +70,8 @@ class GraniteSpeechTransformersBackend:
         timings: dict[str, float] = {}
         device = self._device()
         with timed_ms(timings, "asr"):
-            import torch
             import soundfile as sf
+            import torch
 
             processor, tokenizer, model = self._load(device)
             samples, sample_rate = sf.read(str(wav_path), dtype="float32", always_2d=True)
@@ -131,6 +130,7 @@ class GraniteSpeechNarTransformersBackend:
             return self._loaded
         try:
             import os
+
             import torch
             from transformers import AutoFeatureExtractor, AutoModel
         except ImportError as exc:

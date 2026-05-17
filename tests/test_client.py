@@ -14,7 +14,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers["content-length"])
         payload = json.loads(self.rfile.read(length).decode("utf-8"))
-        self._json({"text": "ok", "payload": payload})
+        self._json({"text": "ok", "payload": payload, "path": self.path})
 
     def log_message(self, format, *args):
         return
@@ -40,8 +40,14 @@ class ClientTests(unittest.TestCase):
             response = client.transcribe(__file__, cleanup=False)
             self.assertEqual(response["text"], "ok")
             self.assertFalse(response["payload"]["cleanup"])
+            cleaned = client.cleanup_transcribe(__file__)
+            self.assertEqual(cleaned["path"], "/cleanup/transcribe")
             toggled = client.record_toggle(cleanup=True)
             self.assertTrue(toggled["payload"]["cleanup"])
+            stopped = client.record_stop(discard=True)
+            self.assertTrue(stopped["payload"]["discard"])
+            started = client.record_start()
+            self.assertEqual(started["payload"], {})
         finally:
             server.shutdown()
             server.server_close()

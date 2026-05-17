@@ -1,27 +1,21 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import ast
 import os
-from pathlib import Path
 import shlex
 import shutil
 import subprocess
 import sys
-from typing import Callable
-
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
 
 GNOME_MEDIA_KEYS_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys"
 GNOME_CUSTOM_KEYBINDINGS_KEY = "custom-keybindings"
-GNOME_CUSTOM_KEYBINDING_SCHEMA = (
-    "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding"
-)
+GNOME_CUSTOM_KEYBINDING_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding"
 GRANITE_SHORTCUT_NAME = "Granite Speach Toggle"
 GRANITE_SHORTCUT_BINDING = "<Super><Shift>XF86TouchpadOff"
-GRANITE_SHORTCUT_PATH = (
-    "/org/gnome/settings-daemon/plugins/media-keys/"
-    "custom-keybindings/granite-speach-toggle/"
-)
+GRANITE_SHORTCUT_PATH = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/granite-speach-toggle/"
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -45,11 +39,21 @@ class GnomeShortcutInstallResult:
 
 
 def build_toggle_command(settings_path: Path | None = None) -> str:
+    command = build_toggle_invocation(settings_path)
+    script = (
+        'mkdir -p "$HOME/.cache/granite-speach"; '
+        + shlex.join(command)
+        + ' >> "$HOME/.cache/granite-speach/toggle-record.log" 2>&1'
+    )
+    return shlex.join(["/bin/sh", "-lc", script])
+
+
+def build_toggle_invocation(settings_path: Path | None = None) -> list[str]:
     command = [sys.executable, "-m", "granite_speach.cli"]
     if settings_path:
         command.extend(["--settings", str(settings_path.expanduser().resolve())])
     command.extend(["toggle-record", "--paste"])
-    return shlex.join(command)
+    return command
 
 
 def install_gnome_shortcut(

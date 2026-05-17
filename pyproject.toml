@@ -14,7 +14,12 @@ build-backend = "hatchling.build"
 audio = ["sounddevice>=0.5", "numpy>=1.26"]
 models = ["transformers>=4.52.1", "torch>=2.5", "torchaudio>=2.5", "torchcodec>=0.5", "torchvision>=0.20", "accelerate>=1.0", "soundfile>=0.12", "pillow>=10"]
 llama = ["llama-cpp-python>=0.3"]
-dev = []
+dev = [
+    "coverage[toml]>=7.10",
+    "pytest>=8.4",
+    "ruff>=0.12.11",
+    "ty>=0.0.1a19",
+]
 chatgpt-ui = ["playwright>=1.52"]
 
 [project.scripts]
@@ -22,3 +27,39 @@ granite-speach = "granite_speach.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["granite_speach", "scripts", "tests"]
+
+[tool.ruff.lint]
+select = ["B", "C4", "E", "F", "I", "RUF", "SIM", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.analysis]
+allowed-unresolved-imports = [
+    "flash_attn",
+    "gi",
+    "gi.repository",
+    "llama_cpp",
+    "sounddevice",
+]
+
+[tool.ty.src]
+include = ["granite_speach"]
+
+[tool.coverage.run]
+branch = true
+source = ["granite_speach", "scripts"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

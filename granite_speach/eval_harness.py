@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
 import json
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from statistics import mean
 from typing import Any
@@ -87,11 +87,7 @@ def run_keyword_ablation(manifest_path: Path, engine: InferenceEngine) -> dict[s
         reference = case.get("reference")
         with_score = keyword_preservation(with_keywords["text"], keywords)
         without_score = keyword_preservation(without_keywords["text"], keywords)
-        delta = (
-            with_score - without_score
-            if with_score is not None and without_score is not None
-            else None
-        )
+        delta = with_score - without_score if with_score is not None and without_score is not None else None
         results.append(
             {
                 "audio_path": str(audio_path),
@@ -102,12 +98,8 @@ def run_keyword_ablation(manifest_path: Path, engine: InferenceEngine) -> dict[s
                 "with_keywords_preservation": with_score,
                 "without_keywords_preservation": without_score,
                 "keyword_preservation_delta": delta,
-                "with_keywords_wer": word_error_rate(reference, with_keywords["text"])
-                if reference
-                else None,
-                "without_keywords_wer": word_error_rate(reference, without_keywords["text"])
-                if reference
-                else None,
+                "with_keywords_wer": word_error_rate(reference, with_keywords["text"]) if reference else None,
+                "without_keywords_wer": word_error_rate(reference, without_keywords["text"]) if reference else None,
                 "with_keywords_timings_ms": with_keywords["timings_ms"],
                 "without_keywords_timings_ms": without_keywords["timings_ms"],
             }
@@ -138,16 +130,8 @@ def resolve_audio_path(manifest_path: Path, case: dict[str, Any]) -> Path:
 def summarize(results: list[EvalCaseResult]) -> dict[str, Any]:
     wers = [result.wer for result in results if result.wer is not None]
     raw_asr_wers = [result.raw_asr_wer for result in results if result.raw_asr_wer is not None]
-    drift_deltas = [
-        result.cleanup_drift_wer_delta
-        for result in results
-        if result.cleanup_drift_wer_delta is not None
-    ]
-    keyword_scores = [
-        result.keyword_preservation
-        for result in results
-        if result.keyword_preservation is not None
-    ]
+    drift_deltas = [result.cleanup_drift_wer_delta for result in results if result.cleanup_drift_wer_delta is not None]
+    keyword_scores = [result.keyword_preservation for result in results if result.keyword_preservation is not None]
     release_latencies = [result.timings_ms.get("end_to_end", 0.0) for result in results]
     return {
         "summary": {
@@ -155,18 +139,14 @@ def summarize(results: list[EvalCaseResult]) -> dict[str, Any]:
             "mean_wer": mean(wers) if wers else None,
             "mean_raw_asr_wer": mean(raw_asr_wers) if raw_asr_wers else None,
             "mean_cleanup_drift_wer_delta": mean(drift_deltas) if drift_deltas else None,
-            "cleanup_semantic_drift_failures": sum(
-                1 for result in results if result.cleanup_semantic_drift
-            ),
+            "cleanup_semantic_drift_failures": sum(1 for result in results if result.cleanup_semantic_drift),
             "mean_keyword_preservation": mean(keyword_scores) if keyword_scores else None,
             "mean_release_to_ready_ms": mean(release_latencies) if release_latencies else None,
             "under_700ms": sum(1 for value in release_latencies if value < 700),
             "under_1500ms": sum(1 for value in release_latencies if value < 1500),
             "paste_attempts": sum(1 for result in results if result.paste_attempted),
             "paste_successes": sum(1 for result in results if result.paste_success),
-            "paste_failures": sum(
-                1 for result in results if result.paste_attempted and not result.paste_success
-            ),
+            "paste_failures": sum(1 for result in results if result.paste_attempted and not result.paste_success),
         },
         "results": [asdict(result) for result in results],
     }
@@ -177,30 +157,18 @@ def summarize_keyword_ablation(
     warmup_cases: int = 0,
 ) -> dict[str, Any]:
     deltas = [
-        result["keyword_preservation_delta"]
-        for result in results
-        if result["keyword_preservation_delta"] is not None
+        result["keyword_preservation_delta"] for result in results if result["keyword_preservation_delta"] is not None
     ]
     with_scores = [
-        result["with_keywords_preservation"]
-        for result in results
-        if result["with_keywords_preservation"] is not None
+        result["with_keywords_preservation"] for result in results if result["with_keywords_preservation"] is not None
     ]
     without_scores = [
         result["without_keywords_preservation"]
         for result in results
         if result["without_keywords_preservation"] is not None
     ]
-    with_wers = [
-        result["with_keywords_wer"]
-        for result in results
-        if result["with_keywords_wer"] is not None
-    ]
-    without_wers = [
-        result["without_keywords_wer"]
-        for result in results
-        if result["without_keywords_wer"] is not None
-    ]
+    with_wers = [result["with_keywords_wer"] for result in results if result["with_keywords_wer"] is not None]
+    without_wers = [result["without_keywords_wer"] for result in results if result["without_keywords_wer"] is not None]
     return {
         "summary": {
             "cases": len(results),

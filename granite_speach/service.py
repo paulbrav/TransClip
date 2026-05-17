@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-import base64
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
-from pathlib import Path
 import tempfile
+from dataclasses import asdict
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from threading import Lock
 from time import perf_counter
 from typing import Any
@@ -16,6 +15,8 @@ from .audio import AudioRecorder
 from .cleanup import CleanupBackend, build_cleanup_backend
 from .debug_capture import DebugCapture
 from .glossary import load_keywords
+from .history import append_transcript_history
+from .service_routes import dispatch_get, dispatch_post
 from .settings import Settings, keywords_path, load_settings
 
 
@@ -36,6 +37,7 @@ class InferenceEngine:
         self._recording_lock = Lock()
         self._recorder: AudioRecorder | None = None
         self._recording_started_at = 0.0
+        self._last_toggle_accepted_at = 0.0
 
     def health(self) -> dict[str, Any]:
         with self._recording_lock:
@@ -50,6 +52,7 @@ class InferenceEngine:
             "language": self.settings.language,
             "max_recording_seconds": self.settings.max_recording_seconds,
             "min_recording_ms": self.settings.min_recording_ms,
+            "toggle_cooldown_ms": self.settings.toggle_cooldown_ms,
             "hotkey": self.settings.active_hotkey,
             "paste_shortcut": self.settings.paste_shortcut,
             "clipboard_restore_delay_ms": self.settings.clipboard_restore_delay_ms,
@@ -71,6 +74,8 @@ class InferenceEngine:
         cleanup: bool | None = None,
         keywords: list[str] | None = None,
         discard: bool = False,
+        source: str = "/record/stop",
+        record_history: bool = False,
     ) -> dict[str, Any]:
         with self._recording_lock:
             if self._recorder is None:
@@ -84,16 +89,39 @@ class InferenceEngine:
             wav_path = recorder.stop_to_wav(Path(tmp) / "recording.wav")
             if discard:
                 return {"status": "ready", "duration_ms": duration_ms, "discarded": True}
-            result = self.transcribe(wav_path, cleanup=cleanup, keywords=keywords)
+            result = self.transcribe(
+                wav_path,
+                cleanup=cleanup,
+                keywords=keywords,
+                source=source,
+                record_history=False,
+            )
         result["duration_ms"] = duration_ms
+        if record_history:
+            _append_transcript_history(result, self.settings, source=source, duration_ms=duration_ms)
         return result
 
     def toggle_recording(
         self,
         cleanup: bool | None = None,
         keywords: list[str] | None = None,
+        record_history: bool = False,
     ) -> dict[str, Any]:
+        now = perf_counter()
         with self._recording_lock:
+            cooldown_seconds = max(0, self.settings.toggle_cooldown_ms) / 1000
+            if (
+                cooldown_seconds
+                and self._last_toggle_accepted_at
+                and now - self._last_toggle_accepted_at < cooldown_seconds
+            ):
+                return {
+                    "status": "recording" if self._recorder is not None else "ready",
+                    "action": "ignored",
+                    "reason": "toggle_cooldown",
+                    "cooldown_ms": self.settings.toggle_cooldown_ms,
+                }
+            self._last_toggle_accepted_at = now
             recording = self._recorder is not None
             started_at = self._recording_started_at
         if not recording:
@@ -103,7 +131,13 @@ class InferenceEngine:
 
         duration_ms = (perf_counter() - started_at) * 1000
         discard = duration_ms < self.settings.min_recording_ms
-        result = self.stop_recording(cleanup=cleanup, keywords=keywords, discard=discard)
+        result = self.stop_recording(
+            cleanup=cleanup,
+            keywords=keywords,
+            discard=discard,
+            source="/record/toggle",
+            record_history=record_history,
+        )
         result["status"] = "ready"
         result["action"] = "discarded" if discard else "stopped"
         return result
@@ -118,6 +152,8 @@ class InferenceEngine:
         wav_path: Path,
         cleanup: bool | None = None,
         keywords: list[str] | None = None,
+        source: str = "/transcribe",
+        record_history: bool = False,
     ) -> dict[str, Any]:
         start = perf_counter()
         active_keywords = self.keywords if keywords is None else keywords
@@ -143,13 +179,20 @@ class InferenceEngine:
                 "cleanup_model": self.settings.cleanup_model,
             },
         )
-        return {
+        result = {
             "text": cleaned,
             "raw_asr": asr_result.text,
             "cleanup": asdict(cleanup_result) if cleanup_result else None,
             "timings_ms": timings,
             "debug_capture_dir": str(capture_dir) if capture_dir else None,
+            "asr_backend": asr_result.backend,
+            "asr_model": asr_result.model,
+            "cleanup_backend": self.cleanup_backend.name,
+            "cleanup_enabled": should_cleanup,
         }
+        if record_history:
+            _append_transcript_history(result, self.settings, source=source)
+        return result
 
 
 def create_server(
@@ -159,6 +202,7 @@ def create_server(
 ) -> ThreadingHTTPServer:
     settings = settings or load_settings()
     engine = engine or InferenceEngine(settings, keyword_path=keyword_path)
+
     class Handler(BaseHTTPRequestHandler):
         def do_OPTIONS(self) -> None:
             self.send_response(204)
@@ -166,59 +210,15 @@ def create_server(
             self.end_headers()
 
         def do_GET(self) -> None:
-            if urlparse(self.path).path == "/health":
-                self._json(200, engine.health())
-                return
-            self._json(404, {"error": "not found"})
+            response = dispatch_get(engine, urlparse(self.path).path)
+            self._json(response.status, response.payload)
 
         def do_POST(self) -> None:
             path = urlparse(self.path).path
             try:
                 body = self._read_json()
-                if path == "/cleanup":
-                    self._json(
-                        200,
-                        engine.cleanup_text(
-                            str(body.get("text", "")),
-                            keywords=_keywords_from_request(body),
-                        ),
-                    )
-                    return
-                if path == "/record/start":
-                    self._json(200, engine.start_recording())
-                    return
-                if path == "/record/stop":
-                    self._json(
-                        200,
-                        engine.stop_recording(
-                            cleanup=body.get("cleanup"),
-                            keywords=_keywords_from_request(body),
-                            discard=bool(body.get("discard")),
-                        ),
-                    )
-                    return
-                if path == "/record/toggle":
-                    self._json(
-                        200,
-                        engine.toggle_recording(
-                            cleanup=body.get("cleanup"),
-                            keywords=_keywords_from_request(body),
-                        ),
-                    )
-                    return
-                if path in {"/transcribe", "/cleanup/transcribe"}:
-                    wav_path = _wav_from_request(body)
-                    cleanup = True if path == "/cleanup/transcribe" else body.get("cleanup")
-                    self._json(
-                        200,
-                        engine.transcribe(
-                            wav_path,
-                            cleanup=cleanup,
-                            keywords=_keywords_from_request(body),
-                        ),
-                    )
-                    return
-                self._json(404, {"error": "not found"})
+                response = dispatch_post(engine, path, body)
+                self._json(response.status, response.payload)
             except Exception as exc:
                 capture_dir = engine.debug_capture.write_error(
                     "http_request",
@@ -262,26 +262,8 @@ def run_server(settings: Settings | None = None, keyword_path: Path | None = Non
     server.serve_forever()
 
 
-def _wav_from_request(body: dict[str, Any]) -> Path:
-    if "audio_path" in body:
-        path = Path(body["audio_path"]).expanduser()
-        if not path.exists():
-            raise FileNotFoundError(path)
-        return path
-    if "audio_base64" in body:
-        data = base64.b64decode(body["audio_base64"])
-        ext = str(body.get("audio_ext", "wav")).strip().lstrip(".") or "wav"
-        handle = tempfile.NamedTemporaryFile(prefix="granite-speach-", suffix=f".{ext}", delete=False)
-        with handle:
-            handle.write(data)
-        return Path(handle.name)
-    raise ValueError("Request must include audio_path or audio_base64")
-
-
-def _keywords_from_request(body: dict[str, Any]) -> list[str] | None:
-    keywords = body.get("keywords")
-    if keywords is None:
-        return None
-    if not isinstance(keywords, list):
-        raise ValueError("keywords must be a list of strings")
-    return [str(keyword) for keyword in keywords]
+def _append_transcript_history(result: dict[str, Any], settings: Settings, **kwargs: Any) -> None:
+    try:
+        append_transcript_history(result, settings, **kwargs)
+    except Exception as exc:
+        result["history_error"] = str(exc)

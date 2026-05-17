@@ -3,17 +3,18 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from check_eval_results import check_results  # noqa: E402
 from granite_speach.doctor import Check, run_checks  # noqa: E402
 from granite_speach.settings import load_settings  # noqa: E402
+
+from check_eval_results import check_results  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -79,10 +80,7 @@ def check_completion(
 
     if doctor_checked:
         failed_checks = [check for check in doctor_checks if not check.ok]
-        evidence["doctor"] = [
-            {"name": check.name, "ok": check.ok, "detail": check.detail}
-            for check in doctor_checks
-        ]
+        evidence["doctor"] = [{"name": check.name, "ok": check.ok, "detail": check.detail} for check in doctor_checks]
         for check in failed_checks:
             blockers.append(f"doctor {check.name} failed: {check.detail}")
     else:

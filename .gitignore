@@ -5,6 +5,10 @@ build/
 dist/
 wheels/
 *.egg-info
+.coverage
+htmlcov/
+.ruff_cache/
+.pytest_cache/
 
 # Virtual environments
 .venv
@@ -14,8 +18,3 @@ wheels/
 debug-captures/
 .local-tools/
 *.wav
-
-# Tauri/frontend build artifacts
-desktop/node_modules/
-desktop/dist/
-desktop/src-tauri/target/

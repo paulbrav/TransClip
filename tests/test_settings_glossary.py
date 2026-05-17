@@ -1,9 +1,16 @@
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 from granite_speach.glossary import keyword_prompt, load_keywords
-from granite_speach.settings import Settings, load_settings, write_default_keywords, write_default_settings
+from granite_speach.settings import (
+    Settings,
+    coerce_setting_value,
+    load_settings,
+    set_setting,
+    write_default_keywords,
+    write_default_settings,
+)
 
 
 class SettingsGlossaryTests(unittest.TestCase):
@@ -18,6 +25,7 @@ class SettingsGlossaryTests(unittest.TestCase):
 
             self.assertEqual(settings.hotkey_linux, "<Super><Shift>XF86TouchpadOff")
             self.assertEqual(settings.max_recording_seconds, 60)
+            self.assertEqual(settings.toggle_cooldown_ms, 500)
             self.assertEqual(settings.asr_backend, "granite_nar")
             self.assertEqual(settings.asr_model, "ibm-granite/granite-speech-4.1-2b-nar")
             self.assertEqual(settings.cleanup_runtime, "rule")
@@ -38,6 +46,26 @@ class SettingsGlossaryTests(unittest.TestCase):
         settings = Settings()
         self.assertIn("XF86TouchpadOff", settings.active_hotkey)
         self.assertIn("V", settings.paste_shortcut)
+
+    def test_set_setting_rewrites_canonical_toml(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "settings.toml"
+            write_default_settings(path)
+
+            updated = set_setting(path, "toggle_cooldown_ms", "750")
+
+            self.assertEqual(updated.toggle_cooldown_ms, 750)
+            self.assertEqual(load_settings(path).toggle_cooldown_ms, 750)
+            self.assertIn("toggle_cooldown_ms = 750", path.read_text(encoding="utf-8"))
+
+    def test_setting_type_coercion_and_unknown_field(self):
+        self.assertIs(coerce_setting_value("cleanup_enabled", "false"), False)
+        self.assertEqual(coerce_setting_value("sample_rate", "22050"), 22050)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "settings.toml"
+            write_default_settings(path)
+            with self.assertRaises(ValueError):
+                set_setting(path, "wat", "true")
 
 
 if __name__ == "__main__":

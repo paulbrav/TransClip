@@ -1,20 +1,21 @@
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
+from typing import ClassVar
 
 from granite_speach.eval_harness import (
     cleanup_drift_delta,
     is_cleanup_semantic_drift,
     keyword_preservation,
-    run_keyword_ablation,
     run_eval,
+    run_keyword_ablation,
     word_error_rate,
 )
 
 
 class FakeEngine:
-    keywords = ["ROCm"]
+    keywords: ClassVar[list[str]] = ["ROCm"]
 
     def __init__(self):
         self.calls = []
@@ -29,17 +30,14 @@ class FakeEngine:
 
 
 class KeywordAblationEngine:
-    keywords = ["PyTorch", "ROCm"]
+    keywords: ClassVar[list[str]] = ["PyTorch", "ROCm"]
 
     def __init__(self):
         self.calls = []
 
     def transcribe(self, audio_path, cleanup=None, keywords=None):
         self.calls.append((Path(audio_path).name, cleanup, keywords))
-        if keywords:
-            text = "PyTorch on ROCm."
-        else:
-            text = "Pie torch on rock em."
+        text = "PyTorch on ROCm." if keywords else "Pie torch on rock em."
         return {
             "text": text,
             "raw_asr": text,

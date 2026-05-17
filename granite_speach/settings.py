@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
-from pathlib import Path
 import platform
 import tomllib
-
+from dataclasses import asdict, dataclass, fields, replace
+from pathlib import Path
+from typing import Any, get_type_hints
 
 DEFAULT_KEYWORDS = [
     "PyTorch",
     "ROCm",
     "gfx1151",
-    "Tauri",
+    "AppIndicator",
     "llama.cpp",
     "Gemma",
     "Granite",
@@ -34,10 +34,11 @@ class Settings:
     cleanup_model_path: str = ""
     models_local_files_only: bool = True
     model_cache_dir: str = ""
-    restore_clipboard_after_paste: bool = True
+    restore_clipboard_after_paste: bool = False
     clipboard_restore_delay_ms: int = 500
     max_recording_seconds: int = 60
     min_recording_ms: int = 250
+    toggle_cooldown_ms: int = 500
     debug_capture: bool = False
     debug_capture_dir: str = "debug-captures"
     asr_backend: str = "granite_nar"
@@ -81,42 +82,87 @@ def load_settings(path: Path | None = None) -> Settings:
     return Settings(**data)
 
 
+def settings_field_names() -> list[str]:
+    return [field.name for field in fields(Settings)]
+
+
+def settings_to_toml(settings: Settings) -> str:
+    values = asdict(settings)
+    groups = [
+        ("hotkey_linux", "hotkey_macos", "language"),
+        (
+            "asr_model",
+            "cleanup_model",
+            "cleanup_enabled",
+            "cleanup_runtime",
+            "cleanup_model_path",
+            "models_local_files_only",
+            "model_cache_dir",
+        ),
+        ("restore_clipboard_after_paste", "clipboard_restore_delay_ms"),
+        ("max_recording_seconds", "min_recording_ms", "toggle_cooldown_ms"),
+        ("debug_capture", "debug_capture_dir"),
+        ("asr_backend", "asr_device", "sample_rate", "host", "port"),
+    ]
+    lines: list[str] = []
+    for group in groups:
+        if lines:
+            lines.append("")
+        for name in group:
+            lines.append(f"{name} = {_toml_scalar(values[name])}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def get_setting(settings: Settings, field_name: str) -> Any:
+    if field_name not in settings_field_names():
+        raise ValueError(f"Unknown settings field(s): {field_name}")
+    return getattr(settings, field_name)
+
+
+def set_setting(path: Path | None, field_name: str, raw_value: str) -> Settings:
+    current = load_settings(path)
+    allowed = settings_field_names()
+    if field_name not in allowed:
+        raise ValueError(f"Unknown settings field(s): {field_name}")
+    value = coerce_setting_value(field_name, raw_value)
+    updated = replace(current, **{field_name: value})
+    write_settings(updated, path)
+    return updated
+
+
+def write_settings(settings: Settings, path: Path | None = None) -> Path:
+    path = path or settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(settings_to_toml(settings), encoding="utf-8")
+    return path
+
+
+def coerce_setting_value(field_name: str, raw_value: str) -> Any:
+    type_hints = get_type_hints(Settings)
+    expected = type_hints[field_name]
+    if expected is bool:
+        normalized = raw_value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+        raise ValueError(f"{field_name} expects a boolean value")
+    if expected is int:
+        return int(raw_value)
+    if expected is float:
+        return float(raw_value)
+    if expected is str:
+        return raw_value
+    raise ValueError(f"{field_name} has unsupported type {expected}")
+
+
 def write_default_settings(path: Path | None = None) -> Path:
     path = path or settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         return path
-    settings = Settings()
-    lines = [
-        f'hotkey_linux = "{settings.hotkey_linux}"',
-        f'hotkey_macos = "{settings.hotkey_macos}"',
-        f'language = "{settings.language}"',
-        "",
-        f'asr_model = "{settings.asr_model}"',
-        f'cleanup_model = "{settings.cleanup_model}"',
-        f"cleanup_enabled = {str(settings.cleanup_enabled).lower()}",
-        f'cleanup_runtime = "{settings.cleanup_runtime}"',
-        f'cleanup_model_path = "{settings.cleanup_model_path}"',
-        f"models_local_files_only = {str(settings.models_local_files_only).lower()}",
-        f'model_cache_dir = "{settings.model_cache_dir}"',
-        "",
-        f"restore_clipboard_after_paste = {str(settings.restore_clipboard_after_paste).lower()}",
-        f"clipboard_restore_delay_ms = {settings.clipboard_restore_delay_ms}",
-        "",
-        f"max_recording_seconds = {settings.max_recording_seconds}",
-        f"min_recording_ms = {settings.min_recording_ms}",
-        "",
-        f"debug_capture = {str(settings.debug_capture).lower()}",
-        f'debug_capture_dir = "{settings.debug_capture_dir}"',
-        "",
-        f'asr_backend = "{settings.asr_backend}"',
-        f'asr_device = "{settings.asr_device}"',
-        f"sample_rate = {settings.sample_rate}",
-        f'host = "{settings.host}"',
-        f"port = {settings.port}",
-        "",
-    ]
-    path.write_text("\n".join(lines), encoding="utf-8")
+    write_settings(Settings(), path)
     return path
 
 
@@ -126,3 +172,17 @@ def write_default_keywords(path: Path | None = None) -> Path:
     if not path.exists():
         path.write_text("\n".join(DEFAULT_KEYWORDS) + "\n", encoding="utf-8")
     return path
+
+
+def _toml_scalar(value: Any) -> str:
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, int | float):
+        return str(value)
+    return json_escape_string(str(value))
+
+
+def json_escape_string(value: str) -> str:
+    import json
+
+    return json.dumps(value)

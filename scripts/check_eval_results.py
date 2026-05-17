@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Any
 
 
@@ -81,15 +81,12 @@ def check_results(
     under_700 = int(summary.get("under_700ms", 0))
     under_700_ratio = under_700 / cases
     if under_700_ratio < min_under_700_ratio:
-        raise ValueError(
-            f"under-700ms ratio {under_700_ratio:.3f} is below {min_under_700_ratio:.3f}"
-        )
+        raise ValueError(f"under-700ms ratio {under_700_ratio:.3f} is below {min_under_700_ratio:.3f}")
 
     keyword_preservation = summary.get("mean_keyword_preservation")
     if keyword_preservation is not None and float(keyword_preservation) < min_keyword_preservation:
         raise ValueError(
-            "mean keyword preservation "
-            f"{float(keyword_preservation):.3f} is below {min_keyword_preservation:.3f}"
+            f"mean keyword preservation {float(keyword_preservation):.3f} is below {min_keyword_preservation:.3f}"
         )
 
     mean_wer = summary.get("mean_wer")
@@ -99,8 +96,7 @@ def check_results(
     cleanup_drift_failures = int(summary.get("cleanup_semantic_drift_failures", 0))
     if cleanup_drift_failures > max_cleanup_drift_failures:
         raise ValueError(
-            f"cleanup semantic drift failures {cleanup_drift_failures} exceed "
-            f"{max_cleanup_drift_failures}"
+            f"cleanup semantic drift failures {cleanup_drift_failures} exceed {max_cleanup_drift_failures}"
         )
 
     paste_failures = int(summary.get("paste_failures", 0))

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from functools import lru_cache
 import subprocess
 import sys
+from functools import lru_cache
 from typing import Literal
 
 TorchDevice = Literal["cpu", "cuda", "mps"]

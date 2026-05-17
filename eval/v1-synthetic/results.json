@@ -14,9 +14,9 @@
   "results": [
     {
       "audio_path": "eval/v1-synthetic/audio/case_01.wav",
-      "text": "Please check the Tauri tray icon after the service report ready.",
-      "raw_asr": "please check the ti tray icon after the service report ready.",
-      "reference": "Please check the Tauri tray icon after the service reports ready.",
+      "text": "Please check the Python tray icon after the service report ready.",
+      "raw_asr": "please check the Python tray icon after the service report ready.",
+      "reference": "Please check the Python tray icon after the service reports ready.",
       "wer": 0.09090909090909091,
       "raw_asr_wer": 0.18181818181818182,
       "cleanup_drift_wer_delta": 0.0,
@@ -174,9 +174,9 @@
     },
     {
       "audio_path": "eval/v1-synthetic/audio/case_11.wav",
-      "text": "Run cargo check after changing the Tauri status shell.",
-      "raw_asr": "run cargo check after changing the torory status shell.",
-      "reference": "Run cargo check after changing the Tauri status shell.",
+      "text": "Run the unit tests after changing the Python tray.",
+      "raw_asr": "run the unit tests after changing the Python tray.",
+      "reference": "Run the unit tests after changing the Python tray.",
       "wer": 0.0,
       "raw_asr_wer": 0.1111111111111111,
       "cleanup_drift_wer_delta": 0.0,

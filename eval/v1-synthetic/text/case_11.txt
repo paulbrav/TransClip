@@ -1,1 +1,1 @@
-Run cargo check after changing the Tauri status shell.
+Run the unit tests after changing the Python tray.

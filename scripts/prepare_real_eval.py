@@ -3,9 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from pathlib import Path
 import sys
-
+from pathlib import Path
 
 DEFAULT_OUTPUT = Path("eval/real-usage/manifest.json")
 
