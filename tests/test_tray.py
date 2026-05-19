@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from transclip.settings import DEFAULT_HOTKEY_LINUX, Settings, load_settings, write_settings
-from transclip.tray import run_python_tray
+from transclip.tray import _history_file_signature, run_python_tray
 
 
 class FakeLabel:
@@ -39,6 +39,9 @@ class FakeMenuItem:
 
     def set_label(self, label: str) -> None:
         self.label = label
+
+    def show_all(self) -> None:
+        return None
 
 
 class FakeMenu:
@@ -198,7 +201,7 @@ class TrayTests(unittest.TestCase):
         self.assertEqual(menu.children[2].child.text, "Record")
         self.assertFalse(menu.children[3].sensitive)
 
-    def test_recent_transcripts_refresh_when_submenu_is_opened(self):
+    def test_recent_transcripts_refresh_on_submenu_map_and_skip_unchanged(self):
         history_events = [
             {"text": "First transcript"},
             {"text": "Second transcript"},
@@ -207,27 +210,34 @@ class TrayTests(unittest.TestCase):
         with (
             patch.dict(sys.modules, self.modules),
             patch("transclip.tray.InferenceClient", FakeClient),
-            patch("transclip.tray.read_history", return_value=[]) as read_history,
+            patch("transclip.tray.read_history", return_value=history_events) as read_history,
+            patch("transclip.tray._history_file_signature", side_effect=[123, 123, 456]),
         ):
             code = run_python_tray(Settings())
             indicator = FakeIndicatorFactory.current
             history_item = menu_item_by_label(indicator, "Recent transcripts")
             history_menu = history_item.submenu
             self.assertEqual(code, 0)
-            self.assertIn("show", history_menu.handlers)
-            self.assertEqual(len(history_menu.children), 1)
-            self.assertEqual(history_menu.children[0].label, "No recent transcripts")
+            self.assertIn("map", history_menu.handlers)
+            baseline_reads = read_history.call_count
 
-            read_history.return_value = history_events
-            with patch(
-                "transclip.tray._append_item",
-                side_effect=lambda menu, label, callback: menu.append(FakeMenuItem(label)),
-            ):
-                history_menu.handlers["show"](history_menu)
+            history_menu.handlers["map"](history_menu)
+            self.assertEqual(read_history.call_count, baseline_reads)
+            self.assertEqual(len(history_menu.children), 2)
 
-        self.assertEqual(len(history_menu.children), 2)
-        self.assertEqual(history_menu.children[0].label, "First transcript")
-        self.assertEqual(history_menu.children[1].label, "Second transcript")
+            history_menu.handlers["map"](history_menu)
+            self.assertEqual(read_history.call_count, baseline_reads + 1)
+            self.assertEqual(len(history_menu.children), 2)
+
+    def test_history_file_signature_uses_mtime(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "history.jsonl"
+            self.assertIsNone(_history_file_signature(path))
+            path.write_text("{}\n", encoding="utf-8")
+            first = _history_file_signature(path)
+            second = _history_file_signature(path)
+            self.assertIsNotNone(first)
+            self.assertEqual(first, second)
 
     def test_set_hotkey_saves_settings_and_installs_shortcut(self):
         FakeDialog.next_response = 1

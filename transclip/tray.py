@@ -10,7 +10,7 @@ from typing import Any
 from .client import InferenceClient
 from .daemon_lifecycle import service_action
 from .gnome_shortcut import install_shortcut
-from .history import read_history
+from .history import history_path, read_history
 from .models import SUPPORTED_MODELS
 from .paste import SystemClipboard
 from .product import APP_ID, DISPLAY_NAME, IMPORT_PACKAGE
@@ -34,6 +34,8 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
         "recording": False,
         "latest": "",
         "detail": "",
+        "history_signature": object(),
+        "history_refreshing": False,
     }
 
     indicator = AppIndicator.Indicator.new(
@@ -72,7 +74,8 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
             return
         if outcome.latest_transcript:
             state["latest"] = outcome.latest_transcript
-            refresh_history_menu()
+            state["history_signature"] = object()
+            refresh_history_menu(force=True)
         detail = outcome.paste_failed_message
         refresh_health()
         if detail:
@@ -180,7 +183,7 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
         menu_refs["history_menu"] = history_menu
         history_item = Gtk.MenuItem(label="Recent transcripts")
         history_item.set_submenu(history_menu)
-        history_menu.connect("show", lambda *_args: refresh_history_menu())
+        history_menu.connect("map", lambda *_args: refresh_history_menu())
         menu.append(history_item)
         _append_separator(menu)
         _append_item(menu, "Start service", start_service)
@@ -214,18 +217,33 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
         for item, model in menu_refs["model_items"]:
             _set_menu_item_label(item, _model_menu_label(model.model_id, model.backend, settings))
 
-    def refresh_history_menu() -> None:
-        history_menu = menu_refs["history_menu"]
-        for child in history_menu.get_children():
-            history_menu.remove(child)
-        events = read_history(limit=5)
-        if events:
-            for event in events:
-                text = str(event.get("text") or "")
-                _append_item(history_menu, _preview(text), lambda _item, value=text: SystemClipboard().write(value))
-        else:
-            _append_label(history_menu, "No recent transcripts")
-        history_menu.show_all()
+    def refresh_history_menu(force: bool = False) -> None:
+        if state["history_refreshing"]:
+            return
+        signature = _history_file_signature()
+        if not force and signature == state["history_signature"]:
+            return
+        state["history_refreshing"] = True
+        try:
+            history_menu = menu_refs["history_menu"]
+            for child in history_menu.get_children():
+                history_menu.remove(child)
+            events = read_history(limit=5)
+            if events:
+                for event in events:
+                    text = str(event.get("text") or "")
+                    item = _append_item(
+                        history_menu,
+                        _preview(text),
+                        lambda _item, value=text: SystemClipboard().write(value),
+                    )
+                    item.show_all()
+            else:
+                item = _append_label(history_menu, "No recent transcripts")
+                item.show_all()
+            state["history_signature"] = signature
+        finally:
+            state["history_refreshing"] = False
 
     build_menu()
     GLib.timeout_add_seconds(3, refresh_health)
@@ -285,6 +303,13 @@ def _model_label(model_id: str, backend: str) -> str:
     if backend == "granite":
         return "Keyword-biased ASR - Granite 4.1"
     return model_id
+
+
+def _history_file_signature(path: Path | None = None) -> int | None:
+    path = path or history_path()
+    if not path.exists():
+        return None
+    return path.stat().st_mtime_ns
 
 
 def _latest_history_text() -> str:
