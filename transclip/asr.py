@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import platform as py_platform
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -374,9 +375,20 @@ def granite_user_prompt(keywords: list[str] | None = None) -> str:
 
 
 def _granite_transformers_dtype(torch, device: str):
-    if device in {"cuda", "mps"}:
+    if device == "cuda":
+        return torch.bfloat16
+    if device == "mps" and _mps_bfloat16_supported():
         return torch.bfloat16
     return torch.float32
+
+
+def _mps_bfloat16_supported() -> bool:
+    version = py_platform.mac_ver()[0]
+    try:
+        major = int(version.split(".", 1)[0])
+    except (TypeError, ValueError):
+        return True
+    return major >= 14
 
 
 def _granite_nar_dtype(torch, device: str):

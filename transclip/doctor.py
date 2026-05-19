@@ -65,6 +65,16 @@ def run_checks(
 
 def build_backend_checks(settings: Settings, runtime: PlatformRuntime | None = None) -> list[Check]:
     if settings.asr_backend.startswith("file:"):
+        profile = detect_runtime_profile(runtime)
+        if settings.asr_backend == "file:/dev/null" and profile.profile_id in {"darwin_other", "unsupported"}:
+            return [
+                check_model_cache(settings, runtime),
+                Check(
+                    "asr_config",
+                    False,
+                    f"unsupported platform for production ASR: {profile.system} {profile.architecture}",
+                ),
+            ]
         return [
             check_model_cache(settings, runtime),
             Check("asr_runtime", True, "file backend has no extra runtime checks", required=True),

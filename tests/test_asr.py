@@ -114,7 +114,11 @@ class ASRTests(unittest.TestCase):
             float32="float32",
         )
 
-        self.assertEqual(_granite_transformers_dtype(torch, "mps"), "bfloat16")
+        with patch("transclip.asr.py_platform.mac_ver", return_value=("14.0", ("", "", ""), "")):
+            self.assertEqual(_granite_transformers_dtype(torch, "mps"), "bfloat16")
+        with patch("transclip.asr.py_platform.mac_ver", return_value=("13.6", ("", "", ""), "")):
+            self.assertEqual(_granite_transformers_dtype(torch, "mps"), "float32")
+        self.assertEqual(_granite_transformers_dtype(torch, "cuda"), "bfloat16")
         self.assertEqual(_granite_transformers_dtype(torch, "cpu"), "float32")
 
     def test_granite_nar_sets_rocm_attention_environment(self):

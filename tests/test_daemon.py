@@ -121,6 +121,24 @@ class DaemonTests(unittest.TestCase):
             calls,
         )
 
+    def test_macos_restart_bootstraps_unloaded_launch_agent(self):
+        calls = []
+
+        def runner(command, **_kwargs):
+            calls.append(command)
+            if command[:2] == ["launchctl", "print"]:
+                return type("Completed", (), {"returncode": 1, "stdout": "not loaded"})()
+            return type("Completed", (), {"returncode": 0, "stdout": ""})()
+
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"), check_output_text="501")
+        result = service_action("restart", runner=runner, runtime=runtime)
+
+        self.assertTrue(result.ok)
+        self.assertIn(
+            ["launchctl", "bootstrap", "gui/501", "/Users/test/Library/LaunchAgents/com.paulbrav.transclip.plist"],
+            calls,
+        )
+
     def test_macos_service_state_requires_running_launchd_job(self):
         runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"), check_output_text="501")
 

@@ -214,12 +214,12 @@ def service_action(
         plist_path = str(launch_agent_path(runtime))
         domain = launchd_gui_domain(runtime)
         target = launchd_target(runtime)
-        if action == "start" and _launchd_is_loaded(target, runner):
+        if action in {"start", "restart"} and _launchd_is_loaded(target, runner):
             return run_command(["launchctl", "kickstart", "-k", target], runner)
         commands = {
             "start": ["launchctl", "bootstrap", domain, plist_path],
             "stop": ["launchctl", "bootout", target],
-            "restart": ["launchctl", "kickstart", "-k", target],
+            "restart": ["launchctl", "bootstrap", domain, plist_path],
         }
         return run_command(commands[action], runner)
     return CommandResult(False, f"unsupported platform: {system}")

@@ -22,7 +22,7 @@ from transclip.doctor import (
 )
 from transclip.gnome_shortcut import GnomeShortcutStatus
 from transclip.models import hf_cache_dir
-from transclip.settings import Settings
+from transclip.settings import Settings, default_settings
 
 
 class DoctorTests(unittest.TestCase):
@@ -98,6 +98,15 @@ class DoctorTests(unittest.TestCase):
         config = next(check for check in checks if check.name == "asr_config")
         self.assertFalse(config.ok)
         self.assertRegex(config.detail, "not supported on Darwin|mlx_audio_whisper")
+
+    def test_darwin_non_arm_default_reports_unsupported_asr_config(self):
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"), check_output_text="x86_64")
+        checks = build_backend_checks(default_settings(runtime), runtime)
+        config = next(check for check in checks if check.name == "asr_config")
+
+        self.assertFalse(config.ok)
+        self.assertIn("unsupported platform", config.detail)
+        self.assertIn("Darwin x86_64", config.detail)
 
     def test_run_checks_does_not_crash_on_darwin_arm(self):
         settings = Settings(

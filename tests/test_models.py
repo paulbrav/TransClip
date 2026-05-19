@@ -126,6 +126,7 @@ class ModelsTests(unittest.TestCase):
             )
 
         self.assertIn("Library/Caches/huggingface/hub", captured["cache_dir"])
+        self.assertNotIn("local_dir_use_symlinks", captured)
 
     def test_mlx_snapshot_path_uses_refs_main(self):
         with tempfile.TemporaryDirectory() as tmp:
