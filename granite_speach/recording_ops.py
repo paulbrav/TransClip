@@ -18,6 +18,16 @@ class ToggleOutcome:
     error_message: str = ""
     paste_failed_message: str = ""
 
+    @property
+    def latest_transcript(self) -> str:
+        if self.payload.get("action") == "stopped" and self.payload.get("text"):
+            return str(self.payload["text"])
+        return ""
+
+    @property
+    def notification_message(self) -> str:
+        return self.error_message or self.paste_failed_message
+
 
 def toggle_recording(
     settings: Settings,

@@ -1,9 +1,16 @@
 import unittest
 from unittest.mock import patch
 
-from granite_speach.paste import SystemPasteInjector, detect_clipboard_backend, paste_transcript
-from granite_speach.platform_capabilities import clipboard_capability, session_info
+from granite_speach.paste import (
+    SystemPasteInjector,
+    clipboard_capability,
+    detect_clipboard_backend,
+    paste_commands,
+    paste_transcript,
+)
+from granite_speach.platform_capabilities import session_info
 from granite_speach.settings import Settings
+from tests.service_helpers import FakeRuntime
 
 
 class FakeClipboard:
@@ -113,93 +120,78 @@ class PasteTests(unittest.TestCase):
         self.assertFalse(result.pasted)
         self.assertIn("paste exploded", result.error_detail)
 
-    def test_system_injector_tries_xdotool_after_wtype_failure(self):
-        calls = []
-
-        def which(name):
-            return f"/usr/bin/{name}" if name in {"wtype", "xdotool"} else None
-
+    def test_system_injector_reports_selected_xdotool_backend(self):
         def run(command, **_kwargs):
-            calls.append(command[0])
             if command[0] == "wtype":
                 return type("Completed", (), {"returncode": 1, "stdout": "virtual keyboard unsupported"})()
             return type("Completed", (), {"returncode": 0, "stdout": ""})()
 
-        with (
-            patch("granite_speach.paste.platform.system", return_value="Linux"),
-            patch.dict("granite_speach.paste.os.environ", {"XDG_SESSION_TYPE": "x11"}),
-            patch("granite_speach.paste.shutil.which", side_effect=which),
-            patch("granite_speach.paste.subprocess.run", side_effect=run),
-        ):
-            injector = SystemPasteInjector()
-            self.assertTrue(injector.paste())
+        runtime = FakeRuntime(
+            env={"XDG_SESSION_TYPE": "x11"},
+            available={"wtype": "/usr/bin/wtype", "xdotool": "/usr/bin/xdotool"},
+            run_func=run,
+        )
+        injector = SystemPasteInjector(runtime)
+        self.assertTrue(injector.paste())
 
-        self.assertEqual(calls, ["xdotool"])
         self.assertEqual(injector.backend_name, "xdotool")
 
-    def test_wayland_system_injector_tries_ydotool_after_wtype_failure(self):
-        calls = []
-
-        def which(name):
-            return f"/usr/bin/{name}" if name in {"wtype", "xdotool", "ydotool"} else None
-
-        ydotool_command = []
-
+    def test_wayland_system_injector_reports_selected_ydotool_backend(self):
         def run(command, **_kwargs):
-            calls.append(command[0])
             if command[0] in {"wtype", "xdotool"}:
                 return type("Completed", (), {"returncode": 1, "stdout": f"{command[0]} failed"})()
-            ydotool_command.extend(command)
             return type("Completed", (), {"returncode": 0, "stdout": ""})()
 
-        with (
-            patch("granite_speach.paste.platform.system", return_value="Linux"),
-            patch.dict("granite_speach.paste.os.environ", {"XDG_SESSION_TYPE": "wayland"}),
-            patch("granite_speach.paste.shutil.which", side_effect=which),
-            patch("granite_speach.paste.subprocess.run", side_effect=run),
-        ):
-            injector = SystemPasteInjector()
-            self.assertTrue(injector.paste())
+        runtime = FakeRuntime(
+            env={"XDG_SESSION_TYPE": "wayland"},
+            available={
+                "wtype": "/usr/bin/wtype",
+                "xdotool": "/usr/bin/xdotool",
+                "ydotool": "/usr/bin/ydotool",
+            },
+            run_func=run,
+        )
+        injector = SystemPasteInjector(runtime)
+        self.assertTrue(injector.paste())
 
-        self.assertEqual(calls, ["wtype", "ydotool"])
-        self.assertEqual(ydotool_command, ["ydotool", "key", "ctrl+v"])
         self.assertEqual(injector.backend_name, "ydotool")
 
-    def test_system_injector_reports_runtime_failure(self):
+    def test_linux_paste_commands_use_terminal_text_paste_shortcut(self):
         def which(name):
-            return f"/usr/bin/{name}" if name == "wtype" else None
+            return f"/usr/bin/{name}"
 
+        wayland_info = session_info(environ={"XDG_SESSION_TYPE": "wayland"}, system="Linux")
+        x11_info = session_info(environ={"XDG_SESSION_TYPE": "x11"}, system="Linux")
+
+        wayland_commands = paste_commands(which=which, info=wayland_info)
+        x11_commands = paste_commands(which=which, info=x11_info)
+
+        self.assertIn(["ydotool", "key", "ctrl+shift+v"], [command.command for command in wayland_commands])
+        self.assertIn(["xdotool", "key", "ctrl+shift+v"], [command.command for command in x11_commands])
+
+    def test_system_injector_reports_runtime_failure(self):
         def run(_command, **_kwargs):
             return type("Completed", (), {"returncode": 1, "stdout": "virtual keyboard unsupported"})()
 
-        with (
-            patch("granite_speach.paste.platform.system", return_value="Linux"),
-            patch("granite_speach.paste.shutil.which", side_effect=which),
-            patch("granite_speach.paste.subprocess.run", side_effect=run),
-        ):
-            injector = SystemPasteInjector()
-            self.assertFalse(injector.paste())
-            self.assertIn("virtual keyboard unsupported", injector.error_detail())
+        runtime = FakeRuntime(
+            available={"wtype": "/usr/bin/wtype"},
+            run_func=run,
+        )
+        injector = SystemPasteInjector(runtime)
+        self.assertFalse(injector.paste())
+        self.assertIn("virtual keyboard unsupported", injector.error_detail())
 
     def test_wayland_clipboard_requires_wl_clipboard(self):
-        with (
-            patch("granite_speach.paste.platform.system", return_value="Linux"),
-            patch.dict("granite_speach.paste.os.environ", {"XDG_SESSION_TYPE": "wayland"}),
-            patch("granite_speach.paste.shutil.which", return_value=None),
-            self.assertRaisesRegex(RuntimeError, "Wayland clipboard requires wl-clipboard"),
-        ):
-            detect_clipboard_backend()
+        runtime = FakeRuntime(env={"XDG_SESSION_TYPE": "wayland"})
+        with self.assertRaisesRegex(RuntimeError, "Wayland clipboard requires wl-clipboard"):
+            detect_clipboard_backend(runtime)
 
     def test_x11_clipboard_can_use_xclip(self):
-        def which(name):
-            return f"/usr/bin/{name}" if name == "xclip" else None
-
-        with (
-            patch("granite_speach.paste.platform.system", return_value="Linux"),
-            patch.dict("granite_speach.paste.os.environ", {"XDG_SESSION_TYPE": "x11"}),
-            patch("granite_speach.paste.shutil.which", side_effect=which),
-        ):
-            backend = detect_clipboard_backend()
+        runtime = FakeRuntime(
+            env={"XDG_SESSION_TYPE": "x11"},
+            available={"xclip": "/usr/bin/xclip"},
+        )
+        backend = detect_clipboard_backend(runtime)
 
         self.assertEqual(backend.name, "xclip")
 

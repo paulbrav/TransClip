@@ -25,7 +25,7 @@ from .doctor import (
     run_checks,
 )
 from .eval_harness import run_eval
-from .gnome_shortcut import build_toggle_command, install_gnome_shortcut
+from .gnome_shortcut import install_shortcut
 from .history import read_history
 from .models import model_rows, prefetch_model
 from .notify import notify
@@ -34,26 +34,22 @@ from .recording_ops import toggle_recording
 from .service import InferenceEngine, run_server
 from .settings import (
     get_setting,
-    keywords_path,
     load_settings,
     set_setting,
     settings_field_names,
-    write_default_keywords,
     write_default_settings,
 )
 
 
 def handle_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     config_dir = args.settings.parent if args.settings else None
-    keyword_path = keywords_path(config_dir)
     if args.command == "init-config":
         print(write_default_settings(args.settings))
-        print(write_default_keywords(keyword_path))
         return 0
 
     settings = load_settings(args.settings) if args.settings else load_settings()
     if args.command == "serve":
-        run_server(settings, keyword_path=keyword_path)
+        run_server(settings)
         return 0
 
     if args.command == "doctor":
@@ -71,11 +67,11 @@ def handle_command(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
     if args.command == "config":
         return handle_config(args, settings)
     if args.command == "install-gnome-shortcut":
-        return handle_gnome_shortcut(args)
+        return handle_gnome_shortcut(args, settings)
     if args.command == "toggle-record":
         return handle_toggle_record(args, settings)
 
-    engine = InferenceEngine(settings, keyword_path=keyword_path)
+    engine = InferenceEngine(settings)
     if args.command == "transcribe":
         result = engine.transcribe(args.wav, cleanup=not args.no_cleanup)
         print(result["raw_asr"] if args.raw else result["text"])
@@ -105,7 +101,7 @@ def handle_doctor(args: argparse.Namespace, settings, config_dir: Path | None) -
         logs_dir().mkdir(parents=True, exist_ok=True)
         if sys.platform.startswith("linux"):
             try:
-                install_gnome_shortcut(build_toggle_command(args.settings), settings.hotkey_linux)
+                install_shortcut(settings_path=args.settings, binding=settings.hotkey_linux)
             except Exception as exc:
                 print(f"doctor --fix could not install GNOME shortcut: {exc}", file=sys.stderr)
     checks = run_checks(
@@ -205,9 +201,12 @@ def handle_config(args: argparse.Namespace, settings) -> int:
     raise ValueError(args.config_command)
 
 
-def handle_gnome_shortcut(args: argparse.Namespace) -> int:
-    command = args.shortcut_command or build_toggle_command(args.settings)
-    result = install_gnome_shortcut(command=command, binding=args.binding)
+def handle_gnome_shortcut(args: argparse.Namespace, settings) -> int:
+    result = install_shortcut(
+        settings_path=args.settings,
+        command=args.shortcut_command,
+        binding=args.binding or settings.hotkey_linux,
+    )
     print(f"Installed {result.name}")
     print(f"Path: {result.path}")
     print(f"Binding: {result.binding}")
@@ -222,10 +221,10 @@ def handle_toggle_record(args: argparse.Namespace, settings) -> int:
             print(f"{outcome.error_message} Start it with: granite-speach serve", file=sys.stderr)
         else:
             print(outcome.error_message, file=sys.stderr)
-        notify("Granite Speach", outcome.error_message)
+        notify("Granite Speach", outcome.notification_message)
         return 1
     if outcome.paste_failed_message:
-        notify("Granite Speach", outcome.paste_failed_message)
+        notify("Granite Speach", outcome.notification_message)
     print(json.dumps(outcome.payload))
     return 0
 

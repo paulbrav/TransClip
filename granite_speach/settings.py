@@ -1,30 +1,18 @@
 from __future__ import annotations
 
-import platform
 import tomllib
 from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 from typing import Any, get_type_hints
 
-DEFAULT_KEYWORDS = [
-    "PyTorch",
-    "ROCm",
-    "gfx1151",
-    "AppIndicator",
-    "llama.cpp",
-    "Gemma",
-    "Granite",
-    "Qwen",
-    "Transformers",
-    "Hugging Face",
-    "MLX",
-    "Wayland",
-]
+from .platform_runtime import default_platform_runtime, user_config_dir
+
+DEFAULT_HOTKEY_LINUX = "<Super><Shift>XF86TouchpadOff"
 
 
 @dataclass(slots=True)
 class Settings:
-    hotkey_linux: str = "<Super><Shift>XF86TouchpadOff"
+    hotkey_linux: str = DEFAULT_HOTKEY_LINUX
     hotkey_macos: str = "Option+Space"
     language: str = "en"
     asr_model: str = "ibm-granite/granite-speech-4.1-2b-nar"
@@ -49,25 +37,19 @@ class Settings:
 
     @property
     def active_hotkey(self) -> str:
-        return self.hotkey_macos if platform.system() == "Darwin" else self.hotkey_linux
+        return self.hotkey_macos if default_platform_runtime.system() == "Darwin" else self.hotkey_linux
 
     @property
     def paste_shortcut(self) -> str:
-        return "Command+V" if platform.system() == "Darwin" else "Ctrl+V"
+        return "Command+V" if default_platform_runtime.system() == "Darwin" else "Ctrl+Shift+V"
 
 
 def default_config_dir() -> Path:
-    if platform.system() == "Darwin":
-        return Path.home() / "Library" / "Application Support" / "granite-speach"
-    return Path.home() / ".config" / "granite-speach"
+    return user_config_dir("granite-speach")
 
 
 def settings_path(config_dir: Path | None = None) -> Path:
     return (config_dir or default_config_dir()) / "settings.toml"
-
-
-def keywords_path(config_dir: Path | None = None) -> Path:
-    return (config_dir or default_config_dir()) / "keywords.txt"
 
 
 def load_settings(path: Path | None = None) -> Settings:
@@ -163,14 +145,6 @@ def write_default_settings(path: Path | None = None) -> Path:
     if path.exists():
         return path
     write_settings(Settings(), path)
-    return path
-
-
-def write_default_keywords(path: Path | None = None) -> Path:
-    path = path or keywords_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists():
-        path.write_text("\n".join(DEFAULT_KEYWORDS) + "\n", encoding="utf-8")
     return path
 
 

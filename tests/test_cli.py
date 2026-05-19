@@ -1,106 +1,154 @@
 import io
+import json
+import socket
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from typing import ClassVar
 from unittest.mock import patch
-from urllib.error import URLError
 
 from granite_speach.cli import main
+from granite_speach.settings import Settings, write_settings
+from tests.service_helpers import FakeRecorder, serve_test_engine, stop_server
 
 
-class FakeClient:
-    result: ClassVar[dict[str, str]] = {"status": "recording", "action": "started"}
+class InMemoryClipboard:
+    backend_name = "fake-clipboard"
+    value = ""
 
-    def __init__(self, settings):
-        self.settings = settings
-        self.base_url = f"http://{settings.host}:{settings.port}"
+    def read(self) -> str:
+        return type(self).value
 
-    def record_toggle(self):
-        return type(self).result
+    def write(self, text: str) -> None:
+        type(self).value = text
+
+
+class FakePasteInjector:
+    pasted = True
+
+    def __init__(self):
+        self.backend_name = None
+
+    def paste(self) -> bool:
+        if type(self).pasted:
+            self.backend_name = "fake-paste"
+            return True
+        return False
+
+    def error_detail(self) -> str:
+        return "fake paste failed"
 
 
 class CliTests(unittest.TestCase):
     def test_toggle_record_starts_without_paste(self):
-        FakeClient.result = {"status": "recording", "action": "started"}
-        stdout = io.StringIO()
-        with (
-            patch("granite_speach.recording_ops.InferenceClient", FakeClient),
-            patch("granite_speach.recording_ops.paste_transcript") as paste,
-            patch("granite_speach.recording_ops.append_toggle_log") as append_log,
-            redirect_stdout(stdout),
-        ):
-            code = main(["toggle-record", "--paste"])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            server, thread, host, port = serve_test_engine(transcript="hello")
+            settings_path = write_test_settings(root, host, port)
+            try:
+                stdout = io.StringIO()
+                with (
+                    patch("granite_speach.service.AudioRecorder", FakeRecorder),
+                    patch("granite_speach.paste.SystemClipboard", InMemoryClipboard),
+                    patch("granite_speach.paste.SystemPasteInjector", FakePasteInjector),
+                    patch("granite_speach.cli_commands.notify"),
+                    patch("granite_speach.daemon_lifecycle.Path.home", return_value=root),
+                    redirect_stdout(stdout),
+                ):
+                    code = main(["--settings", str(settings_path), "toggle-record", "--paste"])
+            finally:
+                stop_server(server, thread)
 
-        self.assertEqual(code, 0)
-        self.assertIn('"action": "started"', stdout.getvalue())
-        paste.assert_not_called()
-        append_log.assert_called_once()
+            self.assertEqual(code, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["action"], "started")
+            self.assertEqual(payload["status"], "recording")
+            self.assertNotIn("paste", payload)
+            log_event = read_last_toggle_log(root)
+            self.assertEqual(log_event["action"], "started")
 
     def test_toggle_record_stops_and_pastes_transcript(self):
-        FakeClient.result = {"status": "ready", "action": "stopped", "text": "hello"}
-        paste_result = type(
-            "PasteResult",
-            (),
-            {
-                "pasted": True,
-                "restored": True,
-                "transcript_left_on_clipboard": False,
-                "copied": True,
-                "clipboard_backend": "fake-clipboard",
-                "paste_backend": "fake-paste",
-                "error_detail": None,
-            },
-        )()
-        stdout = io.StringIO()
-        with (
-            patch("granite_speach.recording_ops.InferenceClient", FakeClient),
-            patch("granite_speach.recording_ops.paste_transcript", return_value=paste_result) as paste,
-            patch("granite_speach.recording_ops.append_toggle_log") as append_log,
-            redirect_stdout(stdout),
-        ):
-            code = main(["toggle-record", "--paste"])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            server, thread, host, port = serve_test_engine(transcript="hello")
+            settings_path = write_test_settings(root, host, port)
+            try:
+                InMemoryClipboard.value = "prior"
+                with (
+                    patch("granite_speach.service.AudioRecorder", FakeRecorder),
+                    patch("granite_speach.paste.SystemClipboard", InMemoryClipboard),
+                    patch("granite_speach.paste.SystemPasteInjector", FakePasteInjector),
+                    patch("granite_speach.cli_commands.notify"),
+                    patch("granite_speach.daemon_lifecycle.Path.home", return_value=root),
+                    redirect_stdout(io.StringIO()),
+                ):
+                    self.assertEqual(main(["--settings", str(settings_path), "toggle-record"]), 0)
 
-        self.assertEqual(code, 0)
-        paste.assert_called_once()
-        self.assertEqual(paste.call_args.args[0], "hello")
-        self.assertIn('"paste":', stdout.getvalue())
-        self.assertIn('"pasted": true', stdout.getvalue())
-        append_log.assert_called_once()
+                stdout = io.StringIO()
+                with (
+                    patch("granite_speach.service.AudioRecorder", FakeRecorder),
+                    patch("granite_speach.paste.SystemClipboard", InMemoryClipboard),
+                    patch("granite_speach.paste.SystemPasteInjector", FakePasteInjector),
+                    patch("granite_speach.cli_commands.notify"),
+                    patch("granite_speach.daemon_lifecycle.Path.home", return_value=root),
+                    redirect_stdout(stdout),
+                ):
+                    code = main(["--settings", str(settings_path), "toggle-record", "--paste"])
+            finally:
+                stop_server(server, thread)
+
+            self.assertEqual(code, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["action"], "stopped")
+            self.assertEqual(payload["text"], "Hello.")
+            self.assertTrue(payload["paste"]["pasted"])
+            self.assertEqual(payload["paste"]["clipboard_backend"], "fake-clipboard")
+            self.assertEqual(payload["paste"]["paste_backend"], "fake-paste")
+            self.assertEqual(InMemoryClipboard.value, "Hello.")
+            log_event = read_last_toggle_log(root)
+            self.assertEqual(log_event["action"], "stopped")
+            self.assertEqual(log_event["text"], "Hello.")
 
     def test_toggle_record_reports_unavailable_service(self):
-        class DownClient(FakeClient):
-            def record_toggle(self):
-                raise URLError("connection refused")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings_path = write_test_settings(root, "127.0.0.1", unused_local_port())
+            stderr = io.StringIO()
+            with (
+                patch("granite_speach.cli_commands.notify"),
+                patch("granite_speach.daemon_lifecycle.Path.home", return_value=root),
+                redirect_stderr(stderr),
+            ):
+                code = main(["--settings", str(settings_path), "toggle-record", "--paste"])
 
-        stderr = io.StringIO()
-        with (
-            patch("granite_speach.recording_ops.InferenceClient", DownClient),
-            patch("granite_speach.cli_commands.notify") as notify,
-            patch("granite_speach.recording_ops.append_toggle_log") as append_log,
-            redirect_stderr(stderr),
-        ):
-            code = main(["toggle-record", "--paste"])
-
-        self.assertEqual(code, 1)
-        self.assertIn("Granite service is not running", stderr.getvalue())
-        notify.assert_called_once()
-        append_log.assert_called_once()
+            self.assertEqual(code, 1)
+            self.assertIn("Granite service is not running", stderr.getvalue())
+            log_event = read_last_toggle_log(root)
+            self.assertEqual(log_event["action"], "error")
+            self.assertEqual(log_event["error"], "Granite service is not running.")
 
     def test_toggle_record_log_failure_is_nonfatal(self):
-        FakeClient.result = {"status": "recording", "action": "started"}
-        stdout = io.StringIO()
-        with (
-            patch("granite_speach.recording_ops.InferenceClient", FakeClient),
-            patch("granite_speach.recording_ops.append_toggle_log", side_effect=OSError("disk full")),
-            redirect_stdout(stdout),
-        ):
-            code = main(["toggle-record"])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".cache").write_text("not a directory", encoding="utf-8")
+            server, thread, host, port = serve_test_engine(transcript="hello")
+            settings_path = write_test_settings(root, host, port)
+            try:
+                stdout = io.StringIO()
+                with (
+                    patch("granite_speach.service.AudioRecorder", FakeRecorder),
+                    patch("granite_speach.daemon_lifecycle.Path.home", return_value=root),
+                    redirect_stdout(stdout),
+                ):
+                    code = main(["--settings", str(settings_path), "toggle-record"])
+            finally:
+                stop_server(server, thread)
 
         self.assertEqual(code, 0)
-        self.assertIn('"action": "started"', stdout.getvalue())
-        self.assertIn('"log_error": "disk full"', stdout.getvalue())
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["action"], "started")
+        self.assertIn("log_error", payload)
+        self.assertIn(".cache", payload["log_error"])
 
     def test_history_json_and_copy(self):
         stdout = io.StringIO()
@@ -154,12 +202,63 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("ibm-granite/granite-speech-4.1-2b-nar", stdout.getvalue())
 
-    def test_tray_command_runs_python_tray(self):
-        with patch("granite_speach.tray.run_python_tray", return_value=0) as run_tray:
-            code = main(["tray"])
+    def test_install_gnome_shortcut_uses_configured_hotkey(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_path = Path(tmp) / "settings.toml"
+            write_settings(Settings(hotkey_linux="<Control><Alt>space"), settings_path)
+            stdout = io.StringIO()
+            shortcut = type(
+                "Shortcut",
+                (),
+                {
+                    "name": "Granite Speach Toggle",
+                    "path": "/shortcut/",
+                    "binding": "<Control><Alt>space",
+                    "command": "/bin/sh -lc granite-speach",
+                },
+            )()
+            with (
+                patch("granite_speach.cli_commands.install_shortcut", return_value=shortcut) as install,
+                redirect_stdout(stdout),
+            ):
+                code = main(["--settings", str(settings_path), "install-gnome-shortcut"])
 
         self.assertEqual(code, 0)
-        run_tray.assert_called_once()
+        self.assertEqual(install.call_args.kwargs["binding"], "<Control><Alt>space")
+        self.assertIn("Binding: <Control><Alt>space", stdout.getvalue())
+
+    def test_tray_command_runs_python_tray(self):
+        with patch("granite_speach.tray.run_python_tray", return_value=7):
+            code = main(["tray"])
+
+        self.assertEqual(code, 7)
+
+
+def write_test_settings(root: Path, host: str, port: int, **overrides) -> Path:
+    settings = Settings(
+        host=host,
+        port=port,
+        cleanup_runtime="test_rule",
+        min_recording_ms=0,
+        toggle_cooldown_ms=0,
+        clipboard_restore_delay_ms=0,
+        **overrides,
+    )
+    path = root / "settings.toml"
+    write_settings(settings, path)
+    return path
+
+
+def read_last_toggle_log(root: Path) -> dict:
+    log_path = root / ".cache" / "granite-speach" / "toggle-record.log"
+    lines = [line for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return json.loads(lines[-1])
+
+
+def unused_local_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
 if __name__ == "__main__":

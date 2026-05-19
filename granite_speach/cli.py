@@ -4,7 +4,6 @@ import argparse
 from pathlib import Path
 
 from .cli_commands import handle_command
-from .gnome_shortcut import GRANITE_SHORTCUT_BINDING
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -68,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     toggle.add_argument("--paste", action="store_true")
 
     gnome_shortcut = sub.add_parser("install-gnome-shortcut")
-    gnome_shortcut.add_argument("--binding", default=GRANITE_SHORTCUT_BINDING)
+    gnome_shortcut.add_argument("--binding")
     gnome_shortcut.add_argument("--command", dest="shortcut_command")
 
     eval_parser = sub.add_parser("eval")

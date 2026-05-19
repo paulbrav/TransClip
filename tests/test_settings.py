@@ -2,28 +2,25 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from granite_speach.glossary import keyword_prompt, load_keywords
 from granite_speach.settings import (
+    DEFAULT_HOTKEY_LINUX,
     Settings,
     coerce_setting_value,
     load_settings,
     set_setting,
-    write_default_keywords,
     write_default_settings,
 )
 
 
-class SettingsGlossaryTests(unittest.TestCase):
+class SettingsTests(unittest.TestCase):
     def test_default_files_round_trip(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             settings_file = write_default_settings(root / "settings.toml")
-            keywords_file = write_default_keywords(root / "keywords.txt")
 
             settings = load_settings(settings_file)
-            terms = load_keywords(keywords_file)
 
-            self.assertEqual(settings.hotkey_linux, "<Super><Shift>XF86TouchpadOff")
+            self.assertEqual(settings.hotkey_linux, DEFAULT_HOTKEY_LINUX)
             self.assertEqual(settings.max_recording_seconds, 60)
             self.assertEqual(settings.toggle_cooldown_ms, 500)
             self.assertEqual(settings.asr_backend, "granite_nar")
@@ -32,8 +29,6 @@ class SettingsGlossaryTests(unittest.TestCase):
             self.assertEqual(settings.cleanup_model, "google/gemma-4-E2B-it")
             self.assertTrue(settings.models_local_files_only)
             self.assertEqual(settings.model_cache_dir, "")
-            self.assertIn("ROCm", terms)
-            self.assertIn("Granite", keyword_prompt(terms))
 
     def test_unknown_settings_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:

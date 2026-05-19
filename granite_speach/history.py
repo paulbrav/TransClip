@@ -1,18 +1,16 @@
 from __future__ import annotations
 
 import json
-import platform
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .platform_runtime import user_log_dir
 from .settings import Settings
 
 
 def history_dir() -> Path:
-    if platform.system() == "Darwin":
-        return Path.home() / "Library" / "Logs" / "granite-speach"
-    return Path.home() / ".cache" / "granite-speach"
+    return user_log_dir("granite-speach")
 
 
 def history_path() -> Path:

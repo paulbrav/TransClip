@@ -10,9 +10,8 @@ shortcut -> granite-speach toggle-record --paste -> Python service -> clipboard 
 ```
 
 The runnable app lives in `granite_speach/`: Python inference service,
-settings, glossary, audio capture, cleanup, paste injection, daemon
-install/status/log commands, debug capture, Python AppIndicator tray, and eval
-harness.
+settings, audio capture, cleanup, paste injection, daemon install/status/log
+commands, debug capture, Python AppIndicator tray, and eval harness.
 
 ## Quick Start
 
@@ -22,8 +21,7 @@ Create default config files:
 uv run -m granite_speach.cli init-config
 ```
 
-This writes `settings.toml` and `keywords.txt` under the platform config
-directory.
+This writes `settings.toml` under the platform config directory.
 
 Install the daemon and native shortcut:
 
@@ -221,14 +219,6 @@ Then build and run the eval:
 TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1 \
 VIRTUAL_ENV=$PWD/.venv-gfx1151 uv run --active scripts/run_real_eval_pipeline.py \
   ~/granite-real-eval
-```
-
-To compare glossary on/off behavior for the same manifest:
-
-```bash
-TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1 \
-VIRTUAL_ENV=$PWD/.venv-gfx1151 uv run --active scripts/run_keyword_ablation.py \
-  eval/real-usage/manifest.json
 ```
 
 ## Tests

@@ -3,18 +3,21 @@ from __future__ import annotations
 import ast
 import os
 import shlex
-import shutil
 import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .platform_capabilities import session_info
+from .platform_runtime import PlatformRuntime, get_runtime
+from .settings import DEFAULT_HOTKEY_LINUX
+
 GNOME_MEDIA_KEYS_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys"
 GNOME_CUSTOM_KEYBINDINGS_KEY = "custom-keybindings"
 GNOME_CUSTOM_KEYBINDING_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding"
 GRANITE_SHORTCUT_NAME = "Granite Speach Toggle"
-GRANITE_SHORTCUT_BINDING = "<Super><Shift>XF86TouchpadOff"
+GRANITE_SHORTCUT_BINDING = DEFAULT_HOTKEY_LINUX
 GRANITE_SHORTCUT_PATH = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/granite-speach-toggle/"
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -36,6 +39,13 @@ class GnomeShortcutInstallResult:
     name: str
     binding: str
     command: str
+
+
+@dataclass(slots=True)
+class ShortcutReadiness:
+    ok: bool
+    detail: str
+    status: GnomeShortcutStatus | None = None
 
 
 def build_toggle_command(settings_path: Path | None = None) -> str:
@@ -60,8 +70,9 @@ def install_gnome_shortcut(
     command: str,
     binding: str = GRANITE_SHORTCUT_BINDING,
     runner: Runner = subprocess.run,
+    runtime: PlatformRuntime | None = None,
 ) -> GnomeShortcutInstallResult:
-    _require_gsettings()
+    _require_gsettings(runtime)
     paths = get_custom_keybinding_paths(runner=runner)
     path = _find_granite_path(paths, runner=runner) or GRANITE_SHORTCUT_PATH
     if path not in paths:
@@ -85,8 +96,10 @@ def install_gnome_shortcut(
 
 def get_gnome_shortcut_status(
     runner: Runner = subprocess.run,
+    runtime: PlatformRuntime | None = None,
 ) -> GnomeShortcutStatus:
-    if not shutil.which("gsettings"):
+    platform_runtime = get_runtime(runtime)
+    if not platform_runtime.which("gsettings"):
         return GnomeShortcutStatus(False, None, None, None, None, False)
     paths = get_custom_keybinding_paths(runner=runner)
     path = _find_granite_path(paths, runner=runner)
@@ -101,8 +114,63 @@ def get_gnome_shortcut_status(
         name=name,
         binding=binding,
         command=command,
-        command_exists=command_exists(command),
+        command_exists=command_exists(command, platform_runtime),
     )
+
+
+def install_shortcut(
+    settings_path: Path | None = None,
+    binding: str = GRANITE_SHORTCUT_BINDING,
+    command: str | None = None,
+    runner: Runner = subprocess.run,
+    runtime: PlatformRuntime | None = None,
+) -> GnomeShortcutInstallResult:
+    return install_gnome_shortcut(
+        command=command or build_toggle_command(settings_path),
+        binding=binding,
+        runner=runner,
+        runtime=runtime,
+    )
+
+
+def shortcut_readiness(
+    expected_binding: str = GRANITE_SHORTCUT_BINDING,
+    runner: Runner = subprocess.run,
+    runtime: PlatformRuntime | None = None,
+) -> ShortcutReadiness:
+    platform_runtime = get_runtime(runtime)
+    system = platform_runtime.system()
+    if system == "Darwin":
+        return ShortcutReadiness(True, "macOS hotkey helper is not installed by the Python daemon")
+    if system != "Linux":
+        return ShortcutReadiness(True, f"not checked on {system}")
+
+    info = session_info(runtime=platform_runtime)
+    if not platform_runtime.which("gsettings"):
+        return ShortcutReadiness(
+            False,
+            f"session={info.session}; desktop={info.desktop}; GNOME shortcut setup requires gsettings",
+        )
+
+    try:
+        status = get_gnome_shortcut_status(runner=runner, runtime=platform_runtime)
+    except subprocess.CalledProcessError as exc:
+        return ShortcutReadiness(
+            False,
+            f"session={info.session}; desktop={info.desktop}; could not inspect GNOME custom shortcuts: {exc}",
+        )
+
+    detail = (
+        f"session={info.session}; desktop={info.desktop}; installed={status.installed}; "
+        f"binding={status.binding or 'missing'}; command_exists={status.command_exists}"
+    )
+    if not status.installed:
+        return ShortcutReadiness(False, detail + "; run: granite-speach install-gnome-shortcut", status)
+    if status.binding != expected_binding:
+        return ShortcutReadiness(False, detail + f"; expected binding={expected_binding}", status)
+    if not status.command_exists:
+        return ShortcutReadiness(False, detail + f"; command={status.command or 'missing'}", status)
+    return ShortcutReadiness(True, detail + f"; command={status.command}", status)
 
 
 def get_custom_keybinding_paths(runner: Runner = subprocess.run) -> list[str]:
@@ -114,7 +182,7 @@ def get_custom_keybinding_paths(runner: Runner = subprocess.run) -> list[str]:
     return _parse_string_array(raw)
 
 
-def command_exists(command: str | None) -> bool:
+def command_exists(command: str | None, runtime: PlatformRuntime | None = None) -> bool:
     if not command:
         return False
     try:
@@ -123,14 +191,35 @@ def command_exists(command: str | None) -> bool:
         return False
     if not parts:
         return False
+    shell_program = Path(parts[0]).name
+    if shell_program in {"sh", "bash"} and "-lc" in parts:
+        script_index = parts.index("-lc") + 1
+        if script_index >= len(parts):
+            return False
+        return _shell_script_command_exists(parts[script_index], runtime)
     program = parts[0]
     if os.path.isabs(program):
         return os.access(program, os.X_OK)
-    return shutil.which(program) is not None
+    return get_runtime(runtime).which(program) is not None
 
 
-def _require_gsettings() -> None:
-    if not shutil.which("gsettings"):
+def _shell_script_command_exists(script: str, runtime: PlatformRuntime | None = None) -> bool:
+    for segment in reversed(script.split(";")):
+        try:
+            parts = shlex.split(segment)
+        except ValueError:
+            continue
+        if not parts:
+            continue
+        program = parts[0]
+        if os.path.isabs(program):
+            return os.access(program, os.X_OK)
+        return get_runtime(runtime).which(program) is not None
+    return False
+
+
+def _require_gsettings(runtime: PlatformRuntime | None = None) -> None:
+    if not get_runtime(runtime).which("gsettings"):
         raise RuntimeError("gsettings is required to install the GNOME shortcut")
 
 

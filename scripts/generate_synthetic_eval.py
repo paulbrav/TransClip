@@ -36,7 +36,7 @@ CASES = [
     ),
     (
         "case_04",
-        "Add PyTorch, ROCm, and gfx1151 to the keyword glossary.",
+        "Add PyTorch, ROCm, and gfx1151 to the technical note.",
         ["PyTorch", "ROCm", "gfx1151"],
     ),
     (
@@ -66,7 +66,7 @@ CASES = [
     ),
     (
         "case_10",
-        "Open the keyword glossary and verify Hugging Face is preserved exactly.",
+        "Open the settings file and verify Hugging Face is preserved exactly.",
         ["Hugging Face"],
     ),
     (

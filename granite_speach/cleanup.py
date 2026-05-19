@@ -4,7 +4,6 @@ import re
 from dataclasses import dataclass
 
 from .device import resolve_torch_device
-from .glossary import preserve_terms_instruction
 from .settings import Settings
 from .timing import timed_ms
 
@@ -19,18 +18,57 @@ class CleanupResult:
 class CleanupBackend:
     name = "cleanup"
 
-    def cleanup(self, text: str, keywords: list[str]) -> CleanupResult:
+    def cleanup(self, text: str) -> CleanupResult:
         raise NotImplementedError
 
 
 class FaithfulRuleCleanupBackend(CleanupBackend):
     name = "rule-based"
 
-    def cleanup(self, text: str, keywords: list[str]) -> CleanupResult:
+    def cleanup(self, text: str) -> CleanupResult:
         timings: dict[str, float] = {}
         with timed_ms(timings, "cleanup"):
-            cleaned = conservative_cleanup(text, keywords)
+            cleaned = conservative_cleanup(text)
         return CleanupResult(cleaned, timings, self.name)
+
+
+@dataclass(frozen=True, slots=True)
+class FaithfulCleanupPolicy:
+    max_context_tokens: int = 512
+    min_context_tokens: int = 64
+    tokens_per_word: int = 3
+
+    def token_budget(self, text: str) -> int:
+        return max(self.min_context_tokens, min(self.max_context_tokens, len(text.split()) * self.tokens_per_word))
+
+    def prompt(self, text: str) -> str:
+        return (
+            "Clean this ASR transcript faithfully. Add only punctuation, capitalization, "
+            "and conservative paragraphing. Do not add facts, remove meaning, rewrite tone, "
+            f"or replace technical identifiers.\n\nTranscript:\n{text}\n\nCleaned:"
+        )
+
+    def messages(self, text: str) -> list[dict[str, str]]:
+        return [
+            {
+                "role": "system",
+                "content": (
+                    "You clean ASR transcripts faithfully. Add only punctuation, capitalization, "
+                    "and conservative paragraphing. Do not add facts, remove meaning, rewrite tone, "
+                    "or replace technical identifiers. Output only the cleaned transcript."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Transcript:\n{text}",
+            },
+        ]
+
+    def validate_output(self, cleaned: str, provider: str) -> str:
+        cleaned = cleaned.strip()
+        if not cleaned:
+            raise RuntimeError(f"{provider} cleanup produced an empty response")
+        return cleaned
 
 
 class LlamaCppCleanupBackend(CleanupBackend):
@@ -47,25 +85,19 @@ class LlamaCppCleanupBackend(CleanupBackend):
         self.model_name = model_name
         self.model_path = model_path
         self.llm = Llama(model_path=model_path, n_ctx=4096, verbose=False)
+        self.policy = FaithfulCleanupPolicy()
 
-    def cleanup(self, text: str, keywords: list[str]) -> CleanupResult:
+    def cleanup(self, text: str) -> CleanupResult:
         timings: dict[str, float] = {}
-        prompt = (
-            "Clean this ASR transcript faithfully. Add only punctuation, capitalization, "
-            "and conservative paragraphing. Do not add facts, remove meaning, rewrite tone, "
-            "or replace technical identifiers.\n"
-            f"{preserve_terms_instruction(keywords)}\n\nTranscript:\n{text}\n\nCleaned:"
-        )
+        prompt = self.policy.prompt(text)
         with timed_ms(timings, "cleanup"):
             output = self.llm(
                 prompt,
-                max_tokens=max(64, min(512, len(text.split()) * 3)),
+                max_tokens=self.policy.token_budget(text),
                 temperature=0.0,
                 stop=["\n\nTranscript:"],
             )
-            cleaned = output["choices"][0]["text"].strip()
-        if not cleaned:
-            raise RuntimeError("llama.cpp cleanup produced an empty response")
+            cleaned = self.policy.validate_output(output["choices"][0]["text"], self.name)
         return CleanupResult(cleaned, timings, self.name)
 
 
@@ -77,6 +109,7 @@ class GemmaTransformersCleanupBackend(CleanupBackend):
         self.local_files_only = local_files_only
         self.cache_dir = cache_dir
         self._loaded = None
+        self.policy = FaithfulCleanupPolicy()
 
     def _load(self):
         if self._loaded is not None:
@@ -105,10 +138,10 @@ class GemmaTransformersCleanupBackend(CleanupBackend):
         self._loaded = (processor, model)
         return self._loaded
 
-    def cleanup(self, text: str, keywords: list[str]) -> CleanupResult:
+    def cleanup(self, text: str) -> CleanupResult:
         timings: dict[str, float] = {}
         processor, model = self._load()
-        messages = faithful_cleanup_messages(text, keywords)
+        messages = self.policy.messages(text)
         with timed_ms(timings, "cleanup"):
             prompt = processor.apply_chat_template(
                 messages,
@@ -120,7 +153,7 @@ class GemmaTransformersCleanupBackend(CleanupBackend):
             input_len = inputs["input_ids"].shape[-1]
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=max(64, min(512, len(text.split()) * 3)),
+                max_new_tokens=self.policy.token_budget(text),
                 do_sample=False,
             )
             response = processor.decode(outputs[0][input_len:], skip_special_tokens=False)
@@ -129,8 +162,7 @@ class GemmaTransformersCleanupBackend(CleanupBackend):
                 cleaned = str(parsed.get("content") or parsed.get("text") or "").strip()
             else:
                 cleaned = str(parsed).strip()
-        if not cleaned:
-            raise RuntimeError("Gemma cleanup produced an empty response")
+        cleaned = self.policy.validate_output(cleaned, "Gemma")
         return CleanupResult(cleaned, timings, self.name)
 
 
@@ -149,29 +181,15 @@ def build_cleanup_backend(settings: Settings) -> CleanupBackend:
     raise ValueError(f"Unsupported cleanup runtime: {settings.cleanup_runtime}")
 
 
-def faithful_cleanup_messages(text: str, keywords: list[str]) -> list[dict[str, str]]:
-    return [
-        {
-            "role": "system",
-            "content": (
-                "You clean ASR transcripts faithfully. Add only punctuation, capitalization, "
-                "and conservative paragraphing. Do not add facts, remove meaning, rewrite tone, "
-                "or replace technical identifiers. Output only the cleaned transcript."
-            ),
-        },
-        {
-            "role": "user",
-            "content": f"{preserve_terms_instruction(keywords)}\n\nTranscript:\n{text}",
-        },
-    ]
+def faithful_cleanup_messages(text: str) -> list[dict[str, str]]:
+    return FaithfulCleanupPolicy().messages(text)
 
 
-def conservative_cleanup(text: str, keywords: list[str] | None = None) -> str:
+def conservative_cleanup(text: str) -> str:
     cleaned = " ".join(text.strip().split())
     if not cleaned:
         return ""
     cleaned = _fix_spacing_around_punctuation(cleaned)
-    cleaned = _restore_keyword_spellings(cleaned, keywords or [])
     cleaned = _capitalize_sentence_starts(cleaned)
     if cleaned[-1] not in ".!?":
         cleaned += "."
@@ -197,48 +215,3 @@ def _capitalize_sentence_starts(text: str) -> str:
             chars[i] = char.upper()
             capitalize_next = False
     return "".join(chars)
-
-
-def _restore_keyword_spellings(text: str, keywords: list[str]) -> str:
-    restored = text
-    for keyword in sorted(keywords, key=lambda value: len(value), reverse=True):
-        aliases = _keyword_aliases(keyword)
-        for alias in aliases:
-            restored = re.sub(
-                rf"(?<!\w){alias}(?!\w)",
-                keyword,
-                restored,
-                flags=re.IGNORECASE,
-            )
-    return restored
-
-
-def _keyword_aliases(keyword: str) -> list[str]:
-    aliases = [re.escape(keyword)]
-    compact = re.sub(r"[^A-Za-z0-9]+", "", keyword)
-    if compact and compact.lower() != keyword.lower():
-        aliases.append(re.escape(compact))
-    if "." in keyword:
-        aliases.append(re.escape(keyword).replace(r"\.", r"(?:\.|\s+dot\s+|\s+)"))
-    split_camel = re.sub(r"([a-z])([A-Z])", r"\1 \2", keyword)
-    if split_camel != keyword:
-        aliases.append(re.escape(split_camel))
-    aliases.extend(_KNOWN_KEYWORD_ALIASES.get(keyword.lower(), []))
-    return list(dict.fromkeys(aliases))
-
-
-_KNOWN_KEYWORD_ALIASES = {
-    "rocm": [r"rockham", r"rock\s*m", r"roc\s*m"],
-    "gfx1151": [r"gfx\s*1151", r"gfxfx\s*1151", r"g\s*f\s*x\s*1151"],
-    "nar": [r"n\s*ar", r"and\s+ar"],
-    "macos": [r"mac\s*os"],
-    "wtype": [r"w\s*type"],
-    "xdotool": [r"x\s*dotool", r"x\s*tool", r"xool"],
-    "therock": [r"the\s+rock"],
-    "radeon": [r"radion", r"radian"],
-    "qwen": [r"qwen", r"q\s*wen", r"qn"],
-    "mlx": [r"mlxx", r"m\s*l\s*x"],
-    "flashattention": [r"flash\s+attention"],
-    "llama.cpp": [r"llama\s+cpp", r"llama\.\s*c(?:pp)?", r"llama\s+dot\s+cpp"],
-    "global shortcut": [r"global\s+short\s+get", r"global\s+sh\s+get"],
-}

@@ -1,6 +1,7 @@
 import unittest
 
 from granite_speach.cleanup import (
+    FaithfulCleanupPolicy,
     FaithfulRuleCleanupBackend,
     GemmaTransformersCleanupBackend,
     build_cleanup_backend,
@@ -17,35 +18,8 @@ class CleanupTests(unittest.TestCase):
             "Hello world this is PyTorch.",
         )
 
-    def test_conservative_cleanup_restores_keyword_spellings(self):
-        self.assertEqual(
-            conservative_cleanup(
-                "add pytorch rockham and gfxfx 1151 to mac os",
-                ["PyTorch", "ROCm", "gfx1151", "macOS"],
-            ),
-            "Add PyTorch ROCm and gfx1151 to macOS.",
-        )
-        self.assertEqual(
-            conservative_cleanup("avoid rewriting llama. C", ["llama.cpp"]),
-            "Avoid rewriting llama.cpp.",
-        )
-        self.assertEqual(
-            conservative_cleanup(
-                "fix the app indicator tray and release the global short get",
-                ["AppIndicator", "global shortcut"],
-            ),
-            "Fix the AppIndicator tray and release the global shortcut.",
-        )
-        self.assertEqual(
-            conservative_cleanup(
-                "avoid llama. Cpp, app indicator, radian, and global sh get",
-                ["llama.cpp", "AppIndicator", "Radeon", "global shortcut"],
-            ),
-            "Avoid llama.cpp, AppIndicator, Radeon, and global shortcut.",
-        )
-
     def test_cleanup_backend_returns_timing(self):
-        result = FaithfulRuleCleanupBackend().cleanup("hello ,world", ["PyTorch"])
+        result = FaithfulRuleCleanupBackend().cleanup("hello ,world")
         self.assertEqual(result.text, "Hello, world.")
         self.assertIn("cleanup", result.timings_ms)
         self.assertEqual(result.backend, "rule-based")
@@ -64,11 +38,21 @@ class CleanupTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_cleanup_backend(Settings(cleanup_runtime="unknown"))
 
-    def test_faithful_cleanup_messages_preserve_terms(self):
-        messages = faithful_cleanup_messages("hello pytorch", ["PyTorch"])
+    def test_faithful_cleanup_messages_are_conservative(self):
+        messages = faithful_cleanup_messages("hello pytorch")
         self.assertEqual(messages[0]["role"], "system")
         self.assertIn("Do not add facts", messages[0]["content"])
-        self.assertIn("PyTorch", messages[1]["content"])
+        self.assertEqual(messages[1]["content"], "Transcript:\nhello pytorch")
+
+    def test_faithful_cleanup_policy_is_provider_independent(self):
+        policy = FaithfulCleanupPolicy()
+
+        self.assertEqual(policy.token_budget("one two"), 64)
+        self.assertEqual(policy.token_budget("word " * 300), 512)
+        self.assertIn("Cleaned:", policy.prompt("hello ROCm"))
+        self.assertEqual(policy.validate_output(" cleaned ", "provider"), "cleaned")
+        with self.assertRaisesRegex(RuntimeError, "provider cleanup produced an empty response"):
+            policy.validate_output("   ", "provider")
 
 
 if __name__ == "__main__":

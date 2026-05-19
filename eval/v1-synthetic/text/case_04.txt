@@ -1,1 +1,1 @@
-Add PyTorch, ROCm, and gfx1151 to the keyword glossary.
+Add PyTorch, ROCm, and gfx1151 to the technical note.

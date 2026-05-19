@@ -1,1 +1,1 @@
-Open the keyword glossary and verify Hugging Face is preserved exactly.
+Open the settings file and verify Hugging Face is preserved exactly.

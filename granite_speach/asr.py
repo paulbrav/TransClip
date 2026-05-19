@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from .device import resolve_torch_device
-from .glossary import keyword_prompt
+from .models import validate_asr_model_backend
 from .settings import Settings
 from .timing import timed_ms
 
@@ -22,7 +22,32 @@ class ASRBackend(Protocol):
     name: str
     model: str
 
-    def transcribe(self, wav_path: Path, keywords: list[str]) -> TranscriptionResult: ...
+    def transcribe(self, wav_path: Path, keywords: list[str] | None = None) -> TranscriptionResult: ...
+
+
+@dataclass(slots=True)
+class PreparedAudio:
+    wav: Any
+    sample_rate: int
+
+
+class DefaultASRAudioPreparer:
+    def __init__(self, target_sample_rate: int = 16000):
+        self.target_sample_rate = target_sample_rate
+
+    def prepare(self, wav_path: Path) -> PreparedAudio:
+        import soundfile as sf
+        import torch
+
+        samples, sample_rate = sf.read(str(wav_path), dtype="float32", always_2d=True)
+        wav = torch.from_numpy(samples.T)
+        if wav.shape[0] != 1:
+            wav = wav.mean(dim=0, keepdim=True)
+        if sample_rate != self.target_sample_rate:
+            import torchaudio
+
+            wav = torchaudio.functional.resample(wav, sample_rate, self.target_sample_rate)
+        return PreparedAudio(wav=wav, sample_rate=self.target_sample_rate)
 
 
 class GraniteSpeechTransformersBackend:
@@ -34,6 +59,7 @@ class GraniteSpeechTransformersBackend:
         self.local_files_only = True
         self.cache_dir = ""
         self._loaded = None
+        self.audio_preparer = DefaultASRAudioPreparer()
 
     def _device(self):
         return resolve_torch_device(self.device)
@@ -66,22 +92,14 @@ class GraniteSpeechTransformersBackend:
         self._loaded = (processor, processor.tokenizer, model)
         return self._loaded
 
-    def transcribe(self, wav_path: Path, keywords: list[str]) -> TranscriptionResult:
+    def transcribe(self, wav_path: Path, keywords: list[str] | None = None) -> TranscriptionResult:
         timings: dict[str, float] = {}
         device = self._device()
         with timed_ms(timings, "asr"):
-            import soundfile as sf
             import torch
 
             processor, tokenizer, model = self._load(device)
-            samples, sample_rate = sf.read(str(wav_path), dtype="float32", always_2d=True)
-            wav = torch.from_numpy(samples.T)
-            if wav.shape[0] != 1:
-                wav = wav.mean(dim=0, keepdim=True)
-            if sample_rate != 16000:
-                import torchaudio
-
-                wav = torchaudio.functional.resample(wav, sample_rate, 16000)
+            audio = self.audio_preparer.prepare(wav_path)
             prompt = granite_user_prompt(keywords)
             chat = [{"role": "user", "content": f"<|audio|>{prompt}"}]
             templated = tokenizer.apply_chat_template(
@@ -91,7 +109,7 @@ class GraniteSpeechTransformersBackend:
             )
             model_inputs = processor(
                 templated,
-                wav,
+                audio.wav,
                 device=device,
                 return_tensors="pt",
             ).to(device)
@@ -121,6 +139,7 @@ class GraniteSpeechNarTransformersBackend:
         self.local_files_only = True
         self.cache_dir = ""
         self._loaded = None
+        self.audio_preparer = DefaultASRAudioPreparer()
 
     def _device(self):
         return resolve_torch_device(self.device)
@@ -138,9 +157,8 @@ class GraniteSpeechNarTransformersBackend:
                 "transformers, torch, and torchaudio are required. Install granite-speach[models]."
             ) from exc
 
-        dtype = torch.bfloat16 if device == "cuda" else torch.float32
-        if device == "cuda" and getattr(torch.version, "hip", None):
-            os.environ.setdefault("FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE")
+        dtype = _granite_nar_dtype(torch, device)
+        _configure_rocm_nar_attention_env(os, torch, device)
         model = AutoModel.from_pretrained(
             self.model,
             trust_remote_code=True,
@@ -159,24 +177,16 @@ class GraniteSpeechNarTransformersBackend:
         self._loaded = (feature_extractor, model)
         return self._loaded
 
-    def transcribe(self, wav_path: Path, keywords: list[str]) -> TranscriptionResult:
+    def transcribe(self, wav_path: Path, keywords: list[str] | None = None) -> TranscriptionResult:
         del keywords
         timings: dict[str, float] = {}
         device = self._device()
         with timed_ms(timings, "asr"):
-            import soundfile as sf
             import torch
 
             feature_extractor, model = self._load(device)
-            samples, sample_rate = sf.read(str(wav_path), dtype="float32", always_2d=True)
-            wav = torch.from_numpy(samples.T)
-            if wav.shape[0] != 1:
-                wav = wav.mean(dim=0, keepdim=True)
-            if sample_rate != 16000:
-                import torchaudio
-
-                wav = torchaudio.functional.resample(wav, sample_rate, 16000)
-            waveform = wav.squeeze(0)
+            audio = self.audio_preparer.prepare(wav_path)
+            waveform = audio.wav.squeeze(0)
             inputs = feature_extractor([waveform], device=device)
             with torch.inference_mode():
                 output = model.generate(**inputs)
@@ -190,7 +200,7 @@ class FileTranscriptASRBackend:
         self.transcript_path = transcript_path
         self.model = f"file:{transcript_path}"
 
-    def transcribe(self, wav_path: Path, keywords: list[str]) -> TranscriptionResult:
+    def transcribe(self, wav_path: Path, keywords: list[str] | None = None) -> TranscriptionResult:
         del wav_path, keywords
         timings: dict[str, float] = {}
         with timed_ms(timings, "asr"):
@@ -201,24 +211,35 @@ class FileTranscriptASRBackend:
 def build_asr_backend(settings: Settings) -> ASRBackend:
     if settings.asr_backend.startswith("file:"):
         return FileTranscriptASRBackend(Path(settings.asr_backend.removeprefix("file:")))
-    if settings.asr_backend in {"granite_nar", "granite-nar", "nar"}:
-        if "granite-speech" not in settings.asr_model or "-nar" not in settings.asr_model:
-            raise ValueError("Granite NAR ASR requires an ibm-granite granite-speech NAR model")
+    backend_kind = validate_asr_model_backend(settings.asr_backend, settings.asr_model)
+    if backend_kind == "granite_nar":
         backend = GraniteSpeechNarTransformersBackend(settings.asr_model, settings.asr_device)
         backend.local_files_only = settings.models_local_files_only
         backend.cache_dir = settings.model_cache_dir
         return backend
-    if settings.asr_backend not in {"granite", "transformers"}:
-        raise ValueError(f"Unsupported ASR backend: {settings.asr_backend}")
-    if "-nar" in settings.asr_model:
-        raise ValueError('Use asr_backend = "granite_nar" with Granite NAR models')
-    if "granite-speech" not in settings.asr_model:
-        raise ValueError("V1 ASR requires an ibm-granite granite-speech model")
     backend = GraniteSpeechTransformersBackend(settings.asr_model, settings.asr_device)
     backend.local_files_only = settings.models_local_files_only
     backend.cache_dir = settings.model_cache_dir
     return backend
 
 
-def granite_user_prompt(keywords: list[str]) -> str:
-    return keyword_prompt(keywords)
+def granite_user_prompt(keywords: list[str] | None = None) -> str:
+    if keywords:
+        keyword_text = ", ".join(keyword.strip() for keyword in keywords if keyword.strip())
+        if keyword_text:
+            return f"transcribe the speech to text. Keywords: {keyword_text}"
+    return "transcribe the speech with proper punctuation and capitalization."
+
+
+def _granite_nar_dtype(torch, device: str):
+    if device != "cuda":
+        return torch.float32
+    if getattr(torch.version, "hip", None):
+        return torch.float32
+    return torch.bfloat16
+
+
+def _configure_rocm_nar_attention_env(os_module, torch, device: str) -> None:
+    if device == "cuda" and getattr(torch.version, "hip", None):
+        os_module.environ.setdefault("FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE")
+        os_module.environ.setdefault("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL", "1")

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .platform_runtime import user_cache_dir
 from .settings import Settings
 
 GIB = 1024**3
@@ -30,6 +31,14 @@ SUPPORTED_MODELS = [
     ),
 ]
 
+ASR_BACKEND_ALIASES = {
+    "granite_nar": "granite_nar",
+    "granite-nar": "granite_nar",
+    "nar": "granite_nar",
+    "granite": "granite",
+    "transformers": "granite",
+}
+
 
 def model_by_id(model_id: str) -> SupportedModel:
     for model in SUPPORTED_MODELS:
@@ -39,10 +48,34 @@ def model_by_id(model_id: str) -> SupportedModel:
     raise ValueError(f"Unsupported model: {model_id}. Supported models: {supported}")
 
 
+def normalize_asr_backend(asr_backend: str) -> str:
+    if asr_backend.startswith("file:"):
+        return "file"
+    try:
+        return ASR_BACKEND_ALIASES[asr_backend]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported ASR backend: {asr_backend}") from exc
+
+
+def validate_asr_model_backend(asr_backend: str, model_id: str) -> str:
+    backend = normalize_asr_backend(asr_backend)
+    if backend == "file":
+        return backend
+    if backend == "granite_nar":
+        if "granite-speech" not in model_id or "-nar" not in model_id:
+            raise ValueError("Granite NAR ASR requires an ibm-granite granite-speech NAR model")
+        return backend
+    if "-nar" in model_id:
+        raise ValueError('Use asr_backend = "granite_nar" with Granite NAR models')
+    if "granite-speech" not in model_id:
+        raise ValueError("V1 ASR requires an ibm-granite granite-speech model")
+    return backend
+
+
 def model_cache_root(settings: Settings) -> Path:
     if settings.model_cache_dir:
         return Path(settings.model_cache_dir).expanduser()
-    return Path.home() / ".cache" / "huggingface" / "hub"
+    return user_cache_dir("huggingface") / "hub"
 
 
 def hf_cache_dir(model_id: str) -> str:

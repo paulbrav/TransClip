@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import platform
 import plistlib
 import shlex
-import shutil
 import subprocess
 import sys
 from collections.abc import Callable
@@ -11,12 +9,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .gnome_shortcut import (
-    GRANITE_SHORTCUT_BINDING,
     build_toggle_command,
-    install_gnome_shortcut,
+    install_shortcut,
 )
-from .settings import keywords_path as default_keywords_path
-from .settings import write_default_keywords, write_default_settings
+from .platform_runtime import PlatformRuntime, get_runtime, user_log_dir
+from .settings import Settings, load_settings, write_default_settings
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -34,22 +31,20 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def logs_dir() -> Path:
-    if platform.system() == "Darwin":
-        return Path.home() / "Library" / "Logs" / "granite-speach"
-    return Path.home() / ".cache" / "granite-speach"
+def logs_dir(runtime: PlatformRuntime | None = None) -> Path:
+    return user_log_dir("granite-speach", runtime)
 
 
-def toggle_log_path() -> Path:
-    return logs_dir() / "toggle-record.log"
+def toggle_log_path(runtime: PlatformRuntime | None = None) -> Path:
+    return logs_dir(runtime) / "toggle-record.log"
 
 
-def systemd_user_unit_path() -> Path:
-    return Path.home() / ".config" / "systemd" / "user" / SERVICE_NAME
+def systemd_user_unit_path(runtime: PlatformRuntime | None = None) -> Path:
+    return get_runtime(runtime).home_dir() / ".config" / "systemd" / "user" / SERVICE_NAME
 
 
-def launch_agent_path() -> Path:
-    return Path.home() / "Library" / "LaunchAgents" / f"{LAUNCHD_LABEL}.plist"
+def launch_agent_path(runtime: PlatformRuntime | None = None) -> Path:
+    return get_runtime(runtime).home_dir() / "Library" / "LaunchAgents" / f"{LAUNCHD_LABEL}.plist"
 
 
 def service_command(settings_path: Path | None = None) -> list[str]:
@@ -84,8 +79,11 @@ def build_systemd_unit(settings_path: Path | None = None) -> str:
     )
 
 
-def build_launch_agent(settings_path: Path | None = None) -> bytes:
-    log_root = logs_dir()
+def build_launch_agent(
+    settings_path: Path | None = None,
+    runtime: PlatformRuntime | None = None,
+) -> bytes:
+    log_root = logs_dir(runtime)
     payload = {
         "Label": LAUNCHD_LABEL,
         "ProgramArguments": service_command(settings_path),
@@ -105,33 +103,36 @@ def build_launch_agent(settings_path: Path | None = None) -> bytes:
 def install_daemon(
     settings_path: Path | None = None,
     runner: Runner = subprocess.run,
+    runtime: PlatformRuntime | None = None,
 ) -> list[CommandResult]:
     write_default_settings(settings_path)
-    keyword_path = default_keywords_path(settings_path.parent) if settings_path else None
-    write_default_keywords(keyword_path)
-    system = platform.system()
+    settings = load_settings(settings_path)
+    system = get_runtime(runtime).system()
     if system == "Linux":
-        return install_linux_daemon(settings_path=settings_path, runner=runner)
+        return install_linux_daemon(settings_path=settings_path, settings=settings, runner=runner, runtime=runtime)
     if system == "Darwin":
-        return install_macos_daemon(settings_path=settings_path, runner=runner)
+        return install_macos_daemon(settings_path=settings_path, runner=runner, runtime=runtime)
     return [CommandResult(False, f"unsupported platform: {system}")]
 
 
 def install_linux_daemon(
     settings_path: Path | None = None,
+    settings: Settings | None = None,
     runner: Runner = subprocess.run,
+    runtime: PlatformRuntime | None = None,
 ) -> list[CommandResult]:
     results: list[CommandResult] = []
-    unit_path = systemd_user_unit_path()
+    unit_path = systemd_user_unit_path(runtime)
     unit_path.parent.mkdir(parents=True, exist_ok=True)
     unit_path.write_text(build_systemd_unit(settings_path), encoding="utf-8")
     results.append(CommandResult(True, f"wrote {unit_path}"))
     results.append(run_command(["systemctl", "--user", "daemon-reload"], runner))
     results.append(run_command(["systemctl", "--user", "enable", "--now", SERVICE_NAME], runner))
     try:
-        shortcut = install_gnome_shortcut(
-            command=build_toggle_command(settings_path),
-            binding=GRANITE_SHORTCUT_BINDING,
+        settings = settings or Settings()
+        shortcut = install_shortcut(
+            settings_path=settings_path,
+            binding=settings.hotkey_linux,
         )
         results.append(CommandResult(True, f"installed GNOME shortcut {shortcut.binding}: {shortcut.command}"))
     except Exception as exc:
@@ -142,12 +143,13 @@ def install_linux_daemon(
 def install_macos_daemon(
     settings_path: Path | None = None,
     runner: Runner = subprocess.run,
+    runtime: PlatformRuntime | None = None,
 ) -> list[CommandResult]:
     results: list[CommandResult] = []
-    logs_dir().mkdir(parents=True, exist_ok=True)
-    plist_path = launch_agent_path()
+    logs_dir(runtime).mkdir(parents=True, exist_ok=True)
+    plist_path = launch_agent_path(runtime)
     plist_path.parent.mkdir(parents=True, exist_ok=True)
-    plist_path.write_bytes(build_launch_agent(settings_path))
+    plist_path.write_bytes(build_launch_agent(settings_path, runtime=runtime))
     results.append(CommandResult(True, f"wrote {plist_path}"))
     results.append(run_command(["launchctl", "unload", str(plist_path)], runner, tolerate_failure=True))
     results.append(run_command(["launchctl", "load", str(plist_path)], runner))
@@ -161,20 +163,23 @@ def install_macos_daemon(
     return results
 
 
-def uninstall_daemon(runner: Runner = subprocess.run) -> list[CommandResult]:
-    system = platform.system()
+def uninstall_daemon(
+    runner: Runner = subprocess.run,
+    runtime: PlatformRuntime | None = None,
+) -> list[CommandResult]:
+    system = get_runtime(runtime).system()
     if system == "Linux":
         results = [
             run_command(["systemctl", "--user", "disable", "--now", SERVICE_NAME], runner, tolerate_failure=True)
         ]
-        path = systemd_user_unit_path()
+        path = systemd_user_unit_path(runtime)
         if path.exists():
             path.unlink()
             results.append(CommandResult(True, f"removed {path}"))
         results.append(run_command(["systemctl", "--user", "daemon-reload"], runner, tolerate_failure=True))
         return results
     if system == "Darwin":
-        path = launch_agent_path()
+        path = launch_agent_path(runtime)
         results = [run_command(["launchctl", "unload", str(path)], runner, tolerate_failure=True)]
         if path.exists():
             path.unlink()
@@ -183,8 +188,12 @@ def uninstall_daemon(runner: Runner = subprocess.run) -> list[CommandResult]:
     return [CommandResult(False, f"unsupported platform: {system}")]
 
 
-def service_action(action: str, runner: Runner = subprocess.run) -> CommandResult:
-    system = platform.system()
+def service_action(
+    action: str,
+    runner: Runner = subprocess.run,
+    runtime: PlatformRuntime | None = None,
+) -> CommandResult:
+    system = get_runtime(runtime).system()
     if system == "Linux":
         commands = {
             "start": ["systemctl", "--user", "start", SERVICE_NAME],
@@ -193,7 +202,7 @@ def service_action(action: str, runner: Runner = subprocess.run) -> CommandResul
         }
         return run_command(commands[action], runner)
     if system == "Darwin":
-        plist_path = str(launch_agent_path())
+        plist_path = str(launch_agent_path(runtime))
         commands = {
             "start": ["launchctl", "load", plist_path],
             "stop": ["launchctl", "unload", plist_path],
@@ -207,11 +216,19 @@ def service_action(action: str, runner: Runner = subprocess.run) -> CommandResul
     return CommandResult(False, f"unsupported platform: {system}")
 
 
-def service_state(runner: Runner = subprocess.run) -> dict[str, object]:
-    system = platform.system()
+def service_state(
+    runner: Runner = subprocess.run,
+    runtime: PlatformRuntime | None = None,
+) -> dict[str, object]:
+    platform_runtime = get_runtime(runtime)
+    system = platform_runtime.system()
     if system == "Linux":
-        if not shutil.which("systemctl"):
-            return {"installed": systemd_user_unit_path().exists(), "active": False, "detail": "systemctl missing"}
+        if not platform_runtime.which("systemctl"):
+            return {
+                "installed": systemd_user_unit_path(runtime).exists(),
+                "active": False,
+                "detail": "systemctl missing",
+            }
         result = runner(
             ["systemctl", "--user", "is-active", SERVICE_NAME],
             stdout=subprocess.PIPE,
@@ -221,12 +238,12 @@ def service_state(runner: Runner = subprocess.run) -> dict[str, object]:
         )
         state = result.stdout.strip() or f"exit {result.returncode}"
         return {
-            "installed": systemd_user_unit_path().exists(),
+            "installed": systemd_user_unit_path(runtime).exists(),
             "active": result.returncode == 0 and state == "active",
             "detail": state,
         }
     if system == "Darwin":
-        path = launch_agent_path()
+        path = launch_agent_path(runtime)
         result = runner(
             ["launchctl", "list", LAUNCHD_LABEL],
             stdout=subprocess.PIPE,

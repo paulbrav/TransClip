@@ -23,10 +23,7 @@ def dispatch_post(engine, path: str, body: dict[str, Any]) -> RouteResponse:
     if path == "/cleanup":
         return RouteResponse(
             200,
-            engine.cleanup_text(
-                str(body.get("text", "")),
-                keywords=keywords_from_request(body),
-            ),
+            engine.cleanup_text(str(body.get("text", ""))),
         )
     if path == "/record/start":
         return RouteResponse(200, engine.start_recording())
@@ -35,7 +32,6 @@ def dispatch_post(engine, path: str, body: dict[str, Any]) -> RouteResponse:
             200,
             engine.stop_recording(
                 cleanup=body.get("cleanup"),
-                keywords=keywords_from_request(body),
                 discard=bool(body.get("discard")),
                 source="/record/stop",
                 record_history=True,
@@ -46,7 +42,6 @@ def dispatch_post(engine, path: str, body: dict[str, Any]) -> RouteResponse:
             200,
             engine.toggle_recording(
                 cleanup=body.get("cleanup"),
-                keywords=keywords_from_request(body),
                 record_history=True,
             ),
         )
@@ -59,7 +54,6 @@ def dispatch_post(engine, path: str, body: dict[str, Any]) -> RouteResponse:
                 engine.transcribe(
                     wav_path,
                     cleanup=cleanup,
-                    keywords=keywords_from_request(body),
                     source=path,
                     record_history=True,
                 ),
@@ -83,12 +77,3 @@ def wav_from_request(body: dict[str, Any]) -> Path:
             handle.write(data)
             return Path(handle.name)
     raise ValueError("Request must include audio_path or audio_base64")
-
-
-def keywords_from_request(body: dict[str, Any]) -> list[str] | None:
-    keywords = body.get("keywords")
-    if keywords is None:
-        return None
-    if not isinstance(keywords, list):
-        raise ValueError("keywords must be a list of strings")
-    return [str(keyword) for keyword in keywords]

@@ -8,7 +8,9 @@ from granite_speach.models import (
     cache_artifacts_present,
     ensure_disk_space,
     model_rows,
+    normalize_asr_backend,
     required_model_cache_paths,
+    validate_asr_model_backend,
 )
 from granite_speach.settings import Settings
 
@@ -19,6 +21,21 @@ class ModelsTests(unittest.TestCase):
 
         self.assertIn(("granite_nar", "ibm-granite/granite-speech-4.1-2b-nar"), rows)
         self.assertIn(("granite", "ibm-granite/granite-speech-4.1-2b"), rows)
+
+    def test_model_catalog_owns_asr_backend_compatibility(self):
+        self.assertEqual(normalize_asr_backend("nar"), "granite_nar")
+        self.assertEqual(
+            validate_asr_model_backend("granite_nar", "ibm-granite/granite-speech-4.1-2b-nar"),
+            "granite_nar",
+        )
+        self.assertEqual(
+            validate_asr_model_backend("transformers", "ibm-granite/granite-speech-4.1-2b"),
+            "granite",
+        )
+        with self.assertRaisesRegex(ValueError, "Granite NAR ASR requires"):
+            validate_asr_model_backend("granite_nar", "ibm-granite/granite-speech-4.1-2b")
+        with self.assertRaisesRegex(ValueError, "Use asr_backend"):
+            validate_asr_model_backend("granite", "ibm-granite/granite-speech-4.1-2b-nar")
 
     def test_cache_detection_and_rows_do_not_download(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -108,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\nrecorded {recorded} clips; found {measured} measured case clips in {args.clip_dir}")
     print(
         "next: uv run scripts/prepare_real_eval.py "
-        f"{args.clip_dir} --warmup-stem warmup --global-keywords ~/.config/granite-speach/keywords.txt "
+        f"{args.clip_dir} --warmup-stem warmup "
         "--output eval/real-usage/manifest.json"
     )
     return 0

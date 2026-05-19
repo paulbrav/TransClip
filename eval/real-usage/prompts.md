@@ -28,7 +28,7 @@ Keywords: Granite, NAR
 
 ## 5. case_04
 
-Add PyTorch, ROCm, and gfx1151 to the keyword glossary.
+Add PyTorch, ROCm, and gfx1151 to the technical note.
 
 Keywords: PyTorch, ROCm, gfx1151
 
@@ -64,7 +64,7 @@ Keywords: Gemma
 
 ## 11. case_10
 
-Open the keyword glossary and verify Hugging Face is preserved exactly.
+Open the settings file and verify Hugging Face is preserved exactly.
 
 Keywords: Hugging Face
 

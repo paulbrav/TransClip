@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import json
-import platform
-import shutil
+import os
 import subprocess
 from dataclasses import asdict
 from pathlib import Path
@@ -24,8 +23,8 @@ from .daemon_lifecycle import (
     uninstall_daemon,
 )
 from .gnome_shortcut import get_gnome_shortcut_status
-from .paste import SystemClipboard, SystemPasteInjector
-from .platform_capabilities import clipboard_capability, paste_capability
+from .paste import SystemClipboard, SystemPasteInjector, clipboard_capability, paste_capability
+from .platform_runtime import PlatformRuntime, get_runtime
 from .settings import Settings
 
 __all__ = [
@@ -57,11 +56,7 @@ def last_toggle_log_event(path: Path | None = None) -> dict[str, Any] | None:
     path = path or toggle_log_path()
     if not path.exists():
         return None
-    last = ""
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            if line.strip():
-                last = line.strip()
+    last = _last_nonempty_line(path)
     if not last:
         return None
     try:
@@ -70,8 +65,37 @@ def last_toggle_log_event(path: Path | None = None) -> dict[str, Any] | None:
         return {"unparsed": last}
 
 
-def collect_status(settings: Settings, runner: Runner = subprocess.run) -> dict[str, Any]:
-    service = service_state(runner=runner)
+def _last_nonempty_line(path: Path, chunk_size: int = 8192) -> str | None:
+    with path.open("rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        position = handle.tell()
+        remainder = b""
+        while position > 0:
+            read_size = min(chunk_size, position)
+            position -= read_size
+            handle.seek(position)
+            chunk = handle.read(read_size) + remainder
+            lines = chunk.splitlines()
+            if position > 0:
+                remainder = lines[0] if lines else chunk
+                lines = lines[1:]
+            for line in reversed(lines):
+                stripped = line.strip()
+                if stripped:
+                    return stripped.decode("utf-8", errors="replace")
+        stripped = remainder.strip()
+        if stripped:
+            return stripped.decode("utf-8", errors="replace")
+    return None
+
+
+def collect_status(
+    settings: Settings,
+    runner: Runner = subprocess.run,
+    runtime: PlatformRuntime | None = None,
+) -> dict[str, Any]:
+    platform_runtime = get_runtime(runtime)
+    service = service_state(runner=runner, runtime=platform_runtime)
     try:
         health: dict[str, Any] = InferenceClient(settings).health()
     except URLError as exc:
@@ -80,14 +104,14 @@ def collect_status(settings: Settings, runner: Runner = subprocess.run) -> dict[
         health = {"ok": False, "error": str(exc)}
 
     shortcut = None
-    if platform.system() == "Linux":
+    if platform_runtime.system() == "Linux":
         try:
             shortcut = asdict(get_gnome_shortcut_status())
         except Exception as exc:
             shortcut = {"error": str(exc)}
 
-    clipboard = _clipboard_status()
-    paste = _paste_status()
+    clipboard = _clipboard_status(platform_runtime)
+    paste = _paste_status(platform_runtime)
     last_event = last_toggle_log_event()
     ready = service.get("active") is True and health.get("status") in {"ready", "recording"}
     return {
@@ -101,14 +125,18 @@ def collect_status(settings: Settings, runner: Runner = subprocess.run) -> dict[
     }
 
 
-def stream_logs(follow: bool, runner: Runner = subprocess.run) -> int:
-    del runner
-    system = platform.system()
-    if system == "Linux" and shutil.which("journalctl"):
+def stream_logs(
+    follow: bool,
+    runner: Runner = subprocess.run,
+    runtime: PlatformRuntime | None = None,
+) -> int:
+    platform_runtime = get_runtime(runtime)
+    system = platform_runtime.system()
+    if system == "Linux" and platform_runtime.which("journalctl"):
         command = ["journalctl", "--user", "-u", SERVICE_NAME, "-n", "80", "--no-pager"]
         if follow:
             command.append("-f")
-        subprocess.run(command, check=False)
+        runner(command, check=False)
     elif system == "Darwin":
         for path in (logs_dir() / "service.out.log", logs_dir() / "service.err.log"):
             if path.exists():
@@ -123,7 +151,12 @@ def stream_logs(follow: bool, runner: Runner = subprocess.run) -> int:
     return 0
 
 
-def run_smoke_test(settings: Settings, paste: bool = False) -> list[CommandResult]:
+def run_smoke_test(
+    settings: Settings,
+    paste: bool = False,
+    runtime: PlatformRuntime | None = None,
+) -> list[CommandResult]:
+    platform_runtime = get_runtime(runtime)
     results: list[CommandResult] = []
     client = InferenceClient(settings)
     try:
@@ -162,7 +195,7 @@ def run_smoke_test(settings: Settings, paste: bool = False) -> list[CommandResul
     except Exception as exc:
         results.append(CommandResult(False, f"clipboard round-trip failed: {exc}"))
 
-    capability = paste_capability()
+    capability = paste_capability(runtime=platform_runtime)
     results.append(
         CommandResult(
             capability.ok,
@@ -170,7 +203,7 @@ def run_smoke_test(settings: Settings, paste: bool = False) -> list[CommandResul
         )
     )
 
-    if platform.system() == "Linux":
+    if platform_runtime.system() == "Linux":
         shortcut = get_gnome_shortcut_status()
         results.append(
             CommandResult(
@@ -200,13 +233,13 @@ def run_smoke_test(settings: Settings, paste: bool = False) -> list[CommandResul
     return results
 
 
-def _clipboard_status() -> dict[str, Any]:
-    capability = clipboard_capability()
+def _clipboard_status(runtime: PlatformRuntime | None = None) -> dict[str, Any]:
+    capability = clipboard_capability(runtime=runtime)
     if capability.ok:
         return {"ok": True, "backend": capability.backend}
     return {"ok": False, "error": capability.detail}
 
 
-def _paste_status() -> dict[str, Any]:
-    capability = paste_capability()
+def _paste_status(runtime: PlatformRuntime | None = None) -> dict[str, Any]:
+    capability = paste_capability(runtime=runtime)
     return {"ok": capability.ok, "backend": capability.backend, "detail": capability.detail}

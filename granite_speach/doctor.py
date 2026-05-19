@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import platform
-import shutil
 import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -12,13 +10,12 @@ from .audio import recording_debug
 from .client import InferenceClient
 from .daemon import last_toggle_log_event, service_state, toggle_log_path
 from .device import torch_cuda_usable, torch_mps_available
-from .gnome_shortcut import (
-    GRANITE_SHORTCUT_BINDING,
-    get_gnome_shortcut_status,
-)
+from .gnome_shortcut import shortcut_readiness
 from .models import model_cache_root, required_model_cache_paths
-from .platform_capabilities import clipboard_capability, paste_capability, session_info
-from .settings import Settings, default_config_dir, keywords_path, settings_path
+from .paste import clipboard_capability, paste_capability
+from .platform_capabilities import session_info
+from .platform_runtime import PlatformRuntime, get_runtime
+from .settings import Settings, default_config_dir, settings_path
 
 
 @dataclass(slots=True)
@@ -32,17 +29,20 @@ def run_checks(
     settings: Settings,
     config_dir: Path | None = None,
     include_audio_debug: bool = False,
+    runtime: PlatformRuntime | None = None,
 ) -> list[Check]:
+    platform_runtime = get_runtime(runtime)
+    current_service_state = service_state(runtime=platform_runtime)
     checks = [
         check_config_files(config_dir),
-        check_service_manager(),
-        check_service_active(),
+        check_service_manager(current_service_state, platform_runtime),
+        check_service_active(current_service_state),
         check_service_health(settings),
-        check_session_type(),
-        check_clipboard_tools(),
-        check_paste_tools(),
-        check_hotkey_readiness(),
-        check_microphone_devices(),
+        check_session_type(platform_runtime),
+        check_clipboard_tools(platform_runtime),
+        check_paste_tools(platform_runtime),
+        check_hotkey_readiness(settings, platform_runtime),
+        check_microphone_devices(platform_runtime),
         check_model_cache(settings),
         check_torch_runtime(settings),
         check_asr_runtime(settings),
@@ -54,45 +54,40 @@ def run_checks(
 
 
 def check_config_files(config_dir: Path | None = None) -> Check:
-    missing = [str(path) for path in (settings_path(config_dir), keywords_path(config_dir)) if not path.exists()]
+    missing = [str(settings_path(config_dir))] if not settings_path(config_dir).exists() else []
     if not missing:
         return Check("config_files", True, f"found files in {config_dir or default_config_dir()}")
     return Check("config_files", False, "missing: " + ", ".join(missing))
 
 
-def check_clipboard_tools() -> Check:
-    capability = clipboard_capability(which=shutil.which, info=session_info(system=platform.system()))
+def check_clipboard_tools(runtime: PlatformRuntime | None = None) -> Check:
+    capability = clipboard_capability(runtime=runtime)
     return Check("clipboard_tools", capability.ok, capability.detail)
 
 
-def check_paste_tools() -> Check:
+def check_paste_tools(runtime: PlatformRuntime | None = None) -> Check:
     capability = paste_capability(
-        runner=subprocess.run,
-        which=shutil.which,
-        info=session_info(
-            environ={
-                "XDG_SESSION_TYPE": os_environ("XDG_SESSION_TYPE") or "",
-                "XDG_CURRENT_DESKTOP": os_environ("XDG_CURRENT_DESKTOP") or "",
-                "XDG_SESSION_DESKTOP": os_environ("XDG_SESSION_DESKTOP") or "",
-                "DESKTOP_SESSION": os_environ("DESKTOP_SESSION") or "",
-            },
-            system=platform.system(),
-        ),
+        runtime=runtime,
     )
     return Check("paste_tools", capability.ok, capability.detail)
 
 
-def check_service_manager() -> Check:
-    system = platform.system()
+def check_service_manager(
+    state: dict | None = None,
+    runtime: PlatformRuntime | None = None,
+) -> Check:
+    platform_runtime = get_runtime(runtime)
+    state = state or service_state(runtime=platform_runtime)
+    system = platform_runtime.system()
     if system == "Linux":
-        installed = bool(service_state()["installed"])
+        installed = bool(state["installed"])
         return Check(
             "service_manager",
             installed,
             "systemd user unit installed" if installed else "missing systemd user unit; run: granite-speach install",
         )
     if system == "Darwin":
-        installed = bool(service_state()["installed"])
+        installed = bool(state["installed"])
         return Check(
             "service_manager",
             installed,
@@ -101,8 +96,8 @@ def check_service_manager() -> Check:
     return Check("service_manager", True, f"not checked on {system}")
 
 
-def check_service_active() -> Check:
-    state = service_state()
+def check_service_active(state: dict | None = None) -> Check:
+    state = state or service_state()
     return Check(
         "service_active",
         bool(state["active"]),
@@ -125,16 +120,8 @@ def check_service_health(settings: Settings) -> Check:
     )
 
 
-def check_session_type() -> Check:
-    info = session_info(
-        environ={
-            "XDG_SESSION_TYPE": os_environ("XDG_SESSION_TYPE") or "",
-            "XDG_CURRENT_DESKTOP": os_environ("XDG_CURRENT_DESKTOP") or "",
-            "XDG_SESSION_DESKTOP": os_environ("XDG_SESSION_DESKTOP") or "",
-            "DESKTOP_SESSION": os_environ("DESKTOP_SESSION") or "",
-        },
-        system=platform.system(),
-    )
+def check_session_type(runtime: PlatformRuntime | None = None) -> Check:
+    info = session_info(runtime=runtime)
     if info.system not in {"Linux", "Darwin"}:
         return Check("session_type", True, f"not checked on {info.system}")
     if info.system == "Darwin":
@@ -150,73 +137,20 @@ def check_last_shortcut_log_event() -> Check:
     return Check("last_shortcut_log_event", "unparsed" not in event, f"last action={action}; log={toggle_log_path()}")
 
 
-def check_hotkey_readiness() -> Check:
-    system = platform.system()
-    if system == "Darwin":
-        return Check(
-            "hotkey_readiness",
-            True,
-            "macOS hotkey helper is not installed by the Python daemon",
-        )
-    if system != "Linux":
-        return Check("hotkey_readiness", True, f"not checked on {system}")
-
-    info = session_info(
-        environ={
-            "XDG_SESSION_TYPE": os_environ("XDG_SESSION_TYPE") or "",
-            "XDG_CURRENT_DESKTOP": os_environ("XDG_CURRENT_DESKTOP") or "",
-            "XDG_SESSION_DESKTOP": os_environ("XDG_SESSION_DESKTOP") or "",
-            "DESKTOP_SESSION": os_environ("DESKTOP_SESSION") or "",
-        },
-        system=platform.system(),
+def check_hotkey_readiness(
+    settings: Settings | None = None,
+    runtime: PlatformRuntime | None = None,
+) -> Check:
+    readiness = shortcut_readiness(
+        expected_binding=(settings or Settings()).hotkey_linux,
+        runtime=runtime,
     )
-    if not shutil.which("gsettings"):
-        return Check(
-            "hotkey_readiness",
-            False,
-            f"session={info.session}; desktop={info.desktop}; GNOME shortcut setup requires gsettings",
-        )
-
-    try:
-        status = get_gnome_shortcut_status()
-    except subprocess.CalledProcessError as exc:
-        return Check(
-            "hotkey_readiness",
-            False,
-            f"session={info.session}; desktop={info.desktop}; could not inspect GNOME custom shortcuts: {exc}",
-        )
-
-    detail = (
-        f"session={info.session}; desktop={info.desktop}; installed={status.installed}; "
-        f"binding={status.binding or 'missing'}; command_exists={status.command_exists}"
-    )
-    if not status.installed:
-        return Check(
-            "hotkey_readiness",
-            False,
-            detail + "; run: granite-speach install-gnome-shortcut",
-        )
-    if status.binding != GRANITE_SHORTCUT_BINDING:
-        return Check(
-            "hotkey_readiness",
-            False,
-            detail + f"; expected binding={GRANITE_SHORTCUT_BINDING}",
-        )
-    if not status.command_exists:
-        return Check(
-            "hotkey_readiness",
-            False,
-            detail + f"; command={status.command or 'missing'}",
-        )
-    return Check(
-        "hotkey_readiness",
-        True,
-        detail + f"; command={status.command}",
-    )
+    return Check("hotkey_readiness", readiness.ok, readiness.detail)
 
 
-def check_microphone_devices() -> Check:
-    system = platform.system()
+def check_microphone_devices(runtime: PlatformRuntime | None = None) -> Check:
+    platform_runtime = get_runtime(runtime)
+    system = platform_runtime.system()
     if system == "Darwin":
         return Check(
             "microphone_devices",
@@ -226,9 +160,9 @@ def check_microphone_devices() -> Check:
     if system != "Linux":
         return Check("microphone_devices", True, f"not checked on {system}")
 
-    arecord = shutil.which("arecord")
+    arecord = platform_runtime.which("arecord")
     if arecord:
-        result = subprocess.run(
+        result = platform_runtime.run(
             [arecord, "-l"],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -245,8 +179,8 @@ def check_microphone_devices() -> Check:
             "arecord did not list capture devices" + (f": {output}" if output else ""),
         )
 
-    if shutil.which("wpctl"):
-        result = subprocess.run(
+    if platform_runtime.which("wpctl"):
+        result = platform_runtime.run(
             ["wpctl", "status"],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -328,12 +262,6 @@ def check_asr_runtime(settings: Settings) -> Check:
     except ImportError as exc:
         return Check("asr_runtime", False, f"Granite NAR requires flash-attn; import failed: {exc}")
     return Check("asr_runtime", True, "Granite NAR flash-attn runtime import passed")
-
-
-def os_environ(name: str) -> str | None:
-    import os
-
-    return os.environ.get(name)
 
 
 def checks_as_json(checks: list[Check]) -> str:

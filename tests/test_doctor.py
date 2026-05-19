@@ -18,6 +18,7 @@ from granite_speach.doctor import (
 from granite_speach.gnome_shortcut import GnomeShortcutStatus
 from granite_speach.models import hf_cache_dir
 from granite_speach.settings import Settings
+from tests.service_helpers import FakeRuntime
 
 
 class DoctorTests(unittest.TestCase):
@@ -60,7 +61,6 @@ class DoctorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "settings.toml").write_text("", encoding="utf-8")
-            (root / "keywords.txt").write_text("", encoding="utf-8")
             self.assertTrue(check_config_files(root).ok)
 
     def test_wayland_paste_check_rejects_unusable_wtype(self):
@@ -73,16 +73,12 @@ class DoctorTests(unittest.TestCase):
             },
         )()
 
-        def which(name):
-            return f"/usr/bin/{name}" if name == "wtype" else None
-
-        with (
-            patch("granite_speach.doctor.platform.system", return_value="Linux"),
-            patch("granite_speach.doctor.os_environ", return_value="wayland"),
-            patch("granite_speach.doctor.shutil.which", side_effect=which),
-            patch("granite_speach.doctor.subprocess.run", return_value=completed),
-        ):
-            check = check_paste_tools()
+        runtime = FakeRuntime(
+            env={"XDG_SESSION_TYPE": "wayland"},
+            available={"wtype": "/usr/bin/wtype"},
+            run_func=lambda _command, **_kwargs: completed,
+        )
+        check = check_paste_tools(runtime)
 
         self.assertFalse(check.ok)
         self.assertIn("virtual keyboard", check.detail)
@@ -91,16 +87,12 @@ class DoctorTests(unittest.TestCase):
     def test_wayland_paste_check_accepts_working_wtype(self):
         completed = type("Completed", (), {"returncode": 0, "stdout": ""})()
 
-        def which(name):
-            return f"/usr/bin/{name}" if name == "wtype" else None
-
-        with (
-            patch("granite_speach.doctor.platform.system", return_value="Linux"),
-            patch("granite_speach.doctor.os_environ", return_value="wayland"),
-            patch("granite_speach.doctor.shutil.which", side_effect=which),
-            patch("granite_speach.doctor.subprocess.run", return_value=completed),
-        ):
-            check = check_paste_tools()
+        runtime = FakeRuntime(
+            env={"XDG_SESSION_TYPE": "wayland"},
+            available={"wtype": "/usr/bin/wtype"},
+            run_func=lambda _command, **_kwargs: completed,
+        )
+        check = check_paste_tools(runtime)
 
         self.assertTrue(check.ok)
         self.assertIn("wtype", check.detail)
@@ -115,16 +107,12 @@ class DoctorTests(unittest.TestCase):
             },
         )()
 
-        def which(name):
-            return f"/usr/bin/{name}" if name in {"wtype", "ydotool"} else None
-
-        with (
-            patch("granite_speach.doctor.platform.system", return_value="Linux"),
-            patch("granite_speach.doctor.os_environ", return_value="wayland"),
-            patch("granite_speach.doctor.shutil.which", side_effect=which),
-            patch("granite_speach.doctor.subprocess.run", return_value=completed),
-        ):
-            check = check_paste_tools()
+        runtime = FakeRuntime(
+            env={"XDG_SESSION_TYPE": "wayland"},
+            available={"wtype": "/usr/bin/wtype", "ydotool": "/usr/bin/ydotool"},
+            run_func=lambda _command, **_kwargs: completed,
+        )
+        check = check_paste_tools(runtime)
 
         self.assertTrue(check.ok)
         self.assertIn("ydotool", check.detail)
@@ -139,35 +127,53 @@ class DoctorTests(unittest.TestCase):
             command_exists=True,
         )
 
-        def environ(name):
-            return {"XDG_SESSION_TYPE": "wayland", "XDG_CURRENT_DESKTOP": "GNOME"}.get(name)
-
+        runtime = FakeRuntime(
+            env={"XDG_SESSION_TYPE": "wayland", "XDG_CURRENT_DESKTOP": "GNOME"},
+            available={"gsettings"},
+        )
         with (
-            patch("granite_speach.doctor.platform.system", return_value="Linux"),
-            patch("granite_speach.doctor.os_environ", side_effect=environ),
-            patch("granite_speach.doctor.shutil.which", return_value="/usr/bin/gsettings"),
-            patch("granite_speach.doctor.get_gnome_shortcut_status", return_value=status),
+            patch("granite_speach.gnome_shortcut.get_gnome_shortcut_status", return_value=status),
         ):
-            check = check_hotkey_readiness()
+            check = check_hotkey_readiness(Settings(), runtime)
 
         self.assertTrue(check.ok)
         self.assertIn("session=wayland", check.detail)
         self.assertIn("binding=<Super><Shift>XF86TouchpadOff", check.detail)
         self.assertIn("command_exists=True", check.detail)
 
+    def test_gnome_hotkey_check_uses_configured_binding(self):
+        status = GnomeShortcutStatus(
+            installed=True,
+            path="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/granite-speach-toggle/",
+            name="Granite Speach Toggle",
+            binding="<Control><Alt>space",
+            command="/usr/bin/python -m granite_speach.cli toggle-record --paste",
+            command_exists=True,
+        )
+
+        runtime = FakeRuntime(
+            env={"XDG_SESSION_TYPE": "wayland", "XDG_CURRENT_DESKTOP": "GNOME"},
+            available={"gsettings"},
+        )
+        with (
+            patch("granite_speach.gnome_shortcut.get_gnome_shortcut_status", return_value=status),
+        ):
+            check = check_hotkey_readiness(Settings(hotkey_linux="<Control><Alt>space"), runtime)
+
+        self.assertTrue(check.ok)
+        self.assertIn("binding=<Control><Alt>space", check.detail)
+
     def test_gnome_hotkey_check_recommends_installer_when_missing(self):
         status = GnomeShortcutStatus(False, None, None, None, None, False)
 
-        def environ(name):
-            return {"XDG_SESSION_TYPE": "wayland", "XDG_CURRENT_DESKTOP": "GNOME"}.get(name)
-
+        runtime = FakeRuntime(
+            env={"XDG_SESSION_TYPE": "wayland", "XDG_CURRENT_DESKTOP": "GNOME"},
+            available={"gsettings"},
+        )
         with (
-            patch("granite_speach.doctor.platform.system", return_value="Linux"),
-            patch("granite_speach.doctor.os_environ", side_effect=environ),
-            patch("granite_speach.doctor.shutil.which", return_value="/usr/bin/gsettings"),
-            patch("granite_speach.doctor.get_gnome_shortcut_status", return_value=status),
+            patch("granite_speach.gnome_shortcut.get_gnome_shortcut_status", return_value=status),
         ):
-            check = check_hotkey_readiness()
+            check = check_hotkey_readiness(Settings(), runtime)
 
         self.assertFalse(check.ok)
         self.assertIn("granite-speach install-gnome-shortcut", check.detail)
@@ -179,15 +185,11 @@ card 1: Generic_1 [HD-Audio Generic], device 0: ALC245 Analog [ALC245 Analog]
 """
         completed = type("Completed", (), {"returncode": 0, "stdout": output})()
 
-        def which(name):
-            return f"/usr/bin/{name}" if name == "arecord" else None
-
-        with (
-            patch("granite_speach.doctor.platform.system", return_value="Linux"),
-            patch("granite_speach.doctor.shutil.which", side_effect=which),
-            patch("granite_speach.doctor.subprocess.run", return_value=completed),
-        ):
-            check = check_microphone_devices()
+        runtime = FakeRuntime(
+            available={"arecord": "/usr/bin/arecord"},
+            run_func=lambda _command, **_kwargs: completed,
+        )
+        check = check_microphone_devices(runtime)
 
         self.assertTrue(check.ok)
         self.assertIn("HD-Audio Generic", check.detail)
@@ -195,15 +197,11 @@ card 1: Generic_1 [HD-Audio Generic], device 0: ALC245 Analog [ALC245 Analog]
     def test_microphone_check_reports_missing_devices(self):
         completed = type("Completed", (), {"returncode": 1, "stdout": "no soundcards found..."})()
 
-        def which(name):
-            return f"/usr/bin/{name}" if name == "arecord" else None
-
-        with (
-            patch("granite_speach.doctor.platform.system", return_value="Linux"),
-            patch("granite_speach.doctor.shutil.which", side_effect=which),
-            patch("granite_speach.doctor.subprocess.run", return_value=completed),
-        ):
-            check = check_microphone_devices()
+        runtime = FakeRuntime(
+            available={"arecord": "/usr/bin/arecord"},
+            run_func=lambda _command, **_kwargs: completed,
+        )
+        check = check_microphone_devices(runtime)
 
         self.assertFalse(check.ok)
         self.assertIn("arecord did not list", check.detail)

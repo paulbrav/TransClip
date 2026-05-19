@@ -14,11 +14,10 @@ sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(ROOT))
 
 from granite_speach.doctor import run_checks  # noqa: E402
-from granite_speach.settings import default_config_dir, load_settings  # noqa: E402
+from granite_speach.eval_harness import build_manifest, check_results, load_keyword_file  # noqa: E402
+from granite_speach.settings import load_settings  # noqa: E402
 
-from check_eval_results import check_results  # noqa: E402
 from check_v1_completion import check_completion  # noqa: E402
-from prepare_real_eval import build_manifest, load_keyword_file  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -51,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--global-keywords",
         type=Path,
-        default=default_config_dir() / "keywords.txt",
+        default=None,
     )
     parser.add_argument("--skip-doctor", action="store_true")
     args = parser.parse_args(argv)
@@ -61,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
             args.clip_dir,
             output_path=args.manifest,
             warmup_stem=args.warmup_stem,
-            global_keywords=load_keyword_file(args.global_keywords) if args.global_keywords.exists() else [],
+            global_keywords=load_keyword_file(args.global_keywords) if args.global_keywords else [],
         )
     except ValueError as exc:
         print(f"real eval clips are not ready: {exc}", file=sys.stderr)

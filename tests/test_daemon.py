@@ -3,15 +3,17 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from granite_speach import daemon
 from granite_speach.daemon import (
     SERVICE_NAME,
     append_toggle_log,
     build_systemd_unit,
+    collect_status,
     install_linux_daemon,
     last_toggle_log_event,
     toggle_log_path,
 )
+from granite_speach.settings import Settings
+from tests.service_helpers import FakeRuntime
 
 
 class DaemonTests(unittest.TestCase):
@@ -42,20 +44,21 @@ class DaemonTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             with (
-                patch("granite_speach.daemon_lifecycle.Path.home", return_value=home),
                 patch(
-                    "granite_speach.daemon_lifecycle.install_gnome_shortcut",
+                    "granite_speach.daemon_lifecycle.install_shortcut",
                     return_value=shortcut,
                 ) as install_shortcut,
             ):
-                results = install_linux_daemon(runner=runner)
+                settings = Settings(hotkey_linux="<Control><Alt>space")
+                results = install_linux_daemon(settings=settings, runner=runner, runtime=FakeRuntime(home=home))
 
             unit_path = home / ".config" / "systemd" / "user" / SERVICE_NAME
             self.assertTrue(unit_path.exists())
             self.assertIn("granite_speach.cli serve", unit_path.read_text(encoding="utf-8"))
             self.assertIn(["systemctl", "--user", "daemon-reload"], calls)
             self.assertIn(["systemctl", "--user", "enable", "--now", SERVICE_NAME], calls)
-            install_shortcut.assert_called_once()
+            self.assertEqual(install_shortcut.call_args.kwargs["binding"], "<Control><Alt>space")
+            self.assertTrue(any("installed GNOME shortcut" in result.detail for result in results))
             self.assertTrue(all(result.ok for result in results))
 
     def test_toggle_log_is_jsonl_and_last_event_is_decoded(self):
@@ -66,14 +69,18 @@ class DaemonTests(unittest.TestCase):
 
             self.assertEqual(last_toggle_log_event(path), {"action": "stopped", "text": "hello"})
 
+    def test_last_toggle_log_event_reads_trailing_event(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "toggle-record.log"
+            path.write_text('{"action": "started"}\n' + (" \n" * 10_000) + '{"action": "stopped"}', encoding="utf-8")
+
+            self.assertEqual(last_toggle_log_event(path), {"action": "stopped"})
+
     def test_toggle_log_path_is_under_cache_dir_on_linux(self):
-        with (
-            tempfile.TemporaryDirectory() as tmp,
-            patch("granite_speach.daemon_lifecycle.platform.system", return_value="Linux"),
-            patch("granite_speach.daemon_lifecycle.Path.home", return_value=Path(tmp)),
-        ):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = FakeRuntime(system="Linux", home=Path(tmp))
             self.assertEqual(
-                toggle_log_path(),
+                toggle_log_path(runtime),
                 Path(tmp) / ".cache" / "granite-speach" / "toggle-record.log",
             )
 
@@ -83,11 +90,19 @@ class DaemonTests(unittest.TestCase):
             (),
             {"ok": False, "backend": None, "detail": "wtype unusable: unsupported"},
         )()
-        with patch("granite_speach.daemon.paste_capability", return_value=capability):
-            status = daemon._paste_status()
+        clipboard_capability = type(
+            "ClipboardCapability",
+            (),
+            {"ok": False, "backend": None, "detail": "No supported clipboard reader/writer found"},
+        )()
+        with (
+            patch("granite_speach.daemon.paste_capability", return_value=capability),
+            patch("granite_speach.daemon.clipboard_capability", return_value=clipboard_capability),
+        ):
+            status = collect_status(Settings(port=0), runtime=FakeRuntime(system="Other"))
 
-        self.assertFalse(status["ok"])
-        self.assertIn("wtype unusable", status["detail"])
+        self.assertFalse(status["paste"]["ok"])
+        self.assertIn("wtype unusable", status["paste"]["detail"])
 
 
 if __name__ == "__main__":
