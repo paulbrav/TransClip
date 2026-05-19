@@ -11,6 +11,8 @@ from transclip.daemon import (
     collect_status,
     install_linux_daemon,
     last_toggle_log_event,
+    service_action,
+    service_state,
     toggle_log_path,
 )
 from transclip.settings import Settings
@@ -83,6 +85,72 @@ class DaemonTests(unittest.TestCase):
                 toggle_log_path(runtime),
                 Path(tmp) / ".cache" / "transclip" / "toggle-record.log",
             )
+
+    def test_macos_start_kickstarts_loaded_launch_agent(self):
+        calls = []
+
+        def runner(command, **_kwargs):
+            calls.append(command)
+            return type("Completed", (), {"returncode": 0, "stdout": "state = running"})()
+
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"), check_output_text="501")
+        result = service_action("start", runner=runner, runtime=runtime)
+
+        self.assertTrue(result.ok)
+        self.assertIn(["launchctl", "print", "gui/501/com.paulbrav.transclip"], calls)
+        self.assertIn(["launchctl", "kickstart", "-k", "gui/501/com.paulbrav.transclip"], calls)
+        self.assertNotIn(
+            ["launchctl", "bootstrap", "gui/501", "/Users/test/Library/LaunchAgents/com.paulbrav.transclip.plist"],
+            calls,
+        )
+
+    def test_macos_start_bootstraps_unloaded_launch_agent(self):
+        calls = []
+
+        def runner(command, **_kwargs):
+            calls.append(command)
+            return_code = 1 if command[:2] == ["launchctl", "print"] else 0
+            return type("Completed", (), {"returncode": return_code, "stdout": ""})()
+
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"), check_output_text="501")
+        result = service_action("start", runner=runner, runtime=runtime)
+
+        self.assertTrue(result.ok)
+        self.assertIn(
+            ["launchctl", "bootstrap", "gui/501", "/Users/test/Library/LaunchAgents/com.paulbrav.transclip.plist"],
+            calls,
+        )
+
+    def test_macos_restart_bootstraps_unloaded_launch_agent(self):
+        calls = []
+
+        def runner(command, **_kwargs):
+            calls.append(command)
+            if command[:2] == ["launchctl", "print"]:
+                return type("Completed", (), {"returncode": 1, "stdout": "not loaded"})()
+            return type("Completed", (), {"returncode": 0, "stdout": ""})()
+
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"), check_output_text="501")
+        result = service_action("restart", runner=runner, runtime=runtime)
+
+        self.assertTrue(result.ok)
+        self.assertIn(
+            ["launchctl", "bootstrap", "gui/501", "/Users/test/Library/LaunchAgents/com.paulbrav.transclip.plist"],
+            calls,
+        )
+
+    def test_macos_service_state_requires_running_launchd_job(self):
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"), check_output_text="501")
+
+        def loaded_not_running(_command, **_kwargs):
+            return type("Completed", (), {"returncode": 0, "stdout": "state = exited"})()
+
+        self.assertFalse(service_state(runner=loaded_not_running, runtime=runtime)["active"])
+
+        def running(_command, **_kwargs):
+            return type("Completed", (), {"returncode": 0, "stdout": "state = running\npid = 123"})()
+
+        self.assertTrue(service_state(runner=running, runtime=runtime)["active"])
 
     def test_paste_status_reports_probe_failure(self):
         capability = type(

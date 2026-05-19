@@ -11,11 +11,24 @@ from .client import InferenceClient
 from .daemon_lifecycle import service_action
 from .gnome_shortcut import install_shortcut
 from .history import read_history
-from .models import SUPPORTED_MODELS
+from .models import model_rows
 from .paste import SystemClipboard
-from .product import APP_ID, DISPLAY_NAME, IMPORT_PACKAGE
+from .platform_runtime import get_runtime
+from .product import APP_ID, CLI_COMMAND, DISPLAY_NAME, IMPORT_PACKAGE
 from .recording_ops import toggle_recording
 from .settings import Settings, load_settings, settings_path, write_default_settings, write_settings
+
+
+def run_tray(settings: Settings, explicit_settings_path: Path | None = None) -> int:
+    if get_runtime().system() == "Darwin":
+        print(
+            "Native macOS menu bar UI is not implemented yet. "
+            f"Use a Keyboard Shortcut or Shortcuts.app action for `{CLI_COMMAND} toggle-record --paste`, "
+            f"and `{CLI_COMMAND} status` / `{CLI_COMMAND} doctor` for service state.",
+            file=sys.stderr,
+        )
+        return 1
+    return run_python_tray(settings, explicit_settings_path=explicit_settings_path)
 
 
 def run_python_tray(settings: Settings, explicit_settings_path: Path | None = None) -> int:
@@ -191,7 +204,8 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
         menu.append(model_item)
         menu_refs["model_menu"] = model_menu
         menu_refs["model_items"] = []
-        for model in SUPPORTED_MODELS:
+        for row in model_rows(settings):
+            model = type("ModelMenuEntry", (), {"model_id": row["model_id"], "backend": row["backend"]})()
             item = _append_item(
                 model_menu,
                 _model_menu_label(model.model_id, model.backend, settings),
@@ -283,6 +297,8 @@ def _model_label(model_id: str, backend: str) -> str:
     if backend == "granite_nar":
         return "Fast local ASR - Granite 4.1 NAR"
     if backend == "granite":
+        if model_id.endswith("-plus"):
+            return "Speaker/timestamp ASR - Granite 4.1 Plus"
         return "Keyword-biased ASR - Granite 4.1"
     return model_id
 

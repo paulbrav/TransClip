@@ -7,6 +7,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.platform_helpers import linux_runtime
 from tests.service_helpers import FakeRecorder, serve_test_engine, stop_server
 from transclip.cli import main
 from transclip.settings import Settings, write_settings
@@ -196,7 +197,10 @@ class CliTests(unittest.TestCase):
 
     def test_models_list_uses_local_catalog(self):
         stdout = io.StringIO()
-        with redirect_stdout(stdout):
+        with (
+            patch("transclip.runtime_profile.get_runtime", return_value=linux_runtime()),
+            redirect_stdout(stdout),
+        ):
             code = main(["models", "list"])
 
         self.assertEqual(code, 0)
@@ -228,7 +232,10 @@ class CliTests(unittest.TestCase):
         self.assertIn("Binding: <Control><Alt>space", stdout.getvalue())
 
     def test_tray_command_runs_python_tray(self):
-        with patch("transclip.tray.run_python_tray", return_value=7):
+        with (
+            patch("transclip.tray.get_runtime", return_value=linux_runtime()),
+            patch("transclip.tray.run_python_tray", return_value=7),
+        ):
             code = main(["tray"])
 
         self.assertEqual(code, 7)

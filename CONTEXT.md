@@ -43,3 +43,16 @@ validation, and token budgeting for model-backed cleanup.
 meets the current dictation quality and latency expectations. It covers manifest
 shape, warmup handling, measured cases, metrics, thresholds, and the JSON output
 consumed by scripts.
+
+**Runtime profile**: Platform-aware defaults and capability metadata, including
+config/cache/log roots, supported inference runtimes (Torch CUDA/ROCm, MLX),
+default ASR backend/model, and service manager (`systemd` on Linux, per-user
+`launchd` on macOS dev installs).
+
+**Backend catalog**: The mapping from model IDs to backend kind, runtime kind,
+platform support, prefetch strategy, and cache layout. ASR factory dispatch and
+doctor checks derive from the selected catalog entry.
+
+**MLX ASR path**: macOS Apple Silicon inference through `mlx-audio` STT, with
+offline prefetch via `huggingface_hub.snapshot_download` into the Hugging Face
+hub cache under `~/Library/Caches/huggingface/hub` unless overridden.

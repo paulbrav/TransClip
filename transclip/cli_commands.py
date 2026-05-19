@@ -16,14 +16,7 @@ from .daemon import (
     toggle_log_path,
 )
 from .daemon_lifecycle import install_daemon, service_action, uninstall_daemon
-from .doctor import (
-    check_asr_runtime,
-    check_model_cache,
-    check_torch_runtime,
-    checks_as_json,
-    checks_as_text,
-    run_checks,
-)
+from .doctor import build_backend_checks, checks_as_json, checks_as_text, run_checks
 from .eval_harness import run_eval
 from .gnome_shortcut import install_shortcut
 from .history import read_history
@@ -58,9 +51,9 @@ def handle_command(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
     if args.command in {"install", "uninstall", "start", "stop", "restart", "status", "logs", "smoke-test"}:
         return handle_daemon_command(args, settings)
     if args.command == "tray":
-        from .tray import run_python_tray
+        from .tray import run_tray
 
-        return run_python_tray(settings, explicit_settings_path=args.settings)
+        return run_tray(settings, explicit_settings_path=args.settings)
     if args.command == "history":
         return handle_history(args)
     if args.command == "models":
@@ -111,7 +104,7 @@ def handle_doctor(args: argparse.Namespace, settings, config_dir: Path | None) -
         include_audio_debug=args.audio_debug,
     )
     print(checks_as_json(checks) if args.json else checks_as_text(checks))
-    return 0 if all(check.ok for check in checks) else 1
+    return 0 if _checks_pass(checks) else 1
 
 
 def handle_daemon_command(args: argparse.Namespace, settings) -> int:
@@ -163,13 +156,9 @@ def handle_models(args: argparse.Namespace, settings) -> int:
         print(_format_model_rows(model_rows(settings)))
         return 0
     if args.models_command == "doctor":
-        checks = [
-            check_model_cache(settings),
-            check_torch_runtime(settings),
-            check_asr_runtime(settings),
-        ]
+        checks = build_backend_checks(settings)
         print(checks_as_text(checks))
-        return 0 if all(check.ok for check in checks) else 1
+        return 0 if _checks_pass(checks) else 1
     if args.models_command == "prefetch":
         try:
             path = prefetch_model(args.model, settings)
@@ -256,6 +245,10 @@ def _print_command_results(results) -> None:
         print(f"{status}\t{result.detail}")
 
 
+def _checks_pass(checks) -> bool:
+    return all(check.ok or not check.required for check in checks)
+
+
 def _format_status(status: dict) -> str:
     lines: list[str] = [f"state\t{'ready' if status['ready'] else 'not-ready'}"]
     service = status["service"]
@@ -272,8 +265,9 @@ def _format_status(status: dict) -> str:
     if shortcut is not None:
         lines.append("shortcut\t" + json.dumps(shortcut, sort_keys=True))
     last_event = status.get("last_log_event")
+    log_path = status.get("toggle_log_path") or str(toggle_log_path())
     lines.append(
-        "last_log_event\t" + (json.dumps(last_event, sort_keys=True) if last_event else f"none at {toggle_log_path()}")
+        "last_log_event\t" + (json.dumps(last_event, sort_keys=True) if last_event else f"none at {log_path}")
     )
     return "\n".join(lines)
 

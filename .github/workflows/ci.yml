@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync dependencies
+        run: uv sync --extra dev --extra audio
+      - name: Ruff
+        run: uv run ruff check .
+      - name: Compile
+        run: uv run python -m compileall transclip scripts tests
+      - name: Unit tests
+        run: uv run python -m unittest discover -s tests -v
+
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync dependencies
+        run: uv sync --extra dev --extra audio --extra mlx
+      - name: Ruff
+        run: uv run ruff check .
+      - name: Compile
+        run: uv run python -m compileall transclip scripts tests
+      - name: Unit tests
+        run: uv run python -m unittest discover -s tests -v
+      - name: MLX import smoke
+        run: uv run python -c "import platform, mlx; from mlx_audio.stt.generate import generate_transcription; print(platform.machine(), generate_transcription)"

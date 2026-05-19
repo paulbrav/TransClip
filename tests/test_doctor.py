@@ -4,21 +4,25 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from tests.platform_helpers import darwin_arm_runtime
 from tests.service_helpers import FakeRuntime
 from transclip.doctor import (
     Check,
+    build_backend_checks,
     check_asr_runtime,
     check_config_files,
     check_hotkey_readiness,
+    check_last_shortcut_log_event,
     check_microphone_devices,
     check_model_cache,
     check_paste_tools,
     checks_as_json,
     checks_as_text,
+    run_checks,
 )
 from transclip.gnome_shortcut import GnomeShortcutStatus
 from transclip.models import hf_cache_dir
-from transclip.settings import Settings
+from transclip.settings import Settings, default_settings
 
 
 class DoctorTests(unittest.TestCase):
@@ -47,15 +51,75 @@ class DoctorTests(unittest.TestCase):
             (Path(tmp) / "models--local--asr").mkdir()
             self.assertTrue(check_model_cache(settings).ok)
 
+    def test_file_asr_still_checks_transformers_cleanup_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                asr_backend="file:/tmp/transcript.txt",
+                cleanup_model="local/cleanup",
+                cleanup_runtime="transformers",
+                model_cache_dir=tmp,
+            )
+            self.assertFalse(check_model_cache(settings).ok)
+            (Path(tmp) / "models--local--cleanup").mkdir()
+            self.assertTrue(check_model_cache(settings).ok)
+
     def test_nar_asr_runtime_checks_flash_attn(self):
         torch = SimpleNamespace(version=SimpleNamespace(hip=None))
-        with patch.dict("sys.modules", {"flash_attn": object(), "torch": torch}):
+        with (
+            patch.dict("sys.modules", {"flash_attn": object(), "torch": torch}),
+            patch("transclip.doctor.resolve_torch_device", return_value="cuda"),
+        ):
             self.assertTrue(check_asr_runtime(Settings()).ok)
+
+    def test_nar_asr_runtime_rejects_cpu(self):
+        torch = SimpleNamespace(version=SimpleNamespace(hip=None))
+        with patch.dict("sys.modules", {"torch": torch}):
+            check = check_asr_runtime(Settings(asr_device="cpu"))
+
+        self.assertFalse(check.ok)
+        self.assertIn("requires CUDA/ROCm", check.detail)
 
     def test_formatters(self):
         checks = [Check("thing", False, "missing thing")]
         self.assertIn('"name": "thing"', checks_as_json(checks))
         self.assertEqual(checks_as_text(checks), "missing\tthing\tmissing thing")
+
+    def test_last_shortcut_log_check_accepts_runtime(self):
+        check = check_last_shortcut_log_event(runtime=FakeRuntime(system="Linux", home=Path("/tmp")))
+        self.assertFalse(check.ok)
+        self.assertIn("toggle-record.log", check.detail)
+
+    def test_stale_granite_nar_on_darwin_reports_asr_config(self):
+        settings = Settings(
+            asr_backend="granite_nar",
+            asr_model="ibm-granite/granite-speech-4.1-2b-nar",
+        )
+        checks = build_backend_checks(settings, darwin_arm_runtime())
+        config = next(check for check in checks if check.name == "asr_config")
+        self.assertFalse(config.ok)
+        self.assertRegex(config.detail, "not supported on Darwin|mlx_audio_whisper")
+
+    def test_darwin_non_arm_default_reports_unsupported_asr_config(self):
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"), check_output_text="x86_64")
+        checks = build_backend_checks(default_settings(runtime), runtime)
+        config = next(check for check in checks if check.name == "asr_config")
+
+        self.assertFalse(config.ok)
+        self.assertIn("unsupported platform", config.detail)
+        self.assertIn("Darwin x86_64", config.detail)
+
+    def test_run_checks_does_not_crash_on_darwin_arm(self):
+        settings = Settings(
+            asr_backend="mlx_audio_whisper",
+            asr_model="mlx-community/whisper-large-v3-turbo-asr-fp16",
+        )
+        with (
+            patch("transclip.doctor.service_state", return_value={"installed": False, "active": False, "detail": ""}),
+            patch("transclip.doctor.InferenceClient") as client,
+        ):
+            client.return_value.health.side_effect = OSError("offline")
+            checks = run_checks(settings, runtime=darwin_arm_runtime())
+        self.assertTrue(any(check.name == "last_shortcut_log_event" for check in checks))
 
     def test_config_check_honors_config_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -189,7 +253,7 @@ card 1: Generic_1 [HD-Audio Generic], device 0: ALC245 Analog [ALC245 Analog]
             available={"arecord": "/usr/bin/arecord"},
             run_func=lambda _command, **_kwargs: completed,
         )
-        check = check_microphone_devices(runtime)
+        check = check_microphone_devices(runtime=runtime)
 
         self.assertTrue(check.ok)
         self.assertIn("HD-Audio Generic", check.detail)
@@ -198,10 +262,11 @@ card 1: Generic_1 [HD-Audio Generic], device 0: ALC245 Analog [ALC245 Analog]
         completed = type("Completed", (), {"returncode": 1, "stdout": "no soundcards found..."})()
 
         runtime = FakeRuntime(
+            system="Linux",
             available={"arecord": "/usr/bin/arecord"},
             run_func=lambda _command, **_kwargs: completed,
         )
-        check = check_microphone_devices(runtime)
+        check = check_microphone_devices(runtime=runtime)
 
         self.assertFalse(check.ok)
         self.assertIn("arecord did not list", check.detail)

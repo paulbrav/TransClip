@@ -1,7 +1,9 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from tests.platform_helpers import linux_runtime
 from transclip.settings import (
     DEFAULT_HOTKEY_LINUX,
     Settings,
@@ -16,7 +18,7 @@ class SettingsTests(unittest.TestCase):
     def test_default_files_round_trip(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            settings_file = write_default_settings(root / "settings.toml")
+            settings_file = write_default_settings(root / "settings.toml", runtime=linux_runtime())
 
             settings = load_settings(settings_file)
 
@@ -39,13 +41,17 @@ class SettingsTests(unittest.TestCase):
 
     def test_platform_helpers_have_defaults(self):
         settings = Settings()
-        self.assertIn("XF86TouchpadOff", settings.active_hotkey)
-        self.assertIn("V", settings.paste_shortcut)
+        with patch("transclip.settings.default_platform_runtime.system", return_value="Linux"):
+            self.assertIn("XF86TouchpadOff", settings.active_hotkey)
+            self.assertEqual(settings.paste_shortcut, "Ctrl+Shift+V")
+        with patch("transclip.settings.default_platform_runtime.system", return_value="Darwin"):
+            self.assertEqual(settings.active_hotkey, "Option+Space")
+            self.assertEqual(settings.paste_shortcut, "Command+V")
 
     def test_set_setting_rewrites_canonical_toml(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "settings.toml"
-            write_default_settings(path)
+            write_default_settings(path, runtime=linux_runtime())
 
             updated = set_setting(path, "toggle_cooldown_ms", "750")
 
@@ -58,7 +64,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(coerce_setting_value("sample_rate", "22050"), 22050)
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "settings.toml"
-            write_default_settings(path)
+            write_default_settings(path, runtime=linux_runtime())
             with self.assertRaises(ValueError):
                 set_setting(path, "wat", "true")
 

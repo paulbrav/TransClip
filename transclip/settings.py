@@ -5,8 +5,9 @@ from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 from typing import Any, get_type_hints
 
-from .platform_runtime import default_platform_runtime, user_config_dir
+from .platform_runtime import PlatformRuntime, default_platform_runtime, user_config_dir
 from .product import CONFIG_DIR_NAME
+from .runtime_profile import detect_runtime_profile
 
 DEFAULT_HOTKEY_LINUX = "<Super><Shift>XF86TouchpadOff"
 
@@ -53,10 +54,19 @@ def settings_path(config_dir: Path | None = None) -> Path:
     return (config_dir or default_config_dir()) / "settings.toml"
 
 
-def load_settings(path: Path | None = None) -> Settings:
+def default_settings(runtime: PlatformRuntime | None = None) -> Settings:
+    profile = detect_runtime_profile(runtime)
+    return Settings(
+        asr_backend=profile.default_asr_backend,
+        asr_model=profile.default_asr_model,
+        asr_device=profile.default_asr_device,
+    )
+
+
+def load_settings(path: Path | None = None, runtime: PlatformRuntime | None = None) -> Settings:
     path = path or settings_path()
     if not path.exists():
-        return Settings()
+        return default_settings(runtime)
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     allowed = {field.name for field in fields(Settings)}
     unknown = sorted(set(data) - allowed)
@@ -140,12 +150,12 @@ def coerce_setting_value(field_name: str, raw_value: str) -> Any:
     raise ValueError(f"{field_name} has unsupported type {expected}")
 
 
-def write_default_settings(path: Path | None = None) -> Path:
+def write_default_settings(path: Path | None = None, runtime: PlatformRuntime | None = None) -> Path:
     path = path or settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         return path
-    write_settings(Settings(), path)
+    write_settings(default_settings(runtime), path)
     return path
 
 
