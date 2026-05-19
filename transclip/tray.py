@@ -180,7 +180,7 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
         menu_refs["history_menu"] = history_menu
         history_item = Gtk.MenuItem(label="Recent transcripts")
         history_item.set_submenu(history_menu)
-        history_item.connect("select", lambda _item: refresh_history_menu())
+        history_menu.connect("show", lambda *_args: refresh_history_menu())
         menu.append(history_item)
         _append_separator(menu)
         _append_item(menu, "Start service", start_service)

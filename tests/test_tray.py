@@ -45,6 +45,7 @@ class FakeMenu:
     def __init__(self):
         self.children = []
         self.show_count = 0
+        self.handlers = {}
 
     def append(self, item) -> None:
         self.children.append(item)
@@ -57,6 +58,9 @@ class FakeMenu:
 
     def show_all(self) -> None:
         self.show_count += 1
+
+    def connect(self, signal: str, callback) -> None:
+        self.handlers[signal] = callback
 
 
 class FakeSeparatorMenuItem:
@@ -193,6 +197,37 @@ class TrayTests(unittest.TestCase):
         self.assertEqual(menu.children[0].child.text, "Service: ready")
         self.assertEqual(menu.children[2].child.text, "Record")
         self.assertFalse(menu.children[3].sensitive)
+
+    def test_recent_transcripts_refresh_when_submenu_is_opened(self):
+        history_events = [
+            {"text": "First transcript"},
+            {"text": "Second transcript"},
+        ]
+
+        with (
+            patch.dict(sys.modules, self.modules),
+            patch("transclip.tray.InferenceClient", FakeClient),
+            patch("transclip.tray.read_history", return_value=[]) as read_history,
+        ):
+            code = run_python_tray(Settings())
+            indicator = FakeIndicatorFactory.current
+            history_item = menu_item_by_label(indicator, "Recent transcripts")
+            history_menu = history_item.submenu
+            self.assertEqual(code, 0)
+            self.assertIn("show", history_menu.handlers)
+            self.assertEqual(len(history_menu.children), 1)
+            self.assertEqual(history_menu.children[0].label, "No recent transcripts")
+
+            read_history.return_value = history_events
+            with patch(
+                "transclip.tray._append_item",
+                side_effect=lambda menu, label, callback: menu.append(FakeMenuItem(label)),
+            ):
+                history_menu.handlers["show"](history_menu)
+
+        self.assertEqual(len(history_menu.children), 2)
+        self.assertEqual(history_menu.children[0].label, "First transcript")
+        self.assertEqual(history_menu.children[1].label, "Second transcript")
 
     def test_set_hotkey_saves_settings_and_installs_shortcut(self):
         FakeDialog.next_response = 1
