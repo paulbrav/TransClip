@@ -14,7 +14,12 @@ from .platform_runtime import PlatformRuntime, get_runtime
 from .product import (
     CACHE_DIR_NAME,
     CLI_COMMAND,
+    FALLBACK_HOTKEY_LINUX,
     IMPORT_PACKAGE,
+    LEGACY_SHORTCUT_NAME,
+    LEGACY_SHORTCUT_PATH,
+    SHORTCUT_ALT_NAME,
+    SHORTCUT_ALT_PATH,
     SHORTCUT_NAME,
     SHORTCUT_PATH,
 )
@@ -80,19 +85,22 @@ def install_gnome_shortcut(
     runtime: PlatformRuntime | None = None,
 ) -> GnomeShortcutInstallResult:
     _require_gsettings(runtime)
-    paths = get_custom_keybinding_paths(runner=runner)
+    paths = _remove_legacy_shortcut_paths(get_custom_keybinding_paths(runner=runner), runner=runner)
     path = _find_transclip_path(paths, runner=runner) or TRANSCLIP_SHORTCUT_PATH
-    if path not in paths:
-        paths.append(path)
-        _gsettings_set(
-            GNOME_MEDIA_KEYS_SCHEMA,
-            GNOME_CUSTOM_KEYBINDINGS_KEY,
-            _format_string_array(paths),
-            runner=runner,
-        )
+    paths = _ensure_shortcut_path(paths, path)
+    paths = _ensure_shortcut_path(paths, SHORTCUT_ALT_PATH)
+    _gsettings_set(
+        GNOME_MEDIA_KEYS_SCHEMA,
+        GNOME_CUSTOM_KEYBINDINGS_KEY,
+        _format_string_array(paths),
+        runner=runner,
+    )
     _gsettings_set_relocatable(path, "name", TRANSCLIP_SHORTCUT_NAME, runner=runner)
     _gsettings_set_relocatable(path, "command", command, runner=runner)
     _gsettings_set_relocatable(path, "binding", binding, runner=runner)
+    _gsettings_set_relocatable(SHORTCUT_ALT_PATH, "name", SHORTCUT_ALT_NAME, runner=runner)
+    _gsettings_set_relocatable(SHORTCUT_ALT_PATH, "command", command, runner=runner)
+    _gsettings_set_relocatable(SHORTCUT_ALT_PATH, "binding", FALLBACK_HOTKEY_LINUX, runner=runner)
     return GnomeShortcutInstallResult(
         path=path,
         name=TRANSCLIP_SHORTCUT_NAME,
@@ -237,6 +245,24 @@ def _find_transclip_path(paths: list[str], runner: Runner) -> str | None:
         if _gsettings_get_relocatable(path, "name", runner=runner) == TRANSCLIP_SHORTCUT_NAME:
             return path
     return None
+
+
+def _ensure_shortcut_path(paths: list[str], path: str) -> list[str]:
+    if path in paths:
+        return paths
+    return [*paths, path]
+
+
+def _remove_legacy_shortcut_paths(paths: list[str], runner: Runner) -> list[str]:
+    kept: list[str] = []
+    for path in paths:
+        if path in {LEGACY_SHORTCUT_PATH, SHORTCUT_ALT_PATH}:
+            continue
+        name = _gsettings_get_relocatable(path, "name", runner=runner)
+        if name == LEGACY_SHORTCUT_NAME:
+            continue
+        kept.append(path)
+    return kept
 
 
 def _gsettings_get(schema: str, key: str, runner: Runner) -> str:
