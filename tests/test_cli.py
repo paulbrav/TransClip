@@ -7,9 +7,9 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from granite_speach.cli import main
-from granite_speach.settings import Settings, write_settings
 from tests.service_helpers import FakeRecorder, serve_test_engine, stop_server
+from transclip.cli import main
+from transclip.settings import Settings, write_settings
 
 
 class InMemoryClipboard:
@@ -48,11 +48,11 @@ class CliTests(unittest.TestCase):
             try:
                 stdout = io.StringIO()
                 with (
-                    patch("granite_speach.service.AudioRecorder", FakeRecorder),
-                    patch("granite_speach.paste.SystemClipboard", InMemoryClipboard),
-                    patch("granite_speach.paste.SystemPasteInjector", FakePasteInjector),
-                    patch("granite_speach.cli_commands.notify"),
-                    patch("granite_speach.daemon_lifecycle.Path.home", return_value=root),
+                    patch("transclip.service.AudioRecorder", FakeRecorder),
+                    patch("transclip.paste.SystemClipboard", InMemoryClipboard),
+                    patch("transclip.paste.SystemPasteInjector", FakePasteInjector),
+                    patch("transclip.cli_commands.notify"),
+                    patch("transclip.daemon_lifecycle.Path.home", return_value=root),
                     redirect_stdout(stdout),
                 ):
                     code = main(["--settings", str(settings_path), "toggle-record", "--paste"])
@@ -75,22 +75,22 @@ class CliTests(unittest.TestCase):
             try:
                 InMemoryClipboard.value = "prior"
                 with (
-                    patch("granite_speach.service.AudioRecorder", FakeRecorder),
-                    patch("granite_speach.paste.SystemClipboard", InMemoryClipboard),
-                    patch("granite_speach.paste.SystemPasteInjector", FakePasteInjector),
-                    patch("granite_speach.cli_commands.notify"),
-                    patch("granite_speach.daemon_lifecycle.Path.home", return_value=root),
+                    patch("transclip.service.AudioRecorder", FakeRecorder),
+                    patch("transclip.paste.SystemClipboard", InMemoryClipboard),
+                    patch("transclip.paste.SystemPasteInjector", FakePasteInjector),
+                    patch("transclip.cli_commands.notify"),
+                    patch("transclip.daemon_lifecycle.Path.home", return_value=root),
                     redirect_stdout(io.StringIO()),
                 ):
                     self.assertEqual(main(["--settings", str(settings_path), "toggle-record"]), 0)
 
                 stdout = io.StringIO()
                 with (
-                    patch("granite_speach.service.AudioRecorder", FakeRecorder),
-                    patch("granite_speach.paste.SystemClipboard", InMemoryClipboard),
-                    patch("granite_speach.paste.SystemPasteInjector", FakePasteInjector),
-                    patch("granite_speach.cli_commands.notify"),
-                    patch("granite_speach.daemon_lifecycle.Path.home", return_value=root),
+                    patch("transclip.service.AudioRecorder", FakeRecorder),
+                    patch("transclip.paste.SystemClipboard", InMemoryClipboard),
+                    patch("transclip.paste.SystemPasteInjector", FakePasteInjector),
+                    patch("transclip.cli_commands.notify"),
+                    patch("transclip.daemon_lifecycle.Path.home", return_value=root),
                     redirect_stdout(stdout),
                 ):
                     code = main(["--settings", str(settings_path), "toggle-record", "--paste"])
@@ -115,17 +115,17 @@ class CliTests(unittest.TestCase):
             settings_path = write_test_settings(root, "127.0.0.1", unused_local_port())
             stderr = io.StringIO()
             with (
-                patch("granite_speach.cli_commands.notify"),
-                patch("granite_speach.daemon_lifecycle.Path.home", return_value=root),
+                patch("transclip.cli_commands.notify"),
+                patch("transclip.daemon_lifecycle.Path.home", return_value=root),
                 redirect_stderr(stderr),
             ):
                 code = main(["--settings", str(settings_path), "toggle-record", "--paste"])
 
             self.assertEqual(code, 1)
-            self.assertIn("Granite service is not running", stderr.getvalue())
+            self.assertIn("TransClip service is not running", stderr.getvalue())
             log_event = read_last_toggle_log(root)
             self.assertEqual(log_event["action"], "error")
-            self.assertEqual(log_event["error"], "Granite service is not running.")
+            self.assertEqual(log_event["error"], "TransClip service is not running.")
 
     def test_toggle_record_log_failure_is_nonfatal(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -136,8 +136,8 @@ class CliTests(unittest.TestCase):
             try:
                 stdout = io.StringIO()
                 with (
-                    patch("granite_speach.service.AudioRecorder", FakeRecorder),
-                    patch("granite_speach.daemon_lifecycle.Path.home", return_value=root),
+                    patch("transclip.service.AudioRecorder", FakeRecorder),
+                    patch("transclip.daemon_lifecycle.Path.home", return_value=root),
                     redirect_stdout(stdout),
                 ):
                     code = main(["--settings", str(settings_path), "toggle-record"])
@@ -154,7 +154,7 @@ class CliTests(unittest.TestCase):
         stdout = io.StringIO()
         events = [{"text": "latest", "timestamp": "now", "source": "/transcribe"}]
         with (
-            patch("granite_speach.cli_commands.read_history", return_value=events),
+            patch("transclip.cli_commands.read_history", return_value=events),
             redirect_stdout(stdout),
         ):
             code = main(["history", "--json"])
@@ -170,8 +170,8 @@ class CliTests(unittest.TestCase):
 
         stdout = io.StringIO()
         with (
-            patch("granite_speach.cli_commands.read_history", return_value=events),
-            patch("granite_speach.cli_commands.SystemClipboard", Clipboard),
+            patch("transclip.cli_commands.read_history", return_value=events),
+            patch("transclip.cli_commands.SystemClipboard", Clipboard),
             redirect_stdout(stdout),
         ):
             code = main(["history", "--copy", "1"])
@@ -211,14 +211,14 @@ class CliTests(unittest.TestCase):
                 "Shortcut",
                 (),
                 {
-                    "name": "Granite Speach Toggle",
+                    "name": "TransClip Toggle",
                     "path": "/shortcut/",
                     "binding": "<Control><Alt>space",
-                    "command": "/bin/sh -lc granite-speach",
+                    "command": "/bin/sh -lc transclip",
                 },
             )()
             with (
-                patch("granite_speach.cli_commands.install_shortcut", return_value=shortcut) as install,
+                patch("transclip.cli_commands.install_shortcut", return_value=shortcut) as install,
                 redirect_stdout(stdout),
             ):
                 code = main(["--settings", str(settings_path), "install-gnome-shortcut"])
@@ -228,7 +228,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("Binding: <Control><Alt>space", stdout.getvalue())
 
     def test_tray_command_runs_python_tray(self):
-        with patch("granite_speach.tray.run_python_tray", return_value=7):
+        with patch("transclip.tray.run_python_tray", return_value=7):
             code = main(["tray"])
 
         self.assertEqual(code, 7)
@@ -250,7 +250,7 @@ def write_test_settings(root: Path, host: str, port: int, **overrides) -> Path:
 
 
 def read_last_toggle_log(root: Path) -> dict:
-    log_path = root / ".cache" / "granite-speach" / "toggle-record.log"
+    log_path = root / ".cache" / "transclip" / "toggle-record.log"
     lines = [line for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     return json.loads(lines[-1])
 

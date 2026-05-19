@@ -1,18 +1,18 @@
 import subprocess
 import unittest
 
-from granite_speach.gnome_shortcut import (
+from tests.service_helpers import FakeRuntime
+from transclip.gnome_shortcut import (
     GNOME_CUSTOM_KEYBINDINGS_KEY,
     GNOME_MEDIA_KEYS_SCHEMA,
-    GRANITE_SHORTCUT_BINDING,
-    GRANITE_SHORTCUT_NAME,
-    GRANITE_SHORTCUT_PATH,
+    TRANSCLIP_SHORTCUT_BINDING,
+    TRANSCLIP_SHORTCUT_NAME,
+    TRANSCLIP_SHORTCUT_PATH,
     build_toggle_command,
     command_exists,
     install_gnome_shortcut,
     shortcut_readiness,
 )
-from tests.service_helpers import FakeRuntime
 
 
 class FakeGSettings:
@@ -43,29 +43,29 @@ class FakeGSettings:
 class GnomeShortcutTests(unittest.TestCase):
     def test_installer_preserves_unrelated_shortcuts_and_is_idempotent(self):
         fake = FakeGSettings()
-        command = "/venv/bin/python -m granite_speach.cli toggle-record --paste"
+        command = "/venv/bin/python -m transclip.cli toggle-record --paste"
         runtime = FakeRuntime(available={"gsettings"})
         first = install_gnome_shortcut(command, runner=fake.run, runtime=runtime)
         second = install_gnome_shortcut(command, runner=fake.run, runtime=runtime)
 
         paths = fake.values[(GNOME_MEDIA_KEYS_SCHEMA, GNOME_CUSTOM_KEYBINDINGS_KEY)]
         self.assertIn("/custom/keep/", paths)
-        self.assertEqual(paths.count(GRANITE_SHORTCUT_PATH), 1)
-        self.assertEqual(first.path, GRANITE_SHORTCUT_PATH)
-        self.assertEqual(second.path, GRANITE_SHORTCUT_PATH)
-        schema = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:" + GRANITE_SHORTCUT_PATH
-        self.assertEqual(fake.values[(schema, "name")], GRANITE_SHORTCUT_NAME)
-        self.assertEqual(fake.values[(schema, "binding")], GRANITE_SHORTCUT_BINDING)
+        self.assertEqual(paths.count(TRANSCLIP_SHORTCUT_PATH), 1)
+        self.assertEqual(first.path, TRANSCLIP_SHORTCUT_PATH)
+        self.assertEqual(second.path, TRANSCLIP_SHORTCUT_PATH)
+        schema = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:" + TRANSCLIP_SHORTCUT_PATH
+        self.assertEqual(fake.values[(schema, "name")], TRANSCLIP_SHORTCUT_NAME)
+        self.assertEqual(fake.values[(schema, "binding")], TRANSCLIP_SHORTCUT_BINDING)
         self.assertEqual(fake.values[(schema, "command")], command)
 
     def test_command_exists_checks_absolute_program(self):
-        self.assertFalse(command_exists("/definitely/missing/granite-speach toggle-record"))
+        self.assertFalse(command_exists("/definitely/missing/transclip toggle-record"))
 
     def test_command_exists_checks_shell_wrapper_payload(self):
         self.assertFalse(
             command_exists(
-                "/bin/sh -lc 'mkdir -p \"$HOME/.cache/granite-speach\"; "
-                "/definitely/missing/python -m granite_speach.cli toggle-record --paste'"
+                "/bin/sh -lc 'mkdir -p \"$HOME/.cache/transclip\"; "
+                "/definitely/missing/python -m transclip.cli toggle-record --paste'"
             )
         )
 
@@ -88,7 +88,7 @@ class GnomeShortcutTests(unittest.TestCase):
         )
 
         self.assertFalse(status.ok)
-        self.assertIn("granite-speach install-gnome-shortcut", status.detail)
+        self.assertIn("transclip install-gnome-shortcut", status.detail)
 
 
 if __name__ == "__main__":

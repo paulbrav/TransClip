@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from granite_speach.eval_harness import build_manifest, load_keyword_file
+from transclip.eval_harness import build_manifest, load_keyword_file
 
 DEFAULT_OUTPUT = Path("eval/real-usage/manifest.json")
 

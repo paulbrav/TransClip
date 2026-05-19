@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from granite_speach.settings import DEFAULT_HOTKEY_LINUX, Settings, load_settings, write_settings
-from granite_speach.tray import run_python_tray
+from transclip.settings import DEFAULT_HOTKEY_LINUX, Settings, load_settings, write_settings
+from transclip.tray import run_python_tray
 
 
 class FakeLabel:
@@ -181,8 +181,8 @@ class TrayTests(unittest.TestCase):
     def test_health_refresh_updates_existing_menu_without_replacing_it(self):
         with (
             patch.dict(sys.modules, self.modules),
-            patch("granite_speach.tray.InferenceClient", FakeClient),
-            patch("granite_speach.tray.read_history", return_value=[]),
+            patch("transclip.tray.InferenceClient", FakeClient),
+            patch("transclip.tray.read_history", return_value=[]),
         ):
             code = run_python_tray(Settings())
 
@@ -203,9 +203,9 @@ class TrayTests(unittest.TestCase):
             write_settings(settings, settings_file)
             with (
                 patch.dict(sys.modules, self.modules),
-                patch("granite_speach.tray.InferenceClient", FakeClient),
-                patch("granite_speach.tray.read_history", return_value=[]),
-                patch("granite_speach.tray.install_shortcut") as install_shortcut,
+                patch("transclip.tray.InferenceClient", FakeClient),
+                patch("transclip.tray.read_history", return_value=[]),
+                patch("transclip.tray.install_shortcut") as install_shortcut,
             ):
                 code = run_python_tray(settings, explicit_settings_path=settings_file)
                 indicator = FakeIndicatorFactory.current
@@ -226,15 +226,15 @@ class TrayTests(unittest.TestCase):
             write_settings(settings, settings_file)
             with (
                 patch.dict(sys.modules, self.modules),
-                patch("granite_speach.tray.InferenceClient", FakeClient),
-                patch("granite_speach.tray.read_history", return_value=[]),
-                patch("granite_speach.tray.service_action") as service_action,
+                patch("transclip.tray.InferenceClient", FakeClient),
+                patch("transclip.tray.read_history", return_value=[]),
+                patch("transclip.tray.service_action") as service_action,
             ):
                 service_action.return_value = types.SimpleNamespace(detail="restarted")
                 code = run_python_tray(settings, explicit_settings_path=settings_file)
                 indicator = FakeIndicatorFactory.current
                 model_item = menu_item_by_label(indicator, "ASR model")
-                regular_item = submenu_item_by_label(model_item, "Granite 4.1 2B (keywords)")
+                regular_item = submenu_item_by_label(model_item, "Keyword-biased ASR - Granite 4.1")
                 regular_item.handlers["activate"](regular_item)
 
                 self.assertEqual(code, 0)
@@ -245,7 +245,7 @@ class TrayTests(unittest.TestCase):
                 self.assertEqual(saved.asr_model, "ibm-granite/granite-speech-4.1-2b")
                 service_action.assert_called_once_with("restart")
                 self.assertIn("ASR model set", indicator.menus[0].children[0].child.text)
-                self.assertEqual(regular_item.child.text, "✓ Granite 4.1 2B (keywords)")
+                self.assertEqual(regular_item.child.text, "✓ Keyword-biased ASR - Granite 4.1")
 
     def test_set_hotkey_preserves_other_current_settings(self):
         FakeDialog.next_response = 1
@@ -256,9 +256,9 @@ class TrayTests(unittest.TestCase):
             write_settings(Settings(toggle_cooldown_ms=900), settings_file)
             with (
                 patch.dict(sys.modules, self.modules),
-                patch("granite_speach.tray.InferenceClient", FakeClient),
-                patch("granite_speach.tray.read_history", return_value=[]),
-                patch("granite_speach.tray.install_shortcut"),
+                patch("transclip.tray.InferenceClient", FakeClient),
+                patch("transclip.tray.read_history", return_value=[]),
+                patch("transclip.tray.install_shortcut"),
             ):
                 run_python_tray(settings, explicit_settings_path=settings_file)
                 set_hotkey_item = menu_item_by_label(FakeIndicatorFactory.current, "Set hotkey...")
@@ -278,9 +278,9 @@ class TrayTests(unittest.TestCase):
             write_settings(settings, settings_file)
             with (
                 patch.dict(sys.modules, self.modules),
-                patch("granite_speach.tray.InferenceClient", FakeClient),
-                patch("granite_speach.tray.read_history", return_value=[]),
-                patch("granite_speach.tray.install_shortcut", side_effect=RuntimeError("gsettings failed")),
+                patch("transclip.tray.InferenceClient", FakeClient),
+                patch("transclip.tray.read_history", return_value=[]),
+                patch("transclip.tray.install_shortcut", side_effect=RuntimeError("gsettings failed")),
             ):
                 run_python_tray(settings, explicit_settings_path=settings_file)
                 indicator = FakeIndicatorFactory.current
@@ -303,9 +303,9 @@ class TrayTests(unittest.TestCase):
             write_settings(settings, settings_file)
             with (
                 patch.dict(sys.modules, self.modules),
-                patch("granite_speach.tray.InferenceClient", FakeClient),
-                patch("granite_speach.tray.read_history", return_value=[]),
-                patch("granite_speach.tray.install_shortcut") as install_shortcut,
+                patch("transclip.tray.InferenceClient", FakeClient),
+                patch("transclip.tray.read_history", return_value=[]),
+                patch("transclip.tray.install_shortcut") as install_shortcut,
             ):
                 run_python_tray(settings, explicit_settings_path=settings_file)
                 indicator = FakeIndicatorFactory.current

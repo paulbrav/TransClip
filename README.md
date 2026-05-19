@@ -1,15 +1,16 @@
-# Granite Speach
+# TransClip
 
-Local-only toggle-to-talk dictation for Linux and macOS, oriented around Granite
-ASR and faithful cleanup for technical notes.
+Local-only toggle-to-talk dictation for Linux and macOS, with local ASR and
+faithful cleanup for technical notes. Granite NAR is the default backend, but
+TransClip is the product surface.
 
 The default path is now the pure-Python dictation daemon:
 
 ```text
-shortcut -> granite-speach toggle-record --paste -> Python service -> clipboard -> paste
+shortcut -> transclip toggle-record --paste -> Python service -> clipboard -> paste
 ```
 
-The runnable app lives in `granite_speach/`: Python inference service,
+The runnable app lives in `transclip/`: Python inference service,
 settings, audio capture, cleanup, paste injection, daemon install/status/log
 commands, debug capture, Python AppIndicator tray, and eval harness.
 
@@ -18,7 +19,7 @@ commands, debug capture, Python AppIndicator tray, and eval harness.
 Create default config files:
 
 ```bash
-uv run -m granite_speach.cli init-config
+uv run -m transclip.cli init-config
 ```
 
 This writes `settings.toml` under the platform config directory.
@@ -26,28 +27,28 @@ This writes `settings.toml` under the platform config directory.
 Install the daemon and native shortcut:
 
 ```bash
-uv run -m granite_speach.cli install
+uv run -m transclip.cli install
 ```
 
-On Linux this writes `~/.config/systemd/user/granite-speach.service`, enables
+On Linux this writes `~/.config/systemd/user/transclip.service`, enables
 and starts it with `systemctl --user`, and installs the GNOME custom shortcut
-`Granite Speach Toggle`. On this HP ZBook, `wev` reports the Copilot key as
+`TransClip Toggle`. On this HP ZBook, `wev` reports the Copilot key as
 `<Super><Shift>XF86TouchpadOff`; press once to start recording and again to
 stop, transcribe, copy, and paste.
 
 Check readiness and logs:
 
 ```bash
-uv run -m granite_speach.cli status
-uv run -m granite_speach.cli doctor
-uv run -m granite_speach.cli smoke-test
-uv run -m granite_speach.cli logs
+uv run -m transclip.cli status
+uv run -m transclip.cli doctor
+uv run -m transclip.cli smoke-test
+uv run -m transclip.cli logs
 ```
 
 Run the Python tray:
 
 ```bash
-granite-speach tray
+transclip tray
 ```
 
 On Linux this uses PyGObject/Ayatana AppIndicator. When running through `uv`,
@@ -61,16 +62,16 @@ sudo apt install -y python3-gi gir1.2-ayatanaappindicator3-0.1
 Service controls:
 
 ```bash
-uv run -m granite_speach.cli start
-uv run -m granite_speach.cli stop
-uv run -m granite_speach.cli restart
-uv run -m granite_speach.cli uninstall
+uv run -m transclip.cli start
+uv run -m transclip.cli stop
+uv run -m transclip.cli restart
+uv run -m transclip.cli uninstall
 ```
 
 To run the service manually instead of using the service manager:
 
 ```bash
-uv run -m granite_speach.cli serve
+uv run -m transclip.cli serve
 ```
 
 For the portable CPU/CUDA path, install the model extras first:
@@ -100,8 +101,10 @@ The default ASR backend is `ibm-granite/granite-speech-4.1-2b-nar`, selected
 with `asr_backend = "granite_nar"`, because it is the measured low-latency V1
 path on `gfx1151`. The higher-accuracy autoregressive
 `ibm-granite/granite-speech-4.1-2b` path remains available with
-`asr_backend = "granite"`. For fast local plumbing tests without downloading a
-model, point `asr_backend` at a transcript file:
+`asr_backend = "granite"`. The current real-usage NAR run passes the V1 gate:
+25 measured clips averaged 286 ms release-to-ready, with mean keyword
+preservation at 0.952 and mean WER at 0.192. For fast local plumbing tests
+without downloading a model, point `asr_backend` at a transcript file:
 
 ```toml
 asr_backend = "file:/tmp/transcript.txt"
@@ -120,17 +123,17 @@ models during dictation.
 Then transcribe a WAV:
 
 ```bash
-uv run -m granite_speach.cli transcribe sample.wav
+uv run -m transclip.cli transcribe sample.wav
 ```
 
 Install or refresh only the default GNOME shortcut for the Copilot key toggle
 workflow:
 
 ```bash
-uv run -m granite_speach.cli install-gnome-shortcut
+uv run -m transclip.cli install-gnome-shortcut
 ```
 
-This creates or updates the same `Granite Speach Toggle` shortcut while
+This creates or updates the same `TransClip Toggle` shortcut while
 preserving unrelated custom shortcuts.
 
 ## Linux Desktop
@@ -149,8 +152,6 @@ sudo apt install -y \
 
 Linux GNOME sessions use the native custom shortcut installed above. No
 `/dev/input` group membership is required for the default toggle workflow.
-Legacy hold-to-talk diagnostics remain in the codebase, but they are not the
-default hotkey path.
 
 On GNOME Wayland, clipboard copy/read requires `wl-clipboard` (`wl-copy` and
 `wl-paste`). Paste injection uses `wtype` when the compositor supports the
@@ -183,7 +184,7 @@ Create a JSON manifest:
 Run:
 
 ```bash
-uv run -m granite_speach.cli eval eval-manifest.json --output eval-results.json
+uv run -m transclip.cli eval eval-manifest.json --output eval-results.json
 ```
 
 The output includes release-to-ready latency, WER when references exist, keyword
@@ -194,20 +195,20 @@ matching reference `.txt` files in one folder. Optional per-clip keyword files
 can use the same stem with `.keywords.txt`.
 
 ```bash
-uv run scripts/record_real_eval_session.py ~/granite-real-eval --manual-stop
+uv run scripts/record_real_eval_session.py ~/transclip-real-eval --manual-stop
 ```
 
 To write the prompt list to a Markdown file first:
 
 ```bash
-uv run scripts/record_real_eval_session.py ~/granite-real-eval \
+uv run scripts/record_real_eval_session.py ~/transclip-real-eval \
   --prompt-sheet eval/real-usage/prompts.md
 ```
 
 Or add individual custom clips:
 
 ```bash
-uv run scripts/record_real_eval_clip.py ~/granite-real-eval case_01 \
+uv run scripts/record_real_eval_clip.py ~/transclip-real-eval case_01 \
   --duration 8 \
   --reference "Use PyTorch on ROCm with gfx1151." \
   --keywords PyTorch ROCm gfx1151
@@ -218,14 +219,14 @@ Then build and run the eval:
 ```bash
 TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1 \
 VIRTUAL_ENV=$PWD/.venv-gfx1151 uv run --active scripts/run_real_eval_pipeline.py \
-  ~/granite-real-eval
+  ~/transclip-real-eval
 ```
 
 ## Tests
 
 ```bash
 uv run -m unittest discover -s tests -v
-uv run -m compileall scripts granite_speach tests
+uv run -m compileall scripts transclip tests
 VIRTUAL_ENV=$PWD/.venv-gfx1151 uv run --active scripts/check_v1_completion.py
 ```
 
@@ -237,8 +238,8 @@ or an XWayland-oriented session, use `xdotool`.
 Check host readiness:
 
 ```bash
-uv run -m granite_speach.cli doctor
-uv run -m granite_speach.cli doctor --fix
+uv run -m transclip.cli doctor
+uv run -m transclip.cli doctor --fix
 ```
 
 ## ChatGPT UI Bridge
@@ -273,6 +274,6 @@ Use stdin for larger prompts:
 cat prompt.txt | uv run --extra chatgpt-ui scripts/chatgpt_ui_ask.py --model "Extended Pro"
 ```
 
-The bridge defaults to `~/.cache/granite-speach-chatgpt-ui`. Use `--profile` to
+The bridge defaults to `~/.cache/transclip-chatgpt-ui`. Use `--profile` to
 keep a separate login/profile, `--reuse-current-chat` to continue the current
 conversation, and `--keep-open` to inspect or repair the browser state.

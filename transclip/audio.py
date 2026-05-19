@@ -22,7 +22,7 @@ class AudioRecorder:
             import numpy as np
             import sounddevice as sd
         except ImportError as exc:
-            raise RuntimeError("Install granite-speach[audio] for microphone capture.") from exc
+            raise RuntimeError("Install transclip[audio] for microphone capture.") from exc
         self._np = np
         self._sd = sd
         self._frames = []

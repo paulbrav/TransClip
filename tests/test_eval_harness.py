@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from granite_speach.eval_harness import (
+from transclip.eval_harness import (
     cleanup_drift_delta,
     is_cleanup_semantic_drift,
     keyword_preservation,
@@ -36,6 +36,7 @@ class EvalHarnessTests(unittest.TestCase):
     def test_word_error_rate(self):
         self.assertEqual(word_error_rate("hello world", "hello world"), 0.0)
         self.assertEqual(word_error_rate("hello world", "hello"), 0.5)
+        self.assertEqual(word_error_rate("hello world.", "Hello, world"), 0.0)
 
     def test_keyword_preservation(self):
         score = keyword_preservation("PyTorch on ROCm", ["PyTorch", "ROCm", "MLX"])
@@ -88,7 +89,7 @@ class EvalHarnessTests(unittest.TestCase):
         self.assertEqual(case["text"], "PyTorch on ROCm.")
         self.assertEqual(case["raw_asr"], "pytorch on rocm")
         self.assertEqual(case["wer"], 0.0)
-        self.assertAlmostEqual(case["raw_asr_wer"], 1 / 3)
+        self.assertEqual(case["raw_asr_wer"], 0.0)
         self.assertEqual(case["cleanup_drift_wer_delta"], 0.0)
         self.assertEqual(case["keyword_preservation"], 1.0)
         self.assertEqual(case["timings_ms"]["end_to_end"], 250.0)

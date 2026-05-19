@@ -1,4 +1,4 @@
-# Granite Speach V1 Real-Usage Eval Prompts
+# TransClip V1 Real-Usage Eval Prompts
 
 Read each prompt aloud when recording the matching case.
 

@@ -1,12 +1,12 @@
 {
   "summary": {
     "cases": 25,
-    "mean_wer": 0.27963114663114663,
-    "mean_raw_asr_wer": 0.27907170607170606,
-    "mean_cleanup_drift_wer_delta": 0.0036363636363636364,
-    "cleanup_semantic_drift_failures": 1,
-    "mean_keyword_preservation": 0.6773333333333333,
-    "mean_release_to_ready_ms": 309.36172,
+    "mean_wer": 0.19182850482850483,
+    "mean_raw_asr_wer": 0.19182850482850483,
+    "mean_cleanup_drift_wer_delta": 0.0,
+    "cleanup_semantic_drift_failures": 0,
+    "mean_keyword_preservation": 0.952,
+    "mean_release_to_ready_ms": 285.8838,
     "under_700ms": 25,
     "under_1500ms": 25,
     "paste_attempts": 0,
@@ -16,7 +16,7 @@
   },
   "results": [
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_01.wav",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_01.wav",
       "text": "Please check the python tray icon after the service report is ready.",
       "raw_asr": "please check the python tray icon after the service report is ready.",
       "reference": "Please check the Python tray icon after the service reports ready.",
@@ -28,13 +28,13 @@
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 320.668,
-        "cleanup": 0.057,
-        "end_to_end": 320.812
+        "asr": 274.129,
+        "cleanup": 0.028,
+        "end_to_end": 274.535
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_02.wav",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_02.wav",
       "text": "Set the cleanup runtime to rule for the latency profile.",
       "raw_asr": "set the cleanup runtime to rule for the latency profile.",
       "reference": "Set the cleanup runtime to rule for the latency profile.",
@@ -46,49 +46,49 @@
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 342.673,
-        "cleanup": 0.048,
-        "end_to_end": 342.786
+        "asr": 318.575,
+        "cleanup": 0.032,
+        "end_to_end": 319.142
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_03.wav",
-      "text": "Granite n should stay under the 700 millisecond after warmup.",
-      "raw_asr": "granite n should stay under the 700 millisecond after warmup.",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_03.wav",
+      "text": "Granite NAR should stay under the 700 millisecond after warmup.",
+      "raw_asr": "granite NAR should stay under the 700 millisecond after warmup.",
       "reference": "Granite NAR should stay under seven hundred milliseconds after warm up.",
-      "wer": 0.5454545454545454,
-      "raw_asr_wer": 0.5454545454545454,
+      "wer": 0.45454545454545453,
+      "raw_asr_wer": 0.45454545454545453,
       "cleanup_drift_wer_delta": 0.0,
       "cleanup_semantic_drift": false,
-      "keyword_preservation": 0.5,
+      "keyword_preservation": 1.0,
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 362.012,
-        "cleanup": 0.051,
-        "end_to_end": 362.134
+        "asr": 315.372,
+        "cleanup": 0.018,
+        "end_to_end": 315.891
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_04.wav",
-      "text": "Pytorch, rockham, and gfx 1151 to the technical note.",
-      "raw_asr": "pytorch, rockham, and gfx 1151 to the technical note.",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_04.wav",
+      "text": "Pytorch, ROCm, and gfx1151 to the technical note.",
+      "raw_asr": "pytorch, ROCm, and gfx1151 to the technical note.",
       "reference": "Add PyTorch, ROCm, and gfx1151 to the technical note.",
-      "wer": 0.4444444444444444,
-      "raw_asr_wer": 0.4444444444444444,
+      "wer": 0.1111111111111111,
+      "raw_asr_wer": 0.1111111111111111,
       "cleanup_drift_wer_delta": 0.0,
       "cleanup_semantic_drift": false,
-      "keyword_preservation": 0.3333333333333333,
+      "keyword_preservation": 1.0,
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 350.397,
-        "cleanup": 0.049,
-        "end_to_end": 350.513
+        "asr": 346.54,
+        "cleanup": 0.018,
+        "end_to_end": 346.68
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_05.wav",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_05.wav",
       "text": "The localhost python inference service is listening on port 8875.",
       "raw_asr": "the localhost python inference service is listening on port 8875.",
       "reference": "The localhost Python inference service is listening on port eight seven six five.",
@@ -100,49 +100,49 @@
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 299.505,
-        "cleanup": 0.049,
-        "end_to_end": 299.632
+        "asr": 290.247,
+        "cleanup": 0.023,
+        "end_to_end": 290.585
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_06.wav",
-      "text": "Use w type on wayland and x tool on x11 when paste injection is needed.",
-      "raw_asr": "use w type on wayland and x tool on x11 when paste injection is needed.",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_06.wav",
+      "text": "Use wtype on wayland and xdotool on x11 when paste injection is needed.",
+      "raw_asr": "use wtype on wayland and xdotool on x11 when paste injection is needed.",
       "reference": "Use wtype on Wayland and xdotool on X eleven when paste injection is needed.",
-      "wer": 0.42857142857142855,
-      "raw_asr_wer": 0.42857142857142855,
+      "wer": 0.14285714285714285,
+      "raw_asr_wer": 0.14285714285714285,
       "cleanup_drift_wer_delta": 0.0,
       "cleanup_semantic_drift": false,
-      "keyword_preservation": 0.3333333333333333,
+      "keyword_preservation": 1.0,
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 499.331,
-        "cleanup": 0.054,
-        "end_to_end": 499.456
+        "asr": 393.999,
+        "cleanup": 0.019,
+        "end_to_end": 394.909
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_07.wav",
-      "text": "Mac os bar item may need accessibility permission for command v.",
-      "raw_asr": "mac os bar item may need accessibility permission for command v.",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_07.wav",
+      "text": "MacOS bar item may need accessibility permission for command v.",
+      "raw_asr": "macOS bar item may need accessibility permission for command v.",
       "reference": "The macOS menu bar item may need accessibility permission for command V.",
-      "wer": 0.25,
-      "raw_asr_wer": 0.25,
+      "wer": 0.16666666666666666,
+      "raw_asr_wer": 0.16666666666666666,
       "cleanup_drift_wer_delta": 0.0,
       "cleanup_semantic_drift": false,
-      "keyword_preservation": 0.0,
+      "keyword_preservation": 1.0,
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 362.132,
-        "cleanup": 0.046,
-        "end_to_end": 362.245
+        "asr": 302.219,
+        "cleanup": 0.02,
+        "end_to_end": 302.876
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_08.wav",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_08.wav",
       "text": "Do not add cloud fallback or transcript telemetry in version 1.",
       "raw_asr": "do not add cloud fallback or transcript telemetry in version 1.",
       "reference": "Do not add cloud fallback or transcript telemetry in version one.",
@@ -154,13 +154,13 @@
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 324.847,
-        "cleanup": 0.048,
-        "end_to_end": 324.959
+        "asr": 299.15,
+        "cleanup": 0.022,
+        "end_to_end": 299.518
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_09.wav",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_09.wav",
       "text": "Keep gemma clean backend available for quality comparisons.",
       "raw_asr": "keep gemma clean backend available for quality comparisons.",
       "reference": "Keep the Gemma cleanup backend available for quality comparisons.",
@@ -172,13 +172,13 @@
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 255.183,
-        "cleanup": 0.052,
-        "end_to_end": 255.302
+        "asr": 241.098,
+        "cleanup": 0.021,
+        "end_to_end": 241.407
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_10.wav",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_10.wav",
       "text": "Open setting file and verify hugging face is preserved exactly.",
       "raw_asr": "open setting file and verify hugging face is preserved exactly.",
       "reference": "Open the settings file and verify Hugging Face is preserved exactly.",
@@ -190,49 +190,49 @@
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 277.418,
-        "cleanup": 0.048,
-        "end_to_end": 277.532
+        "asr": 275.503,
+        "cleanup": 0.021,
+        "end_to_end": 275.838
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_11.wav",
-      "text": "Run the unit test after changing the python trend.",
-      "raw_asr": "run the unit test after changing the python trend.",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_11.wav",
+      "text": "Run the unit test after changing the Python tray.",
+      "raw_asr": "run the unit test after changing the Python tray.",
       "reference": "Run the unit tests after changing the Python tray.",
-      "wer": 0.2222222222222222,
-      "raw_asr_wer": 0.2222222222222222,
+      "wer": 0.1111111111111111,
+      "raw_asr_wer": 0.1111111111111111,
       "cleanup_drift_wer_delta": 0.0,
       "cleanup_semantic_drift": false,
-      "keyword_preservation": 0.0,
+      "keyword_preservation": 1.0,
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 229.967,
-        "cleanup": 0.048,
-        "end_to_end": 230.082
+        "asr": 227.122,
+        "cleanup": 0.017,
+        "end_to_end": 227.524
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_12.wav",
-      "text": "The recent transcript menu should keep the last five seconds.",
-      "raw_asr": "the recent transcript menu should keep the last five seconds.",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_12.wav",
+      "text": "The recent transcripts menu should keep the last five seconds.",
+      "raw_asr": "the recent transcripts menu should keep the last five seconds.",
       "reference": "The recent transcripts submenu should keep the last five snippets.",
-      "wer": 0.3,
-      "raw_asr_wer": 0.3,
+      "wer": 0.2,
+      "raw_asr_wer": 0.2,
       "cleanup_drift_wer_delta": 0.0,
       "cleanup_semantic_drift": false,
-      "keyword_preservation": 0.0,
+      "keyword_preservation": 1.0,
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 244.808,
-        "cleanup": 0.05,
-        "end_to_end": 244.924
+        "asr": 233.784,
+        "cleanup": 0.015,
+        "end_to_end": 234.316
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_13.wav",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_13.wav",
       "text": "Clipboard restoration should wait 500 milliseconds before replacing text.",
       "raw_asr": "clipboard restoration should wait 500 milliseconds before replacing text.",
       "reference": "Clipboard restoration should wait five hundred milliseconds before replacing text.",
@@ -244,103 +244,103 @@
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 279.166,
-        "cleanup": 0.052,
-        "end_to_end": 279.289
+        "asr": 252.214,
+        "cleanup": 0.022,
+        "end_to_end": 252.542
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_14.wav",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_14.wav",
       "text": "The app should hide the secondary status window instead of.",
       "raw_asr": "the app should hide the secondary status window instead of",
       "reference": "The app should hide the secondary status window instead of quitting.",
-      "wer": 0.18181818181818182,
+      "wer": 0.09090909090909091,
       "raw_asr_wer": 0.09090909090909091,
-      "cleanup_drift_wer_delta": 0.09090909090909091,
-      "cleanup_semantic_drift": true,
+      "cleanup_drift_wer_delta": 0.0,
+      "cleanup_semantic_drift": false,
       "keyword_preservation": 1.0,
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 259.482,
-        "cleanup": 0.048,
-        "end_to_end": 259.595
+        "asr": 233.426,
+        "cleanup": 0.019,
+        "end_to_end": 233.769
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_15.wav",
-      "text": "The rockham knightley index for radan 6s.",
-      "raw_asr": "the rockham knightley index for radan 6s.",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_15.wav",
+      "text": "TheRock knightley index for Radeon 6s.",
+      "raw_asr": "TheRock knightley index for Radeon 6s.",
       "reference": "Use the TheRock nightly index for the Radeon eight zero six zero S.",
-      "wer": 0.7692307692307693,
-      "raw_asr_wer": 0.7692307692307693,
+      "wer": 0.6923076923076923,
+      "raw_asr_wer": 0.6923076923076923,
       "cleanup_drift_wer_delta": 0.0,
       "cleanup_semantic_drift": false,
-      "keyword_preservation": 0.0,
+      "keyword_preservation": 1.0,
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 304.505,
-        "cleanup": 0.047,
-        "end_to_end": 304.615
+        "asr": 294.35,
+        "cleanup": 0.014,
+        "end_to_end": 295.064
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_16.wav",
-      "text": "Flash attention triton amd is required for grant nar backend.",
-      "raw_asr": "flash attention triton amd is required for grant nar backend.",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_16.wav",
+      "text": "FlashAttention triton amd is required for grant nar backend.",
+      "raw_asr": "FlashAttention triton amd is required for grant nar backend.",
       "reference": "FlashAttention Triton AMD is required for the Granite NAR backend.",
-      "wer": 0.4,
-      "raw_asr_wer": 0.4,
+      "wer": 0.2,
+      "raw_asr_wer": 0.2,
       "cleanup_drift_wer_delta": 0.0,
       "cleanup_semantic_drift": false,
-      "keyword_preservation": 0.6,
+      "keyword_preservation": 0.8,
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 291.562,
-        "cleanup": 0.05,
-        "end_to_end": 291.678
+        "asr": 275.97,
+        "cleanup": 0.014,
+        "end_to_end": 276.684
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_17.wav",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_17.wav",
       "text": "Debug capture folder should include audio. Wavfile timings. Json.",
       "raw_asr": "debug capture folder should include audio.wavfile timings.json.",
       "reference": "The debug capture folder should include audio dot wav and timings dot json.",
-      "wer": 0.5384615384615384,
-      "raw_asr_wer": 0.6153846153846154,
+      "wer": 0.38461538461538464,
+      "raw_asr_wer": 0.38461538461538464,
       "cleanup_drift_wer_delta": 0.0,
       "cleanup_semantic_drift": false,
       "keyword_preservation": 1.0,
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 326.375,
-        "cleanup": 0.058,
-        "end_to_end": 326.495
+        "asr": 298.67,
+        "cleanup": 0.029,
+        "end_to_end": 299.078
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_18.wav",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_18.wav",
       "text": "Avoid writing llama c++ as llama cpp during cleanup.",
       "raw_asr": "avoid writing llama c++ as llama cpp during cleanup.",
       "reference": "Avoid rewriting llama.cpp as llama.cpp during cleanup.",
-      "wer": 0.7142857142857143,
-      "raw_asr_wer": 0.7142857142857143,
+      "wer": 0.2222222222222222,
+      "raw_asr_wer": 0.2222222222222222,
       "cleanup_drift_wer_delta": 0.0,
       "cleanup_semantic_drift": false,
       "keyword_preservation": 0.0,
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 302.488,
-        "cleanup": 0.048,
-        "end_to_end": 302.602
+        "asr": 283.017,
+        "cleanup": 0.023,
+        "end_to_end": 283.409
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_19.wav",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_19.wav",
       "text": "The service health endpoint should include the active hotkey and paste shortcut.",
       "raw_asr": "the service health endpoint should include the active hotkey and paste shortcut.",
       "reference": "The service health endpoint should include the active hotkey and paste shortcut.",
@@ -352,13 +352,13 @@
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 286.665,
-        "cleanup": 0.05,
-        "end_to_end": 286.78
+        "asr": 278.992,
+        "cleanup": 0.023,
+        "end_to_end": 279.355
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_20.wav",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_20.wav",
       "text": "Do not treat the dock as a primary home for this app.",
       "raw_asr": "do not treat the dock as a primary home for this app.",
       "reference": "Do not treat the Dock as the primary home for this app.",
@@ -370,31 +370,31 @@
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 286.145,
-        "cleanup": 0.049,
-        "end_to_end": 286.257
+        "asr": 269.358,
+        "cleanup": 0.023,
+        "end_to_end": 269.698
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_21.wav",
-      "text": "Use linux panel app indicator and mac os menu bar status item.",
-      "raw_asr": "use linux panel app indicator and mac os menu bar status item.",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_21.wav",
+      "text": "Use linux panel app indicator and macOS menu bar status item.",
+      "raw_asr": "use linux panel app indicator and macOS menu bar status item.",
       "reference": "Use a Linux panel app indicator and a macOS menu bar status item.",
-      "wer": 0.23076923076923078,
-      "raw_asr_wer": 0.23076923076923078,
+      "wer": 0.15384615384615385,
+      "raw_asr_wer": 0.15384615384615385,
       "cleanup_drift_wer_delta": 0.0,
       "cleanup_semantic_drift": false,
-      "keyword_preservation": 0.5,
+      "keyword_preservation": 1.0,
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 294.029,
-        "cleanup": 0.05,
-        "end_to_end": 294.143
+        "asr": 270.978,
+        "cleanup": 0.016,
+        "end_to_end": 271.316
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_22.wav",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_22.wav",
       "text": "The eval manifest includes warm-up cases that are excluded from.",
       "raw_asr": "the eval manifest includes warm-up cases that are excluded from.",
       "reference": "The eval manifest includes warmup cases that are excluded from metrics.",
@@ -406,31 +406,31 @@
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 270.061,
-        "cleanup": 0.05,
-        "end_to_end": 270.179
+        "asr": 260.819,
+        "cleanup": 0.021,
+        "end_to_end": 261.178
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_23.wav",
-      "text": "Keyword preservation should improve recognition of clan, mlxx and transformers.",
-      "raw_asr": "keyword preservation should improve recognition of clan, mlxx and transformers.",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_23.wav",
+      "text": "Keyword preservation should improve recognition of Qwen, mlxx and transformers.",
+      "raw_asr": "keyword preservation should improve recognition of Qwen, mlxx and transformers.",
       "reference": "Keyword preservation should improve recognition of Qwen, MLX, and Transformers.",
-      "wer": 0.2,
-      "raw_asr_wer": 0.2,
+      "wer": 0.1,
+      "raw_asr_wer": 0.1,
       "cleanup_drift_wer_delta": 0.0,
       "cleanup_semantic_drift": false,
-      "keyword_preservation": 0.6666666666666666,
+      "keyword_preservation": 1.0,
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 402.632,
-        "cleanup": 0.052,
-        "end_to_end": 402.747
+        "asr": 360.671,
+        "cleanup": 0.018,
+        "end_to_end": 361.387
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_24.wav",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_24.wav",
       "text": "Stop recording when a global shortcut is released.",
       "raw_asr": "stop recording when a global shortcut is released.",
       "reference": "Stop recording when the global shortcut is released.",
@@ -442,13 +442,13 @@
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 272.152,
-        "cleanup": 0.049,
-        "end_to_end": 272.269
+        "asr": 262.36,
+        "cleanup": 0.019,
+        "end_to_end": 262.692
       }
     },
     {
-      "audio_path": "eval/real-usage/../../../../granite-real-eval/case_25.wav",
+      "audio_path": "eval/real-usage/../../../../transclip-real-eval/case_25.wav",
       "text": "Leave transcript on the clipboard when paste simulation fails.",
       "raw_asr": "leave transcript on the clipboard when paste simulation fails.",
       "reference": "Leave the transcript on the clipboard when paste simulation fails.",
@@ -460,9 +460,9 @@
       "paste_attempted": null,
       "paste_success": null,
       "timings_ms": {
-        "asr": 286.896,
-        "cleanup": 0.051,
-        "end_to_end": 287.017
+        "asr": 277.142,
+        "cleanup": 0.034,
+        "end_to_end": 277.702
       }
     }
   ]

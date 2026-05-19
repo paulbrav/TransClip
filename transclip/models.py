@@ -149,7 +149,7 @@ def prefetch_model(model_id: str, settings: Settings) -> Path:
         try:
             from transformers import AutoFeatureExtractor, AutoModel
         except ImportError as exc:
-            raise RuntimeError("transformers is required. Install granite-speach[models].") from exc
+            raise RuntimeError("transformers is required. Install transclip[models].") from exc
         AutoModel.from_pretrained(
             model.model_id,
             trust_remote_code=True,
@@ -166,7 +166,7 @@ def prefetch_model(model_id: str, settings: Settings) -> Path:
         try:
             from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
         except ImportError as exc:
-            raise RuntimeError("transformers is required. Install granite-speach[models].") from exc
+            raise RuntimeError("transformers is required. Install transclip[models].") from exc
         AutoModelForSpeechSeq2Seq.from_pretrained(
             model.model_id,
             local_files_only=False,

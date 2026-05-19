@@ -3,8 +3,8 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from granite_speach.client import InferenceClient
-from granite_speach.settings import Settings
+from transclip.client import InferenceClient
+from transclip.settings import Settings
 
 
 class Handler(BaseHTTPRequestHandler):

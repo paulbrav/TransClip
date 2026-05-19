@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from granite_speach.eval_harness import check_results
+from transclip.eval_harness import check_results
 
 
 def main(argv: list[str] | None = None) -> int:

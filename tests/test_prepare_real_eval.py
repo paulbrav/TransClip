@@ -133,7 +133,7 @@ class PrepareRealEvalTests(unittest.TestCase):
 
         sheet = record_real_eval_session.prompt_sheet(selected)
 
-        self.assertIn("# Granite Speach V1 Real-Usage Eval Prompts", sheet)
+        self.assertIn("# TransClip V1 Real-Usage Eval Prompts", sheet)
         self.assertIn("## 1. case_01", sheet)
         self.assertIn("Please check the Python tray icon", sheet)
         self.assertIn("Keywords: Python tray", sheet)

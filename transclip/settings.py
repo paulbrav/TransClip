@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, get_type_hints
 
 from .platform_runtime import default_platform_runtime, user_config_dir
+from .product import CONFIG_DIR_NAME
 
 DEFAULT_HOTKEY_LINUX = "<Super><Shift>XF86TouchpadOff"
 
@@ -45,7 +46,7 @@ class Settings:
 
 
 def default_config_dir() -> Path:
-    return user_config_dir("granite-speach")
+    return user_config_dir(CONFIG_DIR_NAME)
 
 
 def settings_path(config_dir: Path | None = None) -> Path:

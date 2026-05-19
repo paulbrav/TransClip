@@ -2,8 +2,8 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
-from granite_speach.recording_ops import toggle_recording
-from granite_speach.settings import Settings
+from transclip.recording_ops import toggle_recording
+from transclip.settings import Settings
 
 
 class FakeClient:
@@ -31,7 +31,7 @@ class FakePasteResult:
 
 class RecordingOpsTests(unittest.TestCase):
     def setUp(self):
-        self._log_patch = patch("granite_speach.recording_ops.append_toggle_log")
+        self._log_patch = patch("transclip.recording_ops.append_toggle_log")
         self._log_patch.start()
 
     def tearDown(self):
@@ -44,7 +44,7 @@ class RecordingOpsTests(unittest.TestCase):
         )
 
         self.assertFalse(outcome.ok)
-        self.assertEqual(outcome.notification_message, "Granite service is not running.")
+        self.assertEqual(outcome.notification_message, "TransClip service is not running.")
 
     def test_http_rejection_is_renderable_error(self):
         outcome = toggle_recording(
@@ -63,7 +63,7 @@ class RecordingOpsTests(unittest.TestCase):
         self.assertEqual(discarded.latest_transcript, "")
 
     def test_stopped_paste_failure_carries_transcript_and_message(self):
-        with patch("granite_speach.recording_ops.paste_transcript", return_value=FakePasteResult()):
+        with patch("transclip.recording_ops.paste_transcript", return_value=FakePasteResult()):
             outcome = toggle_recording(
                 Settings(),
                 paste=True,

@@ -16,7 +16,7 @@ Run with the measured Linux `gfx1151` runtime:
 
 ```bash
 TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1 \
-.venv-gfx1151/bin/python -m granite_speach.cli eval \
+.venv-gfx1151/bin/python -m transclip.cli eval \
   eval/v1-synthetic/manifest.json \
   --output eval/v1-synthetic/results.json
 ```

@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 CHATGPT_URL = "https://chatgpt.com/"
-DEFAULT_PROFILE = Path("~/.cache/granite-speach-chatgpt-ui").expanduser()
+DEFAULT_PROFILE = Path("~/.cache/transclip-chatgpt-ui").expanduser()
 
 
 def main(argv: list[str] | None = None) -> int:

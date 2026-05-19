@@ -11,8 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from granite_speach.doctor import Check, run_checks  # noqa: E402
-from granite_speach.settings import load_settings  # noqa: E402
+from transclip.doctor import Check, run_checks  # noqa: E402
+from transclip.settings import load_settings  # noqa: E402
 
 from check_eval_results import check_results  # noqa: E402
 

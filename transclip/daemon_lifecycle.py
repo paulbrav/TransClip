@@ -13,12 +13,10 @@ from .gnome_shortcut import (
     install_shortcut,
 )
 from .platform_runtime import PlatformRuntime, get_runtime, user_log_dir
+from .product import DISPLAY_NAME, IMPORT_PACKAGE, LAUNCHD_LABEL, LOG_DIR_NAME, SERVICE_NAME
 from .settings import Settings, load_settings, write_default_settings
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
-
-SERVICE_NAME = "granite-speach.service"
-LAUNCHD_LABEL = "com.paulbrav.granite-speach"
 
 
 @dataclass(slots=True)
@@ -32,7 +30,7 @@ def repo_root() -> Path:
 
 
 def logs_dir(runtime: PlatformRuntime | None = None) -> Path:
-    return user_log_dir("granite-speach", runtime)
+    return user_log_dir(LOG_DIR_NAME, runtime)
 
 
 def toggle_log_path(runtime: PlatformRuntime | None = None) -> Path:
@@ -48,7 +46,7 @@ def launch_agent_path(runtime: PlatformRuntime | None = None) -> Path:
 
 
 def service_command(settings_path: Path | None = None) -> list[str]:
-    command = [sys.executable, "-m", "granite_speach.cli"]
+    command = [sys.executable, "-m", f"{IMPORT_PACKAGE}.cli"]
     if settings_path:
         command.extend(["--settings", str(settings_path.expanduser().resolve())])
     command.append("serve")
@@ -60,7 +58,7 @@ def build_systemd_unit(settings_path: Path | None = None) -> str:
     return "\n".join(
         [
             "[Unit]",
-            "Description=Granite Speach dictation service",
+            f"Description={DISPLAY_NAME} dictation service",
             "After=graphical-session.target",
             "",
             "[Service]",

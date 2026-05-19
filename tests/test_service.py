@@ -4,18 +4,18 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from granite_speach.cleanup import FaithfulRuleCleanupBackend
-from granite_speach.history import read_history
-from granite_speach.service import InferenceEngine
-from granite_speach.settings import Settings
 from tests.service_helpers import FakeASR, FakeRecorder, http_json, serve_test_engine, stop_server
+from transclip.cleanup import FaithfulRuleCleanupBackend
+from transclip.history import read_history
+from transclip.service import InferenceEngine
+from transclip.settings import Settings
 
 
 class ServiceTests(unittest.TestCase):
     def setUp(self):
         self._history_tmp = tempfile.TemporaryDirectory()
         self._history_patch = patch(
-            "granite_speach.history.history_path",
+            "transclip.history.history_path",
             return_value=Path(self._history_tmp.name) / "history.jsonl",
         )
         self._history_patch.start()
@@ -111,7 +111,7 @@ class ServiceTests(unittest.TestCase):
                 asr_backend=FakeASR(),
                 cleanup_backend=FaithfulRuleCleanupBackend(),
             )
-            with patch("granite_speach.service.append_transcript_history", side_effect=OSError("history full")):
+            with patch("transclip.service.append_transcript_history", side_effect=OSError("history full")):
                 result = engine.transcribe(wav, record_history=True)
 
             self.assertEqual(result["text"], "Hello from ROCm.")
@@ -128,7 +128,7 @@ class ServiceTests(unittest.TestCase):
         server, thread, host, port = serve_test_engine(settings, engine)
         base_url = f"http://{host}:{port}"
         try:
-            with patch("granite_speach.service.AudioRecorder", FakeRecorder):
+            with patch("transclip.service.AudioRecorder", FakeRecorder):
                 started = http_json("POST", f"{base_url}/record/start", {})
                 health = http_json("GET", f"{base_url}/health")
                 stopped = http_json("POST", f"{base_url}/record/stop", {"cleanup": True})
@@ -151,7 +151,7 @@ class ServiceTests(unittest.TestCase):
         server, thread, host, port = serve_test_engine(settings, engine)
         base_url = f"http://{host}:{port}"
         try:
-            with patch("granite_speach.service.AudioRecorder", FakeRecorder):
+            with patch("transclip.service.AudioRecorder", FakeRecorder):
                 http_json("POST", f"{base_url}/record/start", {})
                 stopped = http_json("POST", f"{base_url}/record/stop", {"discard": True})
 
@@ -176,7 +176,7 @@ class ServiceTests(unittest.TestCase):
         server, thread, host, port = serve_test_engine(settings, engine)
         base_url = f"http://{host}:{port}"
         try:
-            with patch("granite_speach.service.AudioRecorder", FakeRecorder):
+            with patch("transclip.service.AudioRecorder", FakeRecorder):
                 started = http_json("POST", f"{base_url}/record/toggle", {})
                 stopped = http_json("POST", f"{base_url}/record/toggle", {"cleanup": True})
 
@@ -205,7 +205,7 @@ class ServiceTests(unittest.TestCase):
         server, thread, host, port = serve_test_engine(settings, engine)
         base_url = f"http://{host}:{port}"
         try:
-            with patch("granite_speach.service.AudioRecorder", FakeRecorder):
+            with patch("transclip.service.AudioRecorder", FakeRecorder):
                 http_json("POST", f"{base_url}/record/toggle", {})
                 stopped = http_json("POST", f"{base_url}/record/toggle", {})
 
@@ -255,7 +255,7 @@ class ServiceTests(unittest.TestCase):
             asr_backend=FakeASR(),
             cleanup_backend=FaithfulRuleCleanupBackend(),
         )
-        with patch("granite_speach.service.AudioRecorder", FakeRecorder):
+        with patch("transclip.service.AudioRecorder", FakeRecorder):
             started = engine.toggle_recording()
             ignored = engine.toggle_recording()
 

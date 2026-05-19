@@ -2,8 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from granite_speach.history import append_history_event, append_transcript_history, read_history
-from granite_speach.settings import Settings
+from transclip.history import append_history_event, append_transcript_history, read_history
+from transclip.settings import Settings
 
 
 class HistoryTests(unittest.TestCase):

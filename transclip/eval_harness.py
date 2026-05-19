@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from statistics import mean
@@ -192,8 +193,8 @@ def optional_bool(value: Any) -> bool | None:
 
 
 def word_error_rate(reference: str, hypothesis: str) -> float:
-    ref = reference.lower().split()
-    hyp = hypothesis.lower().split()
+    ref = word_tokens(reference)
+    hyp = word_tokens(hypothesis)
     if not ref:
         return 0.0 if not hyp else 1.0
     previous = list(range(len(hyp) + 1))
@@ -208,6 +209,10 @@ def word_error_rate(reference: str, hypothesis: str) -> float:
             )
         previous = current
     return previous[-1] / len(ref)
+
+
+def word_tokens(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", text.lower())
 
 
 def cleanup_drift_delta(raw_asr_wer: float | None, cleaned_wer: float | None) -> float | None:

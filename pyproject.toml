@@ -1,7 +1,7 @@
 [project]
-name = "granite-speach"
+name = "transclip"
 version = "0.1.0"
-description = "Local-only push-to-talk dictation with Granite ASR-oriented harnesses."
+description = "Local-only push-to-talk dictation with local ASR-oriented harnesses."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []
@@ -23,7 +23,7 @@ dev = [
 chatgpt-ui = ["playwright>=1.52"]
 
 [project.scripts]
-granite-speach = "granite_speach.cli:main"
+transclip = "transclip.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -31,7 +31,7 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-src = ["granite_speach", "scripts", "tests"]
+src = ["transclip", "scripts", "tests"]
 
 [tool.ruff.lint]
 select = ["B", "C4", "E", "F", "I", "RUF", "SIM", "UP"]
@@ -54,11 +54,11 @@ allowed-unresolved-imports = [
 ]
 
 [tool.ty.src]
-include = ["granite_speach"]
+include = ["transclip"]
 
 [tool.coverage.run]
 branch = true
-source = ["granite_speach", "scripts"]
+source = ["transclip", "scripts"]
 
 [tool.coverage.report]
 show_missing = true

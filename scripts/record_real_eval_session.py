@@ -157,8 +157,8 @@ def record_manual_clip(
     recorder: Recorder | None = None,
 ) -> Path:
     if recorder is None:
-        from granite_speach.audio import AudioRecorder
-        from granite_speach.settings import load_settings
+        from transclip.audio import AudioRecorder
+        from transclip.settings import load_settings
 
         recorder = AudioRecorder(load_settings(settings_path))
     recorder.start()
@@ -171,7 +171,7 @@ def record_manual_clip(
 
 def prompt_sheet(cases: list[tuple[str, str, list[str]]]) -> str:
     lines = [
-        "# Granite Speach V1 Real-Usage Eval Prompts",
+        "# TransClip V1 Real-Usage Eval Prompts",
         "",
         "Read each prompt aloud when recording the matching case.",
         "",

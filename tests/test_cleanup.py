@@ -1,6 +1,6 @@
 import unittest
 
-from granite_speach.cleanup import (
+from transclip.cleanup import (
     FaithfulCleanupPolicy,
     FaithfulRuleCleanupBackend,
     GemmaTransformersCleanupBackend,
@@ -8,7 +8,7 @@ from granite_speach.cleanup import (
     conservative_cleanup,
     faithful_cleanup_messages,
 )
-from granite_speach.settings import Settings
+from transclip.settings import Settings
 
 
 class CleanupTests(unittest.TestCase):

@@ -1,4 +1,4 @@
-# Granite Speach Context
+# TransClip Context
 
 This file records current project vocabulary used by architecture plans and code
 reviews. It describes the existing product behavior and should not be treated as
@@ -6,7 +6,7 @@ a list of promised module names.
 
 ## Domain Terms
 
-**Dictation session**: The lifecycle that starts when Granite Speach begins
+**Dictation session**: The lifecycle that starts when TransClip begins
 recording microphone audio and ends when the recording is stopped, discarded, or
 transcribed. It includes timing rules such as the toggle cooldown and minimum
 recording duration.
@@ -16,8 +16,8 @@ shortcut, tray, and CLI. It asks the local service to start or stop a dictation
 session, then may copy and paste the transcript and report the outcome to the
 caller.
 
-**Platform runtime**: The operating-system and desktop-session facts Granite
-Speach relies on, including macOS versus Linux behavior, Wayland versus X11,
+**Platform runtime**: The operating-system and desktop-session facts TransClip
+relies on, including macOS versus Linux behavior, Wayland versus X11,
 environment variables, user paths, executable discovery, and subprocess command
 execution.
 

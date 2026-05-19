@@ -4,10 +4,10 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from urllib import request
 
-from granite_speach.asr import TranscriptionResult
-from granite_speach.cleanup import FaithfulRuleCleanupBackend
-from granite_speach.service import InferenceEngine, create_server
-from granite_speach.settings import Settings
+from transclip.asr import TranscriptionResult
+from transclip.cleanup import FaithfulRuleCleanupBackend
+from transclip.service import InferenceEngine, create_server
+from transclip.settings import Settings
 
 
 class FakeASR:

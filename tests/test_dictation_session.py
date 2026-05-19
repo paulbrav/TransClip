@@ -1,9 +1,9 @@
 import unittest
 from pathlib import Path
 
-from granite_speach.dictation_session import DictationSession
-from granite_speach.settings import Settings
 from tests.service_helpers import FakeRecorder
+from transclip.dictation_session import DictationSession
+from transclip.settings import Settings
 
 
 class StepClock:

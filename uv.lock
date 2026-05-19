@@ -307,60 +307,6 @@ wheels = [
 ]
 
 [[package]]
-name = "granite-speach"
-version = "0.1.0"
-source = { editable = "." }
-
-[package.optional-dependencies]
-audio = [
-    { name = "numpy" },
-    { name = "sounddevice" },
-]
-chatgpt-ui = [
-    { name = "playwright" },
-]
-dev = [
-    { name = "coverage" },
-    { name = "pytest" },
-    { name = "ruff" },
-    { name = "ty" },
-]
-llama = [
-    { name = "llama-cpp-python" },
-]
-models = [
-    { name = "accelerate" },
-    { name = "pillow" },
-    { name = "soundfile" },
-    { name = "torch" },
-    { name = "torchaudio" },
-    { name = "torchcodec" },
-    { name = "torchvision" },
-    { name = "transformers" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "accelerate", marker = "extra == 'models'", specifier = ">=1.0" },
-    { name = "coverage", extras = ["toml"], marker = "extra == 'dev'", specifier = ">=7.10" },
-    { name = "llama-cpp-python", marker = "extra == 'llama'", specifier = ">=0.3" },
-    { name = "numpy", marker = "extra == 'audio'", specifier = ">=1.26" },
-    { name = "pillow", marker = "extra == 'models'", specifier = ">=10" },
-    { name = "playwright", marker = "extra == 'chatgpt-ui'", specifier = ">=1.52" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.11" },
-    { name = "sounddevice", marker = "extra == 'audio'", specifier = ">=0.5" },
-    { name = "soundfile", marker = "extra == 'models'", specifier = ">=0.12" },
-    { name = "torch", marker = "extra == 'models'", specifier = ">=2.5" },
-    { name = "torchaudio", marker = "extra == 'models'", specifier = ">=2.5" },
-    { name = "torchcodec", marker = "extra == 'models'", specifier = ">=0.5" },
-    { name = "torchvision", marker = "extra == 'models'", specifier = ">=0.20" },
-    { name = "transformers", marker = "extra == 'models'", specifier = ">=4.52.1" },
-    { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.1a19" },
-]
-provides-extras = ["audio", "models", "llama", "dev", "chatgpt-ui"]
-
-[[package]]
 name = "greenlet"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1451,6 +1397,60 @@ sdist = { url = "https://files.pythonhosted.org/packages/09/a9/6ba95a270c6f1fbcd
 wheels = [
     { url = "https://files.pythonhosted.org/packages/16/e1/3079a9ff9b8e11b846c6ac5c8b5bfb7ff225eee721825310c91b3b50304f/tqdm-4.67.3-py3-none-any.whl", hash = "sha256:ee1e4c0e59148062281c49d80b25b67771a127c85fc9676d3be5f243206826bf", size = 78374, upload-time = "2026-02-03T17:35:50.982Z" },
 ]
+
+[[package]]
+name = "transclip"
+version = "0.1.0"
+source = { editable = "." }
+
+[package.optional-dependencies]
+audio = [
+    { name = "numpy" },
+    { name = "sounddevice" },
+]
+chatgpt-ui = [
+    { name = "playwright" },
+]
+dev = [
+    { name = "coverage" },
+    { name = "pytest" },
+    { name = "ruff" },
+    { name = "ty" },
+]
+llama = [
+    { name = "llama-cpp-python" },
+]
+models = [
+    { name = "accelerate" },
+    { name = "pillow" },
+    { name = "soundfile" },
+    { name = "torch" },
+    { name = "torchaudio" },
+    { name = "torchcodec" },
+    { name = "torchvision" },
+    { name = "transformers" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "accelerate", marker = "extra == 'models'", specifier = ">=1.0" },
+    { name = "coverage", extras = ["toml"], marker = "extra == 'dev'", specifier = ">=7.10" },
+    { name = "llama-cpp-python", marker = "extra == 'llama'", specifier = ">=0.3" },
+    { name = "numpy", marker = "extra == 'audio'", specifier = ">=1.26" },
+    { name = "pillow", marker = "extra == 'models'", specifier = ">=10" },
+    { name = "playwright", marker = "extra == 'chatgpt-ui'", specifier = ">=1.52" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.11" },
+    { name = "sounddevice", marker = "extra == 'audio'", specifier = ">=0.5" },
+    { name = "soundfile", marker = "extra == 'models'", specifier = ">=0.12" },
+    { name = "torch", marker = "extra == 'models'", specifier = ">=2.5" },
+    { name = "torchaudio", marker = "extra == 'models'", specifier = ">=2.5" },
+    { name = "torchcodec", marker = "extra == 'models'", specifier = ">=0.5" },
+    { name = "torchvision", marker = "extra == 'models'", specifier = ">=0.20" },
+    { name = "transformers", marker = "extra == 'models'", specifier = ">=4.52.1" },
+    { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.1a19" },
+]
+provides-extras = ["audio", "models", "llama", "dev", "chatgpt-ui"]
 
 [[package]]
 name = "transformers"

@@ -84,14 +84,14 @@ def check_service_manager(
         return Check(
             "service_manager",
             installed,
-            "systemd user unit installed" if installed else "missing systemd user unit; run: granite-speach install",
+            "systemd user unit installed" if installed else "missing systemd user unit; run: transclip install",
         )
     if system == "Darwin":
         installed = bool(state["installed"])
         return Check(
             "service_manager",
             installed,
-            "LaunchAgent installed" if installed else "missing LaunchAgent; run: granite-speach install",
+            "LaunchAgent installed" if installed else "missing LaunchAgent; run: transclip install",
         )
     return Check("service_manager", True, f"not checked on {system}")
 
@@ -203,7 +203,7 @@ def check_model_cache(settings: Settings) -> Check:
         False,
         "missing local model artifacts: "
         + ", ".join(missing)
-        + f"; run: granite-speach models prefetch --model {settings.asr_model}",
+        + f"; run: transclip models prefetch --model {settings.asr_model}",
     )
 
 
@@ -225,7 +225,7 @@ def check_torch_runtime(settings: Settings) -> Check:
     try:
         import torch
     except ImportError:
-        return Check("torch_runtime", False, "torch is not installed; install granite-speach[models]")
+        return Check("torch_runtime", False, "torch is not installed; install transclip[models]")
     requested = settings.asr_device.lower()
     cuda_usable = torch_cuda_usable()
     mps_usable = torch_mps_available()

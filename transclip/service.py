@@ -14,6 +14,7 @@ from .cleanup import CleanupBackend, build_cleanup_backend
 from .debug_capture import DebugCapture
 from .dictation_session import DictationSession
 from .history import append_transcript_history
+from .keyword_restore import restore_keywords
 from .service_routes import dispatch_get, dispatch_post
 from .settings import Settings, load_settings
 
@@ -103,11 +104,12 @@ class InferenceEngine:
         start = perf_counter()
         asr_result = self.asr_backend.transcribe(wav_path, keywords=keywords)
         should_cleanup = self.settings.cleanup_enabled if cleanup is None else cleanup
-        cleaned = asr_result.text
+        raw_asr = restore_keywords(asr_result.text, keywords or [])
+        cleaned = raw_asr
         cleanup_result = None
         timings = dict(asr_result.timings_ms)
         if should_cleanup:
-            cleanup_result = self.cleanup_backend.cleanup(asr_result.text)
+            cleanup_result = self.cleanup_backend.cleanup(raw_asr)
             cleaned = cleanup_result.text
             timings.update(cleanup_result.timings_ms)
         timings["end_to_end"] = round((perf_counter() - start) * 1000, 3)
@@ -125,7 +127,7 @@ class InferenceEngine:
         )
         result = {
             "text": cleaned,
-            "raw_asr": asr_result.text,
+            "raw_asr": raw_asr,
             "cleanup": asdict(cleanup_result) if cleanup_result else None,
             "timings_ms": timings,
             "debug_capture_dir": str(capture_dir) if capture_dir else None,
@@ -214,7 +216,7 @@ def create_server(
 def run_server(settings: Settings | None = None) -> None:
     settings = settings or load_settings()
     server = create_server(settings)
-    print(f"granite-speach service listening on http://{settings.host}:{settings.port}", flush=True)
+    print(f"transclip service listening on http://{settings.host}:{settings.port}", flush=True)
     server.serve_forever()
 
 

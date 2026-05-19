@@ -3,7 +3,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from granite_speach.daemon import (
+from tests.service_helpers import FakeRuntime
+from transclip.daemon import (
     SERVICE_NAME,
     append_toggle_log,
     build_systemd_unit,
@@ -12,16 +13,15 @@ from granite_speach.daemon import (
     last_toggle_log_event,
     toggle_log_path,
 )
-from granite_speach.settings import Settings
-from tests.service_helpers import FakeRuntime
+from transclip.settings import Settings
 
 
 class DaemonTests(unittest.TestCase):
     def test_systemd_unit_uses_current_python_and_cli_serve(self):
         unit = build_systemd_unit(Path("/tmp/settings.toml"))
 
-        self.assertIn("Description=Granite Speach dictation service", unit)
-        self.assertIn("-m granite_speach.cli --settings /tmp/settings.toml serve", unit)
+        self.assertIn("Description=TransClip dictation service", unit)
+        self.assertIn("-m transclip.cli --settings /tmp/settings.toml serve", unit)
         self.assertIn("Restart=on-failure", unit)
         self.assertIn("FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE", unit)
 
@@ -37,7 +37,7 @@ class DaemonTests(unittest.TestCase):
             (),
             {
                 "binding": "<Super><Shift>XF86TouchpadOff",
-                "command": "/bin/sh -lc granite-speach",
+                "command": "/bin/sh -lc transclip",
             },
         )()
 
@@ -45,7 +45,7 @@ class DaemonTests(unittest.TestCase):
             home = Path(tmp)
             with (
                 patch(
-                    "granite_speach.daemon_lifecycle.install_shortcut",
+                    "transclip.daemon_lifecycle.install_shortcut",
                     return_value=shortcut,
                 ) as install_shortcut,
             ):
@@ -54,7 +54,7 @@ class DaemonTests(unittest.TestCase):
 
             unit_path = home / ".config" / "systemd" / "user" / SERVICE_NAME
             self.assertTrue(unit_path.exists())
-            self.assertIn("granite_speach.cli serve", unit_path.read_text(encoding="utf-8"))
+            self.assertIn("transclip.cli serve", unit_path.read_text(encoding="utf-8"))
             self.assertIn(["systemctl", "--user", "daemon-reload"], calls)
             self.assertIn(["systemctl", "--user", "enable", "--now", SERVICE_NAME], calls)
             self.assertEqual(install_shortcut.call_args.kwargs["binding"], "<Control><Alt>space")
@@ -81,7 +81,7 @@ class DaemonTests(unittest.TestCase):
             runtime = FakeRuntime(system="Linux", home=Path(tmp))
             self.assertEqual(
                 toggle_log_path(runtime),
-                Path(tmp) / ".cache" / "granite-speach" / "toggle-record.log",
+                Path(tmp) / ".cache" / "transclip" / "toggle-record.log",
             )
 
     def test_paste_status_reports_probe_failure(self):
@@ -96,8 +96,8 @@ class DaemonTests(unittest.TestCase):
             {"ok": False, "backend": None, "detail": "No supported clipboard reader/writer found"},
         )()
         with (
-            patch("granite_speach.daemon.paste_capability", return_value=capability),
-            patch("granite_speach.daemon.clipboard_capability", return_value=clipboard_capability),
+            patch("transclip.daemon.paste_capability", return_value=capability),
+            patch("transclip.daemon.clipboard_capability", return_value=clipboard_capability),
         ):
             status = collect_status(Settings(port=0), runtime=FakeRuntime(system="Other"))
 

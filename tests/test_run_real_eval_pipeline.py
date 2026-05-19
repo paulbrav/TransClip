@@ -97,7 +97,7 @@ class RunRealEvalPipelineTests(unittest.TestCase):
                 )
 
             self.assertEqual(rc, 0)
-            self.assertEqual(commands[0][:3], [run_real_eval_pipeline.sys.executable, "-m", "granite_speach.cli"])
+            self.assertEqual(commands[0][:3], [run_real_eval_pipeline.sys.executable, "-m", "transclip.cli"])
             written_manifest = json.loads(manifest.read_text(encoding="utf-8"))
             self.assertEqual(len(written_manifest["cases"]), 20)
             self.assertEqual(len(written_manifest["warmup_cases"]), 1)

@@ -4,7 +4,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from granite_speach.doctor import (
+from tests.service_helpers import FakeRuntime
+from transclip.doctor import (
     Check,
     check_asr_runtime,
     check_config_files,
@@ -15,10 +16,9 @@ from granite_speach.doctor import (
     checks_as_json,
     checks_as_text,
 )
-from granite_speach.gnome_shortcut import GnomeShortcutStatus
-from granite_speach.models import hf_cache_dir
-from granite_speach.settings import Settings
-from tests.service_helpers import FakeRuntime
+from transclip.gnome_shortcut import GnomeShortcutStatus
+from transclip.models import hf_cache_dir
+from transclip.settings import Settings
 
 
 class DoctorTests(unittest.TestCase):
@@ -120,10 +120,10 @@ class DoctorTests(unittest.TestCase):
     def test_gnome_hotkey_check_reports_installed_shortcut(self):
         status = GnomeShortcutStatus(
             installed=True,
-            path="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/granite-speach-toggle/",
-            name="Granite Speach Toggle",
+            path="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/transclip-toggle/",
+            name="TransClip Toggle",
             binding="<Super><Shift>XF86TouchpadOff",
-            command="/usr/bin/python -m granite_speach.cli toggle-record --paste",
+            command="/usr/bin/python -m transclip.cli toggle-record --paste",
             command_exists=True,
         )
 
@@ -132,7 +132,7 @@ class DoctorTests(unittest.TestCase):
             available={"gsettings"},
         )
         with (
-            patch("granite_speach.gnome_shortcut.get_gnome_shortcut_status", return_value=status),
+            patch("transclip.gnome_shortcut.get_gnome_shortcut_status", return_value=status),
         ):
             check = check_hotkey_readiness(Settings(), runtime)
 
@@ -144,10 +144,10 @@ class DoctorTests(unittest.TestCase):
     def test_gnome_hotkey_check_uses_configured_binding(self):
         status = GnomeShortcutStatus(
             installed=True,
-            path="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/granite-speach-toggle/",
-            name="Granite Speach Toggle",
+            path="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/transclip-toggle/",
+            name="TransClip Toggle",
             binding="<Control><Alt>space",
-            command="/usr/bin/python -m granite_speach.cli toggle-record --paste",
+            command="/usr/bin/python -m transclip.cli toggle-record --paste",
             command_exists=True,
         )
 
@@ -156,7 +156,7 @@ class DoctorTests(unittest.TestCase):
             available={"gsettings"},
         )
         with (
-            patch("granite_speach.gnome_shortcut.get_gnome_shortcut_status", return_value=status),
+            patch("transclip.gnome_shortcut.get_gnome_shortcut_status", return_value=status),
         ):
             check = check_hotkey_readiness(Settings(hotkey_linux="<Control><Alt>space"), runtime)
 
@@ -171,12 +171,12 @@ class DoctorTests(unittest.TestCase):
             available={"gsettings"},
         )
         with (
-            patch("granite_speach.gnome_shortcut.get_gnome_shortcut_status", return_value=status),
+            patch("transclip.gnome_shortcut.get_gnome_shortcut_status", return_value=status),
         ):
             check = check_hotkey_readiness(Settings(), runtime)
 
         self.assertFalse(check.ok)
-        self.assertIn("granite-speach install-gnome-shortcut", check.detail)
+        self.assertIn("transclip install-gnome-shortcut", check.detail)
 
     def test_microphone_check_uses_arecord_devices(self):
         output = """**** List of CAPTURE Hardware Devices ****

@@ -6,7 +6,7 @@ Scope: deepen the major shallow Modules found in the dictation, platform runtime
 
 ## Context
 
-Granite Speach is a local-only toggle-to-talk dictation app. The main runtime path is:
+TransClip is a local-only toggle-to-talk dictation app. The main runtime path is:
 
 ```text
 shortcut -> toggle record -> Python HTTP transport -> dictation runtime -> clipboard -> paste
@@ -58,22 +58,22 @@ There is no project-local `LANGUAGE.md`, `CONTEXT.md`, or ADR directory at the t
 
 ## Critical Files
 
-- `granite_speach/service.py`
-- `granite_speach/service_routes.py`
-- `granite_speach/client.py`
-- `granite_speach/recording_ops.py`
-- `granite_speach/cli_commands.py`
-- `granite_speach/tray.py`
-- `granite_speach/paste.py`
-- `granite_speach/platform_capabilities.py`
-- `granite_speach/daemon.py`
-- `granite_speach/daemon_lifecycle.py`
-- `granite_speach/doctor.py`
-- `granite_speach/gnome_shortcut.py`
-- `granite_speach/asr.py`
-- `granite_speach/cleanup.py`
-- `granite_speach/models.py`
-- `granite_speach/eval_harness.py`
+- `transclip/service.py`
+- `transclip/service_routes.py`
+- `transclip/client.py`
+- `transclip/recording_ops.py`
+- `transclip/cli_commands.py`
+- `transclip/tray.py`
+- `transclip/paste.py`
+- `transclip/platform_capabilities.py`
+- `transclip/daemon.py`
+- `transclip/daemon_lifecycle.py`
+- `transclip/doctor.py`
+- `transclip/gnome_shortcut.py`
+- `transclip/asr.py`
+- `transclip/cleanup.py`
+- `transclip/models.py`
+- `transclip/eval_harness.py`
 - `scripts/check_eval_results.py`
 - `scripts/prepare_real_eval.py`
 - `scripts/run_real_eval_pipeline.py`
@@ -124,7 +124,7 @@ Target shape:
 
 Implementation steps:
 
-1. Inventory all direct uses of `platform.system`, `os.environ`, `Path.home`, `shutil.which`, and subprocess command execution in `granite_speach/`.
+1. Inventory all direct uses of `platform.system`, `os.environ`, `Path.home`, `shutil.which`, and subprocess command execution in `transclip/`.
 2. Move low-level platform fact gathering behind one Interface.
 3. Update `platform_capabilities.py` to consume that Interface instead of taking ad hoc `which` and `environ` values everywhere.
 4. Update `daemon_lifecycle.py`, `doctor.py`, and `notify.py` to use the platform runtime Seam.
@@ -447,7 +447,7 @@ Run after every slice:
 uv run ruff check .
 git diff --check --no-color
 uv run -m unittest discover -s tests -v
-uv run -m compileall granite_speach scripts tests
+uv run -m compileall transclip scripts tests
 ```
 
 Run after slices that touch model, ASR, eval, or runtime completion:
@@ -459,9 +459,9 @@ VIRTUAL_ENV=$PWD/.venv-gfx1151 uv run --active scripts/check_v1_completion.py
 Optional live diagnostics after platform, paste, shortcut, or daemon slices:
 
 ```bash
-uv run -m granite_speach.cli doctor
-uv run -m granite_speach.cli status
-uv run -m granite_speach.cli smoke-test
+uv run -m transclip.cli doctor
+uv run -m transclip.cli status
+uv run -m transclip.cli smoke-test
 ```
 
 Record live diagnostic output under `build/artifacts/` if it is used as evidence for a review.

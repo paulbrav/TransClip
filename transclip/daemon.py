@@ -186,7 +186,7 @@ def run_smoke_test(
             prior = clipboard.read()
         except Exception:
             prior = None
-        marker = "granite-speach-smoke-test"
+        marker = "transclip-smoke-test"
         clipboard.write(marker)
         roundtrip = clipboard.read()
         if prior is not None:
@@ -219,7 +219,7 @@ def run_smoke_test(
         input("Focus a text editor, then press Enter to paste known smoke-test text...")
         try:
             clipboard = SystemClipboard()
-            clipboard.write("granite-speach interactive paste smoke")
+            clipboard.write("transclip interactive paste smoke")
             pasted = SystemPasteInjector().paste()
             answer = input("Did the text appear in the focused app? [y/N] ").strip().lower()
             results.append(

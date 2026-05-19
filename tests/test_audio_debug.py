@@ -2,8 +2,8 @@ import unittest
 from unittest.mock import patch
 
 import numpy as np
-from granite_speach.audio import recording_debug, sounddevice_summary
-from granite_speach.settings import Settings
+from transclip.audio import recording_debug, sounddevice_summary
+from transclip.settings import Settings
 
 
 class FakeRecorder:
@@ -22,7 +22,7 @@ class FakeRecorder:
 
 class AudioDebugTests(unittest.TestCase):
     def test_recording_debug_reports_audio_metrics(self):
-        with patch("granite_speach.audio.time.sleep"):
+        with patch("transclip.audio.time.sleep"):
             result = recording_debug(Settings(sample_rate=3), recorder_cls=FakeRecorder)
 
         self.assertEqual(result["sample_rate"], 3)
@@ -35,7 +35,7 @@ class AudioDebugTests(unittest.TestCase):
     def test_recording_debug_reports_silence(self):
         FakeRecorder.samples = np.zeros((4, 1), dtype=np.int16)
         try:
-            with patch("granite_speach.audio.time.sleep"):
+            with patch("transclip.audio.time.sleep"):
                 result = recording_debug(Settings(sample_rate=4), recorder_cls=FakeRecorder)
         finally:
             FakeRecorder.samples = np.array([[0], [1000], [-1000]], dtype=np.int16)

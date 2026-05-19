@@ -73,7 +73,7 @@ def wav_from_request(body: dict[str, Any]) -> Path:
     if "audio_base64" in body:
         data = base64.b64decode(body["audio_base64"])
         ext = str(body.get("audio_ext", "wav")).strip().lstrip(".") or "wav"
-        with tempfile.NamedTemporaryFile(prefix="granite-speach-", suffix=f".{ext}", delete=False) as handle:
+        with tempfile.NamedTemporaryFile(prefix="transclip-", suffix=f".{ext}", delete=False) as handle:
             handle.write(data)
             return Path(handle.name)
     raise ValueError("Request must include audio_path or audio_base64")

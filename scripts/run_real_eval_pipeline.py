@@ -13,9 +13,9 @@ ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(ROOT))
 
-from granite_speach.doctor import run_checks  # noqa: E402
-from granite_speach.eval_harness import build_manifest, check_results, load_keyword_file  # noqa: E402
-from granite_speach.settings import load_settings  # noqa: E402
+from transclip.doctor import run_checks  # noqa: E402
+from transclip.eval_harness import build_manifest, check_results, load_keyword_file  # noqa: E402
+from transclip.settings import load_settings  # noqa: E402
 
 from check_v1_completion import check_completion  # noqa: E402
 
@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> int:
         "clip_dir",
         type=Path,
         nargs="?",
-        default=Path("~/granite-real-eval"),
+        default=Path("~/transclip-real-eval"),
         help="Directory containing recorded WAV/reference pairs",
     )
     parser.add_argument(
@@ -81,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
     eval_command = [
         sys.executable,
         "-m",
-        "granite_speach.cli",
+        "transclip.cli",
         "eval",
         str(args.manifest),
         "--output",

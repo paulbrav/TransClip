@@ -30,6 +30,7 @@ from .history import read_history
 from .models import model_rows, prefetch_model
 from .notify import notify
 from .paste import SystemClipboard, paste_transcript
+from .product import CLI_COMMAND, DISPLAY_NAME
 from .recording_ops import toggle_recording
 from .service import InferenceEngine, run_server
 from .settings import (
@@ -193,7 +194,7 @@ def handle_config(args: argparse.Namespace, settings) -> int:
             set_setting(args.settings, args.field, args.value)
             print(f"set\t{args.field} = {args.value}")
             if args.field == "hotkey_linux":
-                print("run: granite-speach install-gnome-shortcut or granite-speach doctor --fix")
+                print(f"run: {CLI_COMMAND} install-gnome-shortcut or {CLI_COMMAND} doctor --fix")
             return 0
     except Exception as exc:
         print(str(exc), file=sys.stderr)
@@ -217,14 +218,14 @@ def handle_gnome_shortcut(args: argparse.Namespace, settings) -> int:
 def handle_toggle_record(args: argparse.Namespace, settings) -> int:
     outcome = toggle_recording(settings, paste=args.paste)
     if not outcome.ok:
-        if outcome.error_message == "Granite service is not running.":
-            print(f"{outcome.error_message} Start it with: granite-speach serve", file=sys.stderr)
+        if outcome.error_message == "TransClip service is not running.":
+            print(f"{outcome.error_message} Start it with: {CLI_COMMAND} serve", file=sys.stderr)
         else:
             print(outcome.error_message, file=sys.stderr)
-        notify("Granite Speach", outcome.notification_message)
+        notify(DISPLAY_NAME, outcome.notification_message)
         return 1
     if outcome.paste_failed_message:
-        notify("Granite Speach", outcome.notification_message)
+        notify(DISPLAY_NAME, outcome.notification_message)
     print(json.dumps(outcome.payload))
     return 0
 
@@ -243,7 +244,7 @@ def handle_record_once(args: argparse.Namespace, settings, engine: InferenceEngi
             if not paste_result.pasted:
                 detail = f" {paste_result.error_detail}" if paste_result.error_detail else ""
                 notify(
-                    "Granite Speach",
+                    DISPLAY_NAME,
                     "Paste failed. The transcript is still on the clipboard." + detail,
                 )
     return 0

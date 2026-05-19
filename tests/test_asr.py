@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
-from granite_speach.asr import (
+from transclip.asr import (
     DefaultASRAudioPreparer,
     FileTranscriptASRBackend,
     GraniteSpeechNarTransformersBackend,
@@ -14,7 +14,7 @@ from granite_speach.asr import (
     build_asr_backend,
     granite_user_prompt,
 )
-from granite_speach.settings import Settings
+from transclip.settings import Settings
 
 
 class ASRTests(unittest.TestCase):

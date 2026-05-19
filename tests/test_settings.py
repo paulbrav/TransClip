@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from granite_speach.settings import (
+from transclip.settings import (
     DEFAULT_HOTKEY_LINUX,
     Settings,
     coerce_setting_value,

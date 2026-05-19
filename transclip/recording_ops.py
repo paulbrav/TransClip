@@ -39,11 +39,11 @@ def toggle_recording(
     try:
         result = client.record_toggle()
     except HTTPError as exc:
-        message = f"Granite service rejected /record/toggle with HTTP {exc.code}."
+        message = f"TransClip service rejected /record/toggle with HTTP {exc.code}."
         _log_toggle_error(message, service_url)
         return ToggleOutcome(False, {}, service_url, error_message=message)
     except URLError:
-        message = "Granite service is not running."
+        message = "TransClip service is not running."
         _log_toggle_error(message, service_url)
         return ToggleOutcome(False, {}, service_url, error_message=message)
 

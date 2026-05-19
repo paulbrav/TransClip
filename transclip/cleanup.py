@@ -81,7 +81,7 @@ class LlamaCppCleanupBackend(CleanupBackend):
         try:
             from llama_cpp import Llama
         except ImportError as exc:
-            raise RuntimeError("llama-cpp-python is not installed. Install granite-speach[llama].") from exc
+            raise RuntimeError("llama-cpp-python is not installed. Install transclip[llama].") from exc
         self.model_name = model_name
         self.model_path = model_path
         self.llm = Llama(model_path=model_path, n_ctx=4096, verbose=False)
@@ -118,7 +118,7 @@ class GemmaTransformersCleanupBackend(CleanupBackend):
             from transformers import AutoModelForCausalLM, AutoProcessor
         except ImportError as exc:
             raise RuntimeError(
-                "transformers, torch, and accelerate are required. Install granite-speach[models]."
+                "transformers, torch, and accelerate are required. Install transclip[models]."
             ) from exc
         processor = AutoProcessor.from_pretrained(
             self.model_name,

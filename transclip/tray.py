@@ -13,10 +13,9 @@ from .gnome_shortcut import install_shortcut
 from .history import read_history
 from .models import SUPPORTED_MODELS
 from .paste import SystemClipboard
+from .product import APP_ID, DISPLAY_NAME, IMPORT_PACKAGE
 from .recording_ops import toggle_recording
 from .settings import Settings, load_settings, settings_path, write_default_settings, write_settings
-
-APP_ID = "granite-speach"
 
 
 def run_python_tray(settings: Settings, explicit_settings_path: Path | None = None) -> int:
@@ -42,7 +41,7 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
         "audio-input-microphone-symbolic",
         AppIndicator.IndicatorCategory.APPLICATION_STATUS,
     )
-    indicator.set_title("Granite Speach")
+    indicator.set_title(DISPLAY_NAME)
     indicator.set_status(AppIndicator.IndicatorStatus.ACTIVE)
     menu_refs: dict[str, Any] = {}
 
@@ -55,13 +54,13 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
             state["detail"] = f"Service: {status}"
             indicator.set_icon_full(
                 "media-record-symbolic" if state["recording"] else "audio-input-microphone-symbolic",
-                "Granite Speach",
+                DISPLAY_NAME,
             )
         except Exception as exc:
             state["status"] = "offline"
             state["recording"] = False
             state["detail"] = f"Service: offline ({exc})"
-            indicator.set_icon_full("dialog-warning-symbolic", "Granite Speach offline")
+            indicator.set_icon_full("dialog-warning-symbolic", f"{DISPLAY_NAME} offline")
         update_menu()
         return True
 
@@ -282,9 +281,9 @@ def _model_menu_label(model_id: str, backend: str, settings: Settings) -> str:
 
 def _model_label(model_id: str, backend: str) -> str:
     if backend == "granite_nar":
-        return "Granite 4.1 2B NAR (fast)"
+        return "Fast local ASR - Granite 4.1 NAR"
     if backend == "granite":
-        return "Granite 4.1 2B (keywords)"
+        return "Keyword-biased ASR - Granite 4.1"
     return model_id
 
 
@@ -315,7 +314,7 @@ def _reexec_with_system_python(explicit_settings_path: Path | None) -> int:
     repo_root = Path(__file__).resolve().parents[1]
     env = dict(os.environ)
     env["PYTHONPATH"] = str(repo_root) + os.pathsep + env.get("PYTHONPATH", "")
-    command = [python, "-m", "granite_speach.cli"]
+    command = [python, "-m", f"{IMPORT_PACKAGE}.cli"]
     if explicit_settings_path:
         command.extend(["--settings", str(explicit_settings_path)])
     command.extend(["tray", "--no-system-python-fallback"])

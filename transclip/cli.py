@@ -4,10 +4,11 @@ import argparse
 from pathlib import Path
 
 from .cli_commands import handle_command
+from .product import CLI_COMMAND
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="granite-speach")
+    parser = argparse.ArgumentParser(prog=CLI_COMMAND)
     parser.add_argument("--settings", type=Path)
     sub = parser.add_subparsers(dest="command", required=True)
 

@@ -6,11 +6,12 @@ from pathlib import Path
 from typing import Any
 
 from .platform_runtime import user_log_dir
+from .product import LOG_DIR_NAME
 from .settings import Settings
 
 
 def history_dir() -> Path:
-    return user_log_dir("granite-speach")
+    return user_log_dir(LOG_DIR_NAME)
 
 
 def history_path() -> Path:

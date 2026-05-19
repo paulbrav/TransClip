@@ -11,14 +11,21 @@ from pathlib import Path
 
 from .platform_capabilities import session_info
 from .platform_runtime import PlatformRuntime, get_runtime
+from .product import (
+    CACHE_DIR_NAME,
+    CLI_COMMAND,
+    IMPORT_PACKAGE,
+    SHORTCUT_NAME,
+    SHORTCUT_PATH,
+)
 from .settings import DEFAULT_HOTKEY_LINUX
 
 GNOME_MEDIA_KEYS_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys"
 GNOME_CUSTOM_KEYBINDINGS_KEY = "custom-keybindings"
 GNOME_CUSTOM_KEYBINDING_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding"
-GRANITE_SHORTCUT_NAME = "Granite Speach Toggle"
-GRANITE_SHORTCUT_BINDING = DEFAULT_HOTKEY_LINUX
-GRANITE_SHORTCUT_PATH = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/granite-speach-toggle/"
+TRANSCLIP_SHORTCUT_NAME = SHORTCUT_NAME
+TRANSCLIP_SHORTCUT_BINDING = DEFAULT_HOTKEY_LINUX
+TRANSCLIP_SHORTCUT_PATH = SHORTCUT_PATH
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -51,15 +58,15 @@ class ShortcutReadiness:
 def build_toggle_command(settings_path: Path | None = None) -> str:
     command = build_toggle_invocation(settings_path)
     script = (
-        'mkdir -p "$HOME/.cache/granite-speach"; '
+        f'mkdir -p "$HOME/.cache/{CACHE_DIR_NAME}"; '
         + shlex.join(command)
-        + ' >> "$HOME/.cache/granite-speach/toggle-record.log" 2>&1'
+        + f' >> "$HOME/.cache/{CACHE_DIR_NAME}/toggle-record.log" 2>&1'
     )
     return shlex.join(["/bin/sh", "-lc", script])
 
 
 def build_toggle_invocation(settings_path: Path | None = None) -> list[str]:
-    command = [sys.executable, "-m", "granite_speach.cli"]
+    command = [sys.executable, "-m", f"{IMPORT_PACKAGE}.cli"]
     if settings_path:
         command.extend(["--settings", str(settings_path.expanduser().resolve())])
     command.extend(["toggle-record", "--paste"])
@@ -68,13 +75,13 @@ def build_toggle_invocation(settings_path: Path | None = None) -> list[str]:
 
 def install_gnome_shortcut(
     command: str,
-    binding: str = GRANITE_SHORTCUT_BINDING,
+    binding: str = TRANSCLIP_SHORTCUT_BINDING,
     runner: Runner = subprocess.run,
     runtime: PlatformRuntime | None = None,
 ) -> GnomeShortcutInstallResult:
     _require_gsettings(runtime)
     paths = get_custom_keybinding_paths(runner=runner)
-    path = _find_granite_path(paths, runner=runner) or GRANITE_SHORTCUT_PATH
+    path = _find_transclip_path(paths, runner=runner) or TRANSCLIP_SHORTCUT_PATH
     if path not in paths:
         paths.append(path)
         _gsettings_set(
@@ -83,12 +90,12 @@ def install_gnome_shortcut(
             _format_string_array(paths),
             runner=runner,
         )
-    _gsettings_set_relocatable(path, "name", GRANITE_SHORTCUT_NAME, runner=runner)
+    _gsettings_set_relocatable(path, "name", TRANSCLIP_SHORTCUT_NAME, runner=runner)
     _gsettings_set_relocatable(path, "command", command, runner=runner)
     _gsettings_set_relocatable(path, "binding", binding, runner=runner)
     return GnomeShortcutInstallResult(
         path=path,
-        name=GRANITE_SHORTCUT_NAME,
+        name=TRANSCLIP_SHORTCUT_NAME,
         binding=binding,
         command=command,
     )
@@ -102,7 +109,7 @@ def get_gnome_shortcut_status(
     if not platform_runtime.which("gsettings"):
         return GnomeShortcutStatus(False, None, None, None, None, False)
     paths = get_custom_keybinding_paths(runner=runner)
-    path = _find_granite_path(paths, runner=runner)
+    path = _find_transclip_path(paths, runner=runner)
     if not path:
         return GnomeShortcutStatus(False, None, None, None, None, False)
     name = _gsettings_get_relocatable(path, "name", runner=runner)
@@ -120,7 +127,7 @@ def get_gnome_shortcut_status(
 
 def install_shortcut(
     settings_path: Path | None = None,
-    binding: str = GRANITE_SHORTCUT_BINDING,
+    binding: str = TRANSCLIP_SHORTCUT_BINDING,
     command: str | None = None,
     runner: Runner = subprocess.run,
     runtime: PlatformRuntime | None = None,
@@ -134,7 +141,7 @@ def install_shortcut(
 
 
 def shortcut_readiness(
-    expected_binding: str = GRANITE_SHORTCUT_BINDING,
+    expected_binding: str = TRANSCLIP_SHORTCUT_BINDING,
     runner: Runner = subprocess.run,
     runtime: PlatformRuntime | None = None,
 ) -> ShortcutReadiness:
@@ -165,7 +172,7 @@ def shortcut_readiness(
         f"binding={status.binding or 'missing'}; command_exists={status.command_exists}"
     )
     if not status.installed:
-        return ShortcutReadiness(False, detail + "; run: granite-speach install-gnome-shortcut", status)
+        return ShortcutReadiness(False, detail + f"; run: {CLI_COMMAND} install-gnome-shortcut", status)
     if status.binding != expected_binding:
         return ShortcutReadiness(False, detail + f"; expected binding={expected_binding}", status)
     if not status.command_exists:
@@ -223,11 +230,11 @@ def _require_gsettings(runtime: PlatformRuntime | None = None) -> None:
         raise RuntimeError("gsettings is required to install the GNOME shortcut")
 
 
-def _find_granite_path(paths: list[str], runner: Runner) -> str | None:
-    if GRANITE_SHORTCUT_PATH in paths:
-        return GRANITE_SHORTCUT_PATH
+def _find_transclip_path(paths: list[str], runner: Runner) -> str | None:
+    if TRANSCLIP_SHORTCUT_PATH in paths:
+        return TRANSCLIP_SHORTCUT_PATH
     for path in paths:
-        if _gsettings_get_relocatable(path, "name", runner=runner) == GRANITE_SHORTCUT_NAME:
+        if _gsettings_get_relocatable(path, "name", runner=runner) == TRANSCLIP_SHORTCUT_NAME:
             return path
     return None
 

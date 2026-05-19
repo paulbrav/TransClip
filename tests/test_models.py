@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from granite_speach.models import (
+from transclip.models import (
     SUPPORTED_MODELS,
     cache_artifacts_present,
     ensure_disk_space,
@@ -12,7 +12,7 @@ from granite_speach.models import (
     required_model_cache_paths,
     validate_asr_model_backend,
 )
-from granite_speach.settings import Settings
+from transclip.settings import Settings
 
 
 class ModelsTests(unittest.TestCase):
@@ -69,7 +69,7 @@ class ModelsTests(unittest.TestCase):
         usage = type("Usage", (), {"free": 1})()
         with (
             tempfile.TemporaryDirectory() as tmp,
-            patch("granite_speach.models.shutil.disk_usage", return_value=usage),
+            patch("transclip.models.shutil.disk_usage", return_value=usage),
             self.assertRaises(RuntimeError),
         ):
             settings = Settings(model_cache_dir=tmp)

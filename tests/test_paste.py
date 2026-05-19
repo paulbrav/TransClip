@@ -1,16 +1,16 @@
 import unittest
 from unittest.mock import patch
 
-from granite_speach.paste import (
+from tests.service_helpers import FakeRuntime
+from transclip.paste import (
     SystemPasteInjector,
     clipboard_capability,
     detect_clipboard_backend,
     paste_commands,
     paste_transcript,
 )
-from granite_speach.platform_capabilities import session_info
-from granite_speach.settings import Settings
-from tests.service_helpers import FakeRuntime
+from transclip.platform_capabilities import session_info
+from transclip.settings import Settings
 
 
 class FakeClipboard:
@@ -58,7 +58,7 @@ class PasteTests(unittest.TestCase):
         self.assertEqual(clipboard.value, "transcript")
 
     def test_missing_system_clipboard_is_structured_failure(self):
-        with patch("granite_speach.paste.SystemClipboard", side_effect=RuntimeError("missing clipboard")):
+        with patch("transclip.paste.SystemClipboard", side_effect=RuntimeError("missing clipboard")):
             result = paste_transcript("transcript", Settings())
 
         self.assertFalse(result.copied)
