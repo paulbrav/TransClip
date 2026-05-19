@@ -152,6 +152,8 @@ class FakeClient:
 
 class TrayTests(unittest.TestCase):
     def setUp(self):
+        self.platform_patch = patch("transclip.tray.sys.platform", "linux")
+        self.platform_patch.start()
         gi = types.ModuleType("gi")
         gi.require_version = lambda *_args: None
         repository = types.ModuleType("gi.repository")
@@ -177,6 +179,9 @@ class TrayTests(unittest.TestCase):
         repository.AyatanaAppIndicator3 = app_indicator
         repository.GLib = glib
         self.modules = {"gi": gi, "gi.repository": repository}
+
+    def tearDown(self):
+        self.platform_patch.stop()
 
     def test_health_refresh_updates_existing_menu_without_replacing_it(self):
         with (

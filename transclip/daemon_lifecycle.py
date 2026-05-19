@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import plistlib
 import shlex
 import subprocess
@@ -14,7 +15,7 @@ from .gnome_shortcut import (
 )
 from .platform_runtime import PlatformRuntime, get_runtime, user_log_dir
 from .product import DISPLAY_NAME, IMPORT_PACKAGE, LAUNCHD_LABEL, LOG_DIR_NAME, SERVICE_NAME
-from .settings import Settings, load_settings, write_default_settings
+from .settings import Settings, default_config_dir, load_settings, write_default_settings
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -27,6 +28,24 @@ class CommandResult:
 
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
+
+
+def service_working_directory(runtime: PlatformRuntime | None = None) -> Path:
+    del runtime
+    return default_config_dir()
+
+
+def service_environment_variables(system: str) -> dict[str, str]:
+    if system != "Linux":
+        return {}
+    return {
+        "FLASH_ATTENTION_TRITON_AMD_ENABLE": "TRUE",
+        "TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL": "1",
+    }
+
+
+def launchctl_domain() -> str:
+    return f"gui/{os.getuid()}"
 
 
 def logs_dir(runtime: PlatformRuntime | None = None) -> Path:
@@ -55,45 +74,47 @@ def service_command(settings_path: Path | None = None) -> list[str]:
 
 def build_systemd_unit(settings_path: Path | None = None) -> str:
     exec_start = shlex.join(service_command(settings_path))
-    return "\n".join(
+    lines = [
+        "[Unit]",
+        f"Description={DISPLAY_NAME} dictation service",
+        "After=graphical-session.target",
+        "",
+        "[Service]",
+        "Type=simple",
+        f"WorkingDirectory={service_working_directory()}",
+        f"ExecStart={exec_start}",
+        "Restart=on-failure",
+        "RestartSec=2",
+    ]
+    for key, value in service_environment_variables("Linux").items():
+        lines.append(f"Environment={key}={value}")
+    lines.extend(
         [
-            "[Unit]",
-            f"Description={DISPLAY_NAME} dictation service",
-            "After=graphical-session.target",
-            "",
-            "[Service]",
-            "Type=simple",
-            f"WorkingDirectory={repo_root()}",
-            f"ExecStart={exec_start}",
-            "Restart=on-failure",
-            "RestartSec=2",
-            "Environment=FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE",
-            "Environment=TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1",
             "",
             "[Install]",
             "WantedBy=default.target",
             "",
         ]
     )
+    return "\n".join(lines)
 
 
 def build_launch_agent(
     settings_path: Path | None = None,
     runtime: PlatformRuntime | None = None,
 ) -> bytes:
-    log_root = logs_dir(runtime)
+    platform_runtime = get_runtime(runtime)
+    log_root = logs_dir(platform_runtime)
     payload = {
         "Label": LAUNCHD_LABEL,
         "ProgramArguments": service_command(settings_path),
-        "WorkingDirectory": str(repo_root()),
+        "WorkingDirectory": str(service_working_directory(platform_runtime)),
         "RunAtLoad": True,
         "KeepAlive": True,
+        "LimitLoadToSessionType": "Aqua",
         "StandardOutPath": str(log_root / "service.out.log"),
         "StandardErrorPath": str(log_root / "service.err.log"),
-        "EnvironmentVariables": {
-            "FLASH_ATTENTION_TRITON_AMD_ENABLE": "TRUE",
-            "TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL": "1",
-        },
+        "EnvironmentVariables": service_environment_variables(platform_runtime.system()),
     }
     return plistlib.dumps(payload, sort_keys=True)
 
@@ -109,7 +130,12 @@ def install_daemon(
     if system == "Linux":
         return install_linux_daemon(settings_path=settings_path, settings=settings, runner=runner, runtime=runtime)
     if system == "Darwin":
-        return install_macos_daemon(settings_path=settings_path, runner=runner, runtime=runtime)
+        return install_macos_daemon(
+            settings_path=settings_path,
+            settings=settings,
+            runner=runner,
+            runtime=runtime,
+        )
     return [CommandResult(False, f"unsupported platform: {system}")]
 
 
@@ -140,22 +166,26 @@ def install_linux_daemon(
 
 def install_macos_daemon(
     settings_path: Path | None = None,
+    settings: Settings | None = None,
     runner: Runner = subprocess.run,
     runtime: PlatformRuntime | None = None,
 ) -> list[CommandResult]:
+    settings = settings or load_settings(settings_path)
     results: list[CommandResult] = []
     logs_dir(runtime).mkdir(parents=True, exist_ok=True)
     plist_path = launch_agent_path(runtime)
     plist_path.parent.mkdir(parents=True, exist_ok=True)
     plist_path.write_bytes(build_launch_agent(settings_path, runtime=runtime))
     results.append(CommandResult(True, f"wrote {plist_path}"))
-    results.append(run_command(["launchctl", "unload", str(plist_path)], runner, tolerate_failure=True))
-    results.append(run_command(["launchctl", "load", str(plist_path)], runner))
+    domain = launchctl_domain()
+    results.append(run_command(["launchctl", "bootout", domain, str(plist_path)], runner, tolerate_failure=True))
+    results.append(run_command(["launchctl", "bootstrap", domain, str(plist_path)], runner))
     results.append(
         CommandResult(
             True,
-            "configure a macOS Keyboard Shortcut or Shortcuts.app action to run: "
-            + build_toggle_command(settings_path),
+            "configure a macOS Keyboard Shortcut or Shortcuts.app action "
+            f"(suggested binding {settings.hotkey_macos}) to run: "
+            + build_toggle_command(settings_path, runtime=runtime),
         )
     )
     return results
@@ -178,7 +208,8 @@ def uninstall_daemon(
         return results
     if system == "Darwin":
         path = launch_agent_path(runtime)
-        results = [run_command(["launchctl", "unload", str(path)], runner, tolerate_failure=True)]
+        domain = launchctl_domain()
+        results = [run_command(["launchctl", "bootout", domain, str(path)], runner, tolerate_failure=True)]
         if path.exists():
             path.unlink()
             results.append(CommandResult(True, f"removed {path}"))
@@ -201,13 +232,21 @@ def service_action(
         return run_command(commands[action], runner)
     if system == "Darwin":
         plist_path = str(launch_agent_path(runtime))
+        domain = launchctl_domain()
         commands = {
-            "start": ["launchctl", "load", plist_path],
-            "stop": ["launchctl", "unload", plist_path],
+            "start": ["launchctl", "bootstrap", domain, plist_path],
+            "stop": ["launchctl", "bootout", domain, plist_path],
             "restart": [
                 "sh",
                 "-lc",
-                f"launchctl unload {shlex.quote(plist_path)}; launchctl load {shlex.quote(plist_path)}",
+                "launchctl bootout "
+                + shlex.quote(domain)
+                + " "
+                + shlex.quote(plist_path)
+                + "; launchctl bootstrap "
+                + shlex.quote(domain)
+                + " "
+                + shlex.quote(plist_path),
             ],
         }
         return run_command(commands[action], runner)

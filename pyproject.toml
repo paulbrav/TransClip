@@ -21,6 +21,7 @@ dev = [
     "ty>=0.0.1a19",
 ]
 chatgpt-ui = ["playwright>=1.52"]
+tray-macos = ["rumps>=0.4.0"]
 
 [project.scripts]
 transclip = "transclip.cli:main"
@@ -51,6 +52,7 @@ allowed-unresolved-imports = [
     "gi.repository",
     "llama_cpp",
     "sounddevice",
+    "rumps",
 ]
 
 [tool.ty.src]

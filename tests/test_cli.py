@@ -1,9 +1,10 @@
 import io
 import json
+import platform
 import socket
 import tempfile
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -39,6 +40,15 @@ class FakePasteInjector:
         return "fake paste failed"
 
 
+@contextmanager
+def patch_home(root: Path):
+    with (
+        patch("transclip.daemon_lifecycle.Path.home", return_value=root),
+        patch("transclip.platform_runtime.Path.home", return_value=root),
+    ):
+        yield
+
+
 class CliTests(unittest.TestCase):
     def test_toggle_record_starts_without_paste(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -52,20 +62,19 @@ class CliTests(unittest.TestCase):
                     patch("transclip.paste.SystemClipboard", InMemoryClipboard),
                     patch("transclip.paste.SystemPasteInjector", FakePasteInjector),
                     patch("transclip.cli_commands.notify"),
-                    patch("transclip.daemon_lifecycle.Path.home", return_value=root),
+                    patch_home(root),
                     redirect_stdout(stdout),
                 ):
                     code = main(["--settings", str(settings_path), "toggle-record", "--paste"])
+                    self.assertEqual(code, 0)
+                    payload = json.loads(stdout.getvalue())
+                    self.assertEqual(payload["action"], "started")
+                    self.assertEqual(payload["status"], "recording")
+                    self.assertNotIn("paste", payload)
+                    log_event = read_last_toggle_log(root)
+                    self.assertEqual(log_event["action"], "started")
             finally:
                 stop_server(server, thread)
-
-            self.assertEqual(code, 0)
-            payload = json.loads(stdout.getvalue())
-            self.assertEqual(payload["action"], "started")
-            self.assertEqual(payload["status"], "recording")
-            self.assertNotIn("paste", payload)
-            log_event = read_last_toggle_log(root)
-            self.assertEqual(log_event["action"], "started")
 
     def test_toggle_record_stops_and_pastes_transcript(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -79,7 +88,7 @@ class CliTests(unittest.TestCase):
                     patch("transclip.paste.SystemClipboard", InMemoryClipboard),
                     patch("transclip.paste.SystemPasteInjector", FakePasteInjector),
                     patch("transclip.cli_commands.notify"),
-                    patch("transclip.daemon_lifecycle.Path.home", return_value=root),
+                    patch_home(root),
                     redirect_stdout(io.StringIO()),
                 ):
                     self.assertEqual(main(["--settings", str(settings_path), "toggle-record"]), 0)
@@ -90,24 +99,23 @@ class CliTests(unittest.TestCase):
                     patch("transclip.paste.SystemClipboard", InMemoryClipboard),
                     patch("transclip.paste.SystemPasteInjector", FakePasteInjector),
                     patch("transclip.cli_commands.notify"),
-                    patch("transclip.daemon_lifecycle.Path.home", return_value=root),
+                    patch_home(root),
                     redirect_stdout(stdout),
                 ):
                     code = main(["--settings", str(settings_path), "toggle-record", "--paste"])
+                    self.assertEqual(code, 0)
+                    payload = json.loads(stdout.getvalue())
+                    self.assertEqual(payload["action"], "stopped")
+                    self.assertEqual(payload["text"], "Hello.")
+                    self.assertTrue(payload["paste"]["pasted"])
+                    self.assertEqual(payload["paste"]["clipboard_backend"], "fake-clipboard")
+                    self.assertEqual(payload["paste"]["paste_backend"], "fake-paste")
+                    self.assertEqual(InMemoryClipboard.value, "Hello.")
+                    log_event = read_last_toggle_log(root)
+                    self.assertEqual(log_event["action"], "stopped")
+                    self.assertEqual(log_event["text"], "Hello.")
             finally:
                 stop_server(server, thread)
-
-            self.assertEqual(code, 0)
-            payload = json.loads(stdout.getvalue())
-            self.assertEqual(payload["action"], "stopped")
-            self.assertEqual(payload["text"], "Hello.")
-            self.assertTrue(payload["paste"]["pasted"])
-            self.assertEqual(payload["paste"]["clipboard_backend"], "fake-clipboard")
-            self.assertEqual(payload["paste"]["paste_backend"], "fake-paste")
-            self.assertEqual(InMemoryClipboard.value, "Hello.")
-            log_event = read_last_toggle_log(root)
-            self.assertEqual(log_event["action"], "stopped")
-            self.assertEqual(log_event["text"], "Hello.")
 
     def test_toggle_record_reports_unavailable_service(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -116,28 +124,32 @@ class CliTests(unittest.TestCase):
             stderr = io.StringIO()
             with (
                 patch("transclip.cli_commands.notify"),
-                patch("transclip.daemon_lifecycle.Path.home", return_value=root),
+                patch_home(root),
                 redirect_stderr(stderr),
             ):
                 code = main(["--settings", str(settings_path), "toggle-record", "--paste"])
-
-            self.assertEqual(code, 1)
-            self.assertIn("TransClip service is not running", stderr.getvalue())
-            log_event = read_last_toggle_log(root)
-            self.assertEqual(log_event["action"], "error")
-            self.assertEqual(log_event["error"], "TransClip service is not running.")
+                self.assertEqual(code, 1)
+                self.assertIn("TransClip service is not running", stderr.getvalue())
+                log_event = read_last_toggle_log(root)
+                self.assertEqual(log_event["action"], "error")
+                self.assertEqual(log_event["error"], "TransClip service is not running.")
 
     def test_toggle_record_log_failure_is_nonfatal(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / ".cache").write_text("not a directory", encoding="utf-8")
+            from tests.service_helpers import FakeRuntime
+            from transclip.daemon_lifecycle import toggle_log_path
+
+            blocked = toggle_log_path(FakeRuntime(system=platform.system(), home=root)).parent.parent
+            blocked.parent.mkdir(parents=True, exist_ok=True)
+            blocked.write_text("not a directory", encoding="utf-8")
             server, thread, host, port = serve_test_engine(transcript="hello")
             settings_path = write_test_settings(root, host, port)
             try:
                 stdout = io.StringIO()
                 with (
                     patch("transclip.service.AudioRecorder", FakeRecorder),
-                    patch("transclip.daemon_lifecycle.Path.home", return_value=root),
+                    patch_home(root),
                     redirect_stdout(stdout),
                 ):
                     code = main(["--settings", str(settings_path), "toggle-record"])
@@ -148,7 +160,7 @@ class CliTests(unittest.TestCase):
         payload = json.loads(stdout.getvalue())
         self.assertEqual(payload["action"], "started")
         self.assertIn("log_error", payload)
-        self.assertIn(".cache", payload["log_error"])
+        self.assertIn("transclip", payload["log_error"])
 
     def test_history_json_and_copy(self):
         stdout = io.StringIO()
@@ -250,7 +262,9 @@ def write_test_settings(root: Path, host: str, port: int, **overrides) -> Path:
 
 
 def read_last_toggle_log(root: Path) -> dict:
-    log_path = root / ".cache" / "transclip" / "toggle-record.log"
+    from transclip.daemon_lifecycle import toggle_log_path
+
+    log_path = toggle_log_path()
     lines = [line for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     return json.loads(lines[-1])
 

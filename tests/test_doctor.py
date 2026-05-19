@@ -48,9 +48,17 @@ class DoctorTests(unittest.TestCase):
             self.assertTrue(check_model_cache(settings).ok)
 
     def test_nar_asr_runtime_checks_flash_attn(self):
-        torch = SimpleNamespace(version=SimpleNamespace(hip=None))
+        torch = SimpleNamespace(version=SimpleNamespace(hip="6.4"))
         with patch.dict("sys.modules", {"flash_attn": object(), "torch": torch}):
             self.assertTrue(check_asr_runtime(Settings()).ok)
+
+    def test_nar_asr_runtime_skips_flash_attn_on_macos(self):
+        torch = SimpleNamespace(version=SimpleNamespace(hip=None))
+        with patch.dict("sys.modules", {"torch": torch}):
+            check = check_asr_runtime(Settings(), runtime=FakeRuntime(system="Darwin"))
+
+        self.assertTrue(check.ok)
+        self.assertIn("macOS", check.detail)
 
     def test_formatters(self):
         checks = [Check("thing", False, "missing thing")]

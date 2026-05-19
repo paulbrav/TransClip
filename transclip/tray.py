@@ -19,6 +19,11 @@ from .settings import Settings, load_settings, settings_path, write_default_sett
 
 
 def run_python_tray(settings: Settings, explicit_settings_path: Path | None = None) -> int:
+    if sys.platform == "darwin":
+        from .tray_macos import run_macos_tray
+
+        return run_macos_tray(settings, explicit_settings_path=explicit_settings_path)
+
     try:
         import gi
     except ImportError:

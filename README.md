@@ -36,6 +36,11 @@ and starts it with `systemctl --user`, and installs the GNOME custom shortcut
 `<Super><Shift>XF86TouchpadOff`; press once to start recording and again to
 stop, transcribe, copy, and paste.
 
+On macOS this writes `~/Library/LaunchAgents/com.paulbrav.transclip.plist`,
+bootstraps the user LaunchAgent, and prints the toggle command to bind in
+**System Settings → Keyboard → Keyboard Shortcuts → Services** or Shortcuts.app.
+The default suggested binding in `settings.toml` is `Option+Space`.
+
 Check readiness and logs:
 
 ```bash
@@ -51,7 +56,9 @@ Run the Python tray:
 transclip tray
 ```
 
-On Linux this uses PyGObject/Ayatana AppIndicator. When running through `uv`,
+On Linux this uses PyGObject/Ayatana AppIndicator. The tray is not available on
+macOS yet; use the global shortcut or `transclip toggle-record --paste` there.
+When running through `uv`,
 the command hands off to system Python if the project virtual environment does
 not expose `gi`. Install the system bindings if missing:
 
@@ -135,6 +142,43 @@ uv run -m transclip.cli install-gnome-shortcut
 
 This creates or updates the same `TransClip Toggle` shortcut while
 preserving unrelated custom shortcuts.
+
+## macOS Desktop
+
+Install Python 3.12+ and project dependencies:
+
+```bash
+brew install uv
+uv sync --extra models --extra audio
+```
+
+Install the LaunchAgent and check readiness:
+
+```bash
+uv run -m transclip.cli init-config
+uv run -m transclip.cli install
+uv run -m transclip.cli doctor
+```
+
+Bind a keyboard shortcut to the toggle command printed by `install`, or run:
+
+```bash
+uv run -m transclip.cli toggle-record --paste
+```
+
+Paste injection uses `pbcopy`/`pbpaste` and `osascript` (Command+V). Grant
+**Accessibility** permission when macOS prompts for the app or terminal running
+`osascript`. Grant **Microphone** permission when the service first records.
+
+On Apple Silicon, `asr_device = "auto"` prefers MPS when PyTorch supports it.
+Granite NAR runs on CPU/MPS; the ROCm `flash-attn` stack is only required on
+the Linux AMD laptop path.
+
+Model cache and logs use macOS Library paths:
+
+- config: `~/Library/Application Support/transclip/`
+- cache: `~/Library/Caches/transclip/` and `~/Library/Caches/huggingface/`
+- logs: `~/Library/Logs/transclip/`
 
 ## Linux Desktop
 
