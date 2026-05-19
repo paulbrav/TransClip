@@ -49,6 +49,16 @@ class ASRTests(unittest.TestCase):
             runtime=self.linux,
         )
         self.assertIsInstance(ar_backend, GraniteSpeechTransformersBackend)
+        mlx_legacy_ar_backend = build_asr_backend(
+            Settings(
+                asr_backend="granite",
+                asr_model="ibm-granite/granite-speech-4.1-2b",
+                asr_device="mlx",
+            ),
+            runtime=self.linux,
+        )
+        self.assertIsInstance(mlx_legacy_ar_backend, GraniteSpeechTransformersBackend)
+        self.assertEqual(mlx_legacy_ar_backend.device, "auto")
         self.assertIsInstance(
             build_asr_backend(Settings(asr_backend="file:/tmp/transcript.txt"), runtime=self.linux),
             FileTranscriptASRBackend,
@@ -221,7 +231,24 @@ class ASRTests(unittest.TestCase):
             result = backend.transcribe(Path("input.wav"))
 
         self.assertEqual(result.text, "hello")
-        self.assertEqual(calls, [{"model": "mlx/model", "audio": "prepared.wav"}])
+        self.assertEqual(calls[0]["model"], "mlx/model")
+        self.assertEqual(calls[0]["audio"], "prepared.wav")
+        self.assertEqual(calls[0]["format"], "txt")
+        self.assertIn("transclip-mlx-", calls[0]["output_path"])
+
+    def test_mlx_audio_backend_resolves_model_before_preparing_temp_wav(self):
+        backend = MlxAudioASRBackend("mlx/missing", "mlx_audio_whisper", Settings(model_cache_dir="/tmp/missing"))
+        backend.local_files_only = True
+        backend.audio_preparer = SimpleNamespace(prepare=lambda _path: self.fail("audio should not be prepared"))
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {"mlx_audio.stt.generate": SimpleNamespace(generate_transcription=lambda **_kwargs: None)},
+            ),
+            self.assertRaisesRegex(RuntimeError, "Local MLX model artifacts missing"),
+        ):
+            backend.transcribe(Path("input.wav"))
 
     def test_mlx_audio_backend_removes_temporary_prepared_wav(self):
         temp_path = Path("/tmp/transclip-test-prepared.wav")
@@ -245,14 +272,22 @@ class ASRTests(unittest.TestCase):
         self.assertFalse(temp_path.exists())
 
     def test_granite_nar_transcribe_uses_processor_and_model_transcribe(self):
-        backend = GraniteSpeechNarTransformersBackend("ibm-granite/granite-speech-4.1-2b-nar", "cpu")
+        backend = GraniteSpeechNarTransformersBackend("ibm-granite/granite-speech-4.1-2b-nar", "cuda")
         waveform = SimpleNamespace()
+
         class Processor:
             def __call__(self, waveforms, device):
                 return {"waveforms": waveforms, "device": device}
 
             def batch_decode(self, preds):
                 return [f"decoded:{preds[0]}"]
+
+        class InferenceMode:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
 
         processor = Processor()
         model = SimpleNamespace(
@@ -263,7 +298,10 @@ class ASRTests(unittest.TestCase):
             prepare=lambda _path: SimpleNamespace(wav=SimpleNamespace(squeeze=lambda _dim: waveform)),
         )
 
-        with patch.object(backend, "_device", return_value="cpu"):
+        with (
+            patch.dict("sys.modules", {"torch": SimpleNamespace(inference_mode=lambda: InferenceMode())}),
+            patch.object(backend, "_device", return_value="cuda"),
+        ):
             result = backend.transcribe(Path("sample.wav"))
 
         self.assertEqual(result.text, "decoded:pred-text")
@@ -306,42 +344,11 @@ class ASRTests(unittest.TestCase):
         self.assertEqual(captured["model_kwargs"]["attn_implementation"], "flash_attention_2")
         self.assertEqual(captured["model_kwargs"]["device_map"], "cuda")
 
-    def test_granite_nar_load_does_not_require_flash_attention_on_cpu(self):
+    def test_granite_nar_load_rejects_cpu(self):
         backend = GraniteSpeechNarTransformersBackend("ibm-granite/granite-speech-4.1-2b-nar", "cpu")
-        captured: dict[str, object] = {}
 
-        class FakeModel:
-            def to(self, device):
-                captured["to_device"] = device
-                return self
-
-            def eval(self):
-                return self
-
-        def from_pretrained(_model, **kwargs):
-            captured["model_kwargs"] = kwargs
-            return FakeModel()
-
-        fake_transformers = SimpleNamespace(
-            AutoModel=SimpleNamespace(from_pretrained=from_pretrained),
-            AutoProcessor=SimpleNamespace(from_pretrained=lambda *_args, **_kwargs: "processor"),
-        )
-        fake_torch = SimpleNamespace(
-            bfloat16="bf16",
-            float32="fp32",
-            version=SimpleNamespace(hip=None),
-        )
-
-        with (
-            patch.dict("sys.modules", {"transformers": fake_transformers, "torch": fake_torch}),
-            patch("transclip.asr._configure_rocm_nar_attention_env"),
-            patch("transclip.asr._granite_nar_dtype", return_value="fp32"),
-        ):
+        with self.assertRaisesRegex(RuntimeError, "requires CUDA/ROCm"):
             backend._load("cpu")
-
-        self.assertNotIn("attn_implementation", captured["model_kwargs"])
-        self.assertNotIn("device_map", captured["model_kwargs"])
-        self.assertEqual(captured["to_device"], "cpu")
 
 
 if __name__ == "__main__":

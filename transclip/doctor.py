@@ -379,7 +379,11 @@ def check_asr_runtime(settings: Settings) -> Check:
         return Check("asr_runtime", False, "torch is not installed")
     device = resolve_torch_device(settings.asr_device)
     if device != "cuda":
-        return Check("asr_runtime", True, f"Granite NAR will use {device} without flash-attn")
+        return Check(
+            "asr_runtime",
+            False,
+            "Granite NAR requires CUDA/ROCm with flash-attn; use asr_backend='granite' for CPU",
+        )
     if getattr(torch.version, "hip", None):
         os.environ.setdefault("FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE")
     try:

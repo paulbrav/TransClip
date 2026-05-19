@@ -1686,7 +1686,7 @@ requires-dist = [
     { name = "torchaudio", marker = "extra == 'models'", specifier = ">=2.5" },
     { name = "torchcodec", marker = "extra == 'models'", specifier = ">=0.5" },
     { name = "torchvision", marker = "extra == 'models'", specifier = ">=0.20" },
-    { name = "transformers", marker = "extra == 'models'", specifier = ">=5.5.3" },
+    { name = "transformers", marker = "extra == 'models'", specifier = ">=5.8" },
     { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.1a19" },
 ]
 provides-extras = ["audio", "models", "mlx", "macos-ui", "llama", "dev", "chatgpt-ui"]

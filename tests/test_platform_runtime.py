@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from tests.service_helpers import FakeRuntime
 from transclip.platform_runtime import user_cache_dir, user_config_dir, user_log_dir
@@ -43,6 +44,17 @@ class PlatformRuntimeTests(unittest.TestCase):
         self.assertEqual(settings.asr_backend, "granite_nar")
         self.assertEqual(settings.asr_model, "ibm-granite/granite-speech-4.1-2b-nar")
 
+    def test_linux_cpu_profile_defaults_to_autoregressive_granite(self):
+        runtime = FakeRuntime(system="Linux", home=Path("/home/user"))
+        with patch("transclip.runtime_profile.machine_architecture", return_value="armv7l"):
+            profile = detect_runtime_profile(runtime)
+            settings = default_settings(runtime)
+
+        self.assertEqual(profile.profile_id, "linux_cpu")
+        self.assertEqual(settings.asr_backend, "granite")
+        self.assertEqual(settings.asr_model, "ibm-granite/granite-speech-4.1-2b")
+        self.assertEqual(settings.asr_device, "cpu")
+
     def test_darwin_arm_profile_defaults(self):
         runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"), check_output_text="arm64")
         profile = detect_runtime_profile(runtime)
@@ -51,6 +63,13 @@ class PlatformRuntimeTests(unittest.TestCase):
         self.assertEqual(profile.profile_id, "darwin_arm_mlx")
         self.assertEqual(settings.asr_backend, "mlx_audio_whisper")
         self.assertEqual(settings.asr_model, "mlx-community/whisper-large-v3-turbo-asr-fp16")
+        self.assertEqual(settings.asr_device, "auto")
+
+    def test_darwin_non_arm_profile_defaults_to_valid_file_backend(self):
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"), check_output_text="x86_64")
+        settings = default_settings(runtime)
+
+        self.assertEqual(settings.asr_backend, "file:/dev/null")
 
     def test_granite_nar_rejected_on_darwin_arm(self):
         runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"), check_output_text="arm64")

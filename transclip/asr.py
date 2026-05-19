@@ -203,6 +203,11 @@ class GraniteSpeechNarTransformersBackend:
     def _load(self, device: str):
         if self._loaded is not None:
             return self._loaded
+        if device != "cuda":
+            raise RuntimeError(
+                "Granite Speech NAR requires CUDA/ROCm with flash-attn. "
+                "Use asr_backend='granite' or another CPU-supported backend for CPU."
+            )
         try:
             import os
 
@@ -220,13 +225,10 @@ class GraniteSpeechNarTransformersBackend:
             "torch_dtype": dtype,
             "local_files_only": self.local_files_only,
             "cache_dir": self.cache_dir or None,
+            "attn_implementation": "flash_attention_2",
+            "device_map": device,
         }
-        if _granite_nar_uses_flash_attention(torch, device):
-            model_kwargs["attn_implementation"] = "flash_attention_2"
-            model_kwargs["device_map"] = device
         model = AutoModel.from_pretrained(self.model, **model_kwargs)
-        if not _granite_nar_uses_flash_attention(torch, device) and hasattr(model, "to"):
-            model.to(device)
         model.eval()
         processor = AutoProcessor.from_pretrained(
             self.model,
@@ -242,11 +244,14 @@ class GraniteSpeechNarTransformersBackend:
         timings: dict[str, float] = {}
         device = self._device()
         with timed_ms(timings, "asr"):
+            import torch
+
             processor, model = self._load(device)
             audio = self.audio_preparer.prepare(wav_path)
             waveform = audio.wav.squeeze(0)
             inputs = processor([waveform], device=device)
-            output = model.transcribe(**inputs)
+            with torch.inference_mode():
+                output = model.transcribe(**inputs)
             decoded = processor.batch_decode(output.preds)
         return TranscriptionResult(decoded[0].strip(), timings, self.name, self.model)
 
@@ -293,17 +298,29 @@ class MlxAudioASRBackend:
                 raise RuntimeError(
                     "mlx-audio is required on macOS Apple Silicon. Install transclip[mlx]."
                 ) from exc
-            audio = self.audio_preparer.prepare(wav_path)
             model_path = self._model_path()
+            audio = self.audio_preparer.prepare(wav_path)
             try:
-                try:
-                    result = generate_transcription(model=model_path, audio=str(audio.wav_path))
-                except TypeError:
-                    result = generate_transcription(audio_path=str(audio.wav_path), model_path=model_path)
+                with tempfile.TemporaryDirectory(prefix="transclip-mlx-") as tmp:
+                    output_stem = str(Path(tmp) / "transcript")
+                    try:
+                        result = generate_transcription(
+                            model=model_path,
+                            audio=str(audio.wav_path),
+                            output_path=output_stem,
+                            format="txt",
+                        )
+                    except TypeError:
+                        result = generate_transcription(
+                            audio_path=str(audio.wav_path),
+                            model_path=model_path,
+                            output_path=output_stem,
+                            format="txt",
+                        )
+                    text = getattr(result, "text", None) or str(result)
             finally:
                 if getattr(audio, "temporary", False):
                     audio.wav_path.unlink(missing_ok=True)
-            text = getattr(result, "text", None) or str(result)
         return TranscriptionResult(text.strip(), timings, self.name, self.model)
 
 
@@ -333,12 +350,13 @@ def build_asr_backend(
     if entry is None:
         raise ValueError(f"Unsupported ASR configuration: {settings.asr_backend} / {settings.asr_model}")
 
+    torch_device = "auto" if backend_kind == "granite" and settings.asr_device == "mlx" else settings.asr_device
     if backend_kind == "granite_nar":
-        backend = GraniteSpeechNarTransformersBackend(settings.asr_model, settings.asr_device)
+        backend = GraniteSpeechNarTransformersBackend(settings.asr_model, torch_device)
     elif backend_kind in {"mlx_audio_whisper", "granite_mlx"}:
         backend = MlxAudioASRBackend(settings.asr_model, backend_kind, settings)
     else:
-        backend = GraniteSpeechTransformersBackend(settings.asr_model, settings.asr_device)
+        backend = GraniteSpeechTransformersBackend(settings.asr_model, torch_device)
 
     backend.local_files_only = settings.models_local_files_only
     backend.cache_dir = settings.model_cache_dir

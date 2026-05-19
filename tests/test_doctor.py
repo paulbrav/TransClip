@@ -71,13 +71,13 @@ class DoctorTests(unittest.TestCase):
         ):
             self.assertTrue(check_asr_runtime(Settings()).ok)
 
-    def test_nar_asr_runtime_does_not_require_flash_attn_on_cpu(self):
+    def test_nar_asr_runtime_rejects_cpu(self):
         torch = SimpleNamespace(version=SimpleNamespace(hip=None))
         with patch.dict("sys.modules", {"torch": torch}):
             check = check_asr_runtime(Settings(asr_device="cpu"))
 
-        self.assertTrue(check.ok)
-        self.assertIn("without flash-attn", check.detail)
+        self.assertFalse(check.ok)
+        self.assertIn("requires CUDA/ROCm", check.detail)
 
     def test_formatters(self):
         checks = [Check("thing", False, "missing thing")]

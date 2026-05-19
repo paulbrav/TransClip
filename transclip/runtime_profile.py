@@ -7,7 +7,7 @@ from typing import Literal
 from .platform_runtime import PlatformRuntime, get_runtime, user_cache_dir, user_config_dir, user_log_dir
 from .product import CONFIG_DIR_NAME, LOG_DIR_NAME
 
-RuntimeKind = Literal["torch_cuda", "torch_rocm", "torch_cpu", "mlx", "file"]
+RuntimeKind = Literal["torch_cuda", "torch_rocm", "torch_mps", "torch_cpu", "mlx", "file"]
 ProfileId = Literal["linux_gpu", "linux_cpu", "darwin_arm_mlx", "darwin_other", "unsupported"]
 
 
@@ -67,8 +67,8 @@ def detect_runtime_profile(runtime: PlatformRuntime | None = None) -> RuntimePro
             profile_id="linux_cpu",
             system=system,
             architecture=arch,
-            default_asr_backend="granite_nar",
-            default_asr_model="ibm-granite/granite-speech-4.1-2b-nar",
+            default_asr_backend="granite",
+            default_asr_model="ibm-granite/granite-speech-4.1-2b",
             default_asr_device="cpu",
             supported_runtime_kinds=("torch_cpu", "file"),
             service_manager="systemd",
@@ -82,15 +82,15 @@ def detect_runtime_profile(runtime: PlatformRuntime | None = None) -> RuntimePro
                 architecture=arch,
                 default_asr_backend="mlx_audio_whisper",
                 default_asr_model="mlx-community/whisper-large-v3-turbo-asr-fp16",
-                default_asr_device="mlx",
-                supported_runtime_kinds=("mlx", "file"),
+                default_asr_device="auto",
+                supported_runtime_kinds=("mlx", "torch_mps", "torch_cpu", "file"),
                 service_manager="launchd",
             )
         return RuntimeProfile(
             profile_id="darwin_other",
             system=system,
             architecture=arch,
-            default_asr_backend="file",
+            default_asr_backend="file:/dev/null",
             default_asr_model="",
             default_asr_device="cpu",
             supported_runtime_kinds=("file",),
@@ -101,7 +101,7 @@ def detect_runtime_profile(runtime: PlatformRuntime | None = None) -> RuntimePro
         profile_id="unsupported",
         system=system,
         architecture=arch,
-        default_asr_backend="file",
+        default_asr_backend="file:/dev/null",
         default_asr_model="",
         default_asr_device="cpu",
         supported_runtime_kinds=("file",),

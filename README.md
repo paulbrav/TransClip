@@ -121,7 +121,7 @@ on macOS by TransClip's current backends.
 
 ## Linux CUDA / ROCm Quick Start
 
-For the portable CPU/CUDA path, install the model extras first:
+For the portable Torch path, install the model extras first:
 
 ```bash
 uv pip install -e '.[models,audio,llama]'
@@ -139,7 +139,7 @@ uv pip install --python .venv-gfx1151/bin/python \
   --index-url https://rocm.nightlies.amd.com/v2/gfx1151/ \
   --pre torch torchaudio torchvision pytorch-triton-rocm
 uv pip install --python .venv-gfx1151/bin/python \
-  -e . 'transformers>=4.52.1' 'accelerate>=1.0' 'soundfile>=0.12' 'sounddevice>=0.5'
+  -e . 'transformers>=5.8' 'accelerate>=1.0' 'soundfile>=0.12' 'sounddevice>=0.5'
 FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE MAX_JOBS=4 \
   uv pip install --python .venv-gfx1151/bin/python --no-deps \
   flash-attn==2.8.3 --no-build-isolation
