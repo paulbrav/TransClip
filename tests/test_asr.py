@@ -4,11 +4,14 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
+from tests.platform_helpers import linux_runtime
 from transclip.asr import (
-    DefaultASRAudioPreparer,
     FileTranscriptASRBackend,
     GraniteSpeechNarTransformersBackend,
     GraniteSpeechTransformersBackend,
+    MlxAudioASRBackend,
+    PathAudioPreparer,
+    TorchAudioPreparer,
     _configure_rocm_nar_attention_env,
     _granite_nar_dtype,
     build_asr_backend,
@@ -18,6 +21,7 @@ from transclip.settings import Settings
 
 
 class ASRTests(unittest.TestCase):
+    linux = linux_runtime()
     def test_granite_prompt_requests_punctuation(self):
         self.assertEqual(
             granite_user_prompt(),
@@ -31,7 +35,7 @@ class ASRTests(unittest.TestCase):
         )
 
     def test_backend_selection(self):
-        backend = build_asr_backend(Settings(model_cache_dir="/models"))
+        backend = build_asr_backend(Settings(model_cache_dir="/models"), runtime=self.linux)
         self.assertIsInstance(backend, GraniteSpeechNarTransformersBackend)
         self.assertTrue(backend.local_files_only)
         self.assertEqual(backend.cache_dir, "/models")
@@ -39,11 +43,12 @@ class ASRTests(unittest.TestCase):
             Settings(
                 asr_backend="granite",
                 asr_model="ibm-granite/granite-speech-4.1-2b",
-            )
+            ),
+            runtime=self.linux,
         )
         self.assertIsInstance(ar_backend, GraniteSpeechTransformersBackend)
         self.assertIsInstance(
-            build_asr_backend(Settings(asr_backend="file:/tmp/transcript.txt")),
+            build_asr_backend(Settings(asr_backend="file:/tmp/transcript.txt"), runtime=self.linux),
             FileTranscriptASRBackend,
         )
         nar_backend = build_asr_backend(
@@ -51,7 +56,8 @@ class ASRTests(unittest.TestCase):
                 asr_backend="granite_nar",
                 asr_model="ibm-granite/granite-speech-4.1-2b-nar",
                 model_cache_dir="/models",
-            )
+            ),
+            runtime=self.linux,
         )
         self.assertIsInstance(nar_backend, GraniteSpeechNarTransformersBackend)
         self.assertTrue(nar_backend.local_files_only)
@@ -59,20 +65,22 @@ class ASRTests(unittest.TestCase):
 
     def test_non_granite_model_is_rejected(self):
         with self.assertRaises(ValueError):
-            build_asr_backend(Settings(asr_model="openai/whisper-tiny"))
+            build_asr_backend(Settings(asr_model="openai/whisper-tiny"), runtime=self.linux)
         with self.assertRaises(ValueError):
             build_asr_backend(
                 Settings(
                     asr_backend="granite_nar",
                     asr_model="ibm-granite/granite-speech-4.1-2b",
-                )
+                ),
+                runtime=self.linux,
             )
         with self.assertRaises(ValueError):
             build_asr_backend(
                 Settings(
                     asr_backend="granite",
                     asr_model="ibm-granite/granite-speech-4.1-2b-nar",
-                )
+                ),
+                runtime=self.linux,
             )
 
     def test_granite_nar_uses_float32_on_rocm(self):
@@ -151,11 +159,118 @@ class ASRTests(unittest.TestCase):
                 "torchaudio": fake_torchaudio,
             },
         ):
-            audio = DefaultASRAudioPreparer().prepare(Path("sample.wav"))
+            audio = TorchAudioPreparer().prepare(Path("sample.wav"))
 
         self.assertEqual(audio.sample_rate, 16000)
         np.testing.assert_allclose(audio.wav.data, np.array([[2.0, 6.0]], dtype=np.float32))
         self.assertEqual(resample_calls, [(8000, 16000)])
+
+    def test_path_preparer_resamples_non_target_rate(self):
+        samples = np.linspace(0.0, 1.0, num=480, dtype=np.float32)
+        captured: dict[str, object] = {}
+
+        def write(_path, data, sample_rate):
+            captured["data"] = data
+            captured["sample_rate"] = sample_rate
+
+        fake_soundfile = SimpleNamespace(
+            read=lambda *_args, **_kwargs: (samples[:, None], 48000),
+            write=write,
+        )
+
+        with patch.dict("sys.modules", {"soundfile": fake_soundfile}):
+            prepared = PathAudioPreparer().prepare(Path("sample.wav"))
+
+        self.assertEqual(prepared.sample_rate, 16000)
+        self.assertNotEqual(prepared.wav_path, Path("sample.wav"))
+        self.assertEqual(captured["sample_rate"], 16000)
+        self.assertEqual(len(captured["data"]), 160)
+
+    def test_path_preparer_returns_existing_mono_wav(self):
+        wav_path = Path("/tmp/sample.wav")
+        samples = np.array([[0.1], [0.2]], dtype=np.float32)
+        fake_soundfile = SimpleNamespace(read=lambda *_args, **_kwargs: (samples, 16000))
+        with patch.dict("sys.modules", {"soundfile": fake_soundfile}):
+            prepared = PathAudioPreparer().prepare(wav_path)
+        self.assertEqual(prepared.wav_path, wav_path)
+        self.assertEqual(prepared.sample_rate, 16000)
+
+    def test_mlx_audio_backend_uses_current_generate_api(self):
+        calls = []
+        fake_generate = SimpleNamespace(
+            generate_transcription=lambda **kwargs: calls.append(kwargs) or SimpleNamespace(text="hello"),
+        )
+        backend = MlxAudioASRBackend("mlx/model", "mlx_audio_whisper")
+        backend.local_files_only = False
+        backend.audio_preparer = SimpleNamespace(prepare=lambda _path: SimpleNamespace(wav_path=Path("prepared.wav")))
+
+        with patch.dict("sys.modules", {"mlx_audio.stt.generate": fake_generate}):
+            result = backend.transcribe(Path("input.wav"))
+
+        self.assertEqual(result.text, "hello")
+        self.assertEqual(calls, [{"model": "mlx/model", "audio": "prepared.wav"}])
+
+    def test_granite_nar_transcribe_uses_processor_and_model_transcribe(self):
+        backend = GraniteSpeechNarTransformersBackend("ibm-granite/granite-speech-4.1-2b-nar", "cpu")
+        waveform = SimpleNamespace()
+        class Processor:
+            def __call__(self, waveforms, device):
+                return {"waveforms": waveforms, "device": device}
+
+            def batch_decode(self, preds):
+                return [f"decoded:{preds[0]}"]
+
+        processor = Processor()
+        model = SimpleNamespace(
+            transcribe=lambda **_kwargs: SimpleNamespace(preds=["pred-text"]),
+        )
+        backend._loaded = (processor, model)
+        backend.audio_preparer = SimpleNamespace(
+            prepare=lambda _path: SimpleNamespace(wav=SimpleNamespace(squeeze=lambda _dim: waveform)),
+        )
+
+        with patch.object(backend, "_device", return_value="cpu"):
+            result = backend.transcribe(Path("sample.wav"))
+
+        self.assertEqual(result.text, "decoded:pred-text")
+
+    def test_granite_nar_load_uses_auto_processor_and_flash_attention(self):
+        backend = GraniteSpeechNarTransformersBackend("ibm-granite/granite-speech-4.1-2b-nar", "cuda")
+        captured: dict[str, object] = {}
+
+        class FakeModel:
+            def eval(self):
+                return self
+
+        def from_pretrained(_model, **kwargs):
+            captured["model_kwargs"] = kwargs
+            return FakeModel()
+
+        def processor_from_pretrained(_model, **kwargs):
+            captured["processor_kwargs"] = kwargs
+            return "processor"
+
+        fake_transformers = SimpleNamespace(
+            AutoModel=SimpleNamespace(from_pretrained=from_pretrained),
+            AutoProcessor=SimpleNamespace(from_pretrained=processor_from_pretrained),
+        )
+        fake_torch = SimpleNamespace(
+            bfloat16="bf16",
+            float32="fp32",
+            version=SimpleNamespace(hip=None),
+        )
+
+        with (
+            patch.dict("sys.modules", {"transformers": fake_transformers, "torch": fake_torch}),
+            patch("transclip.asr._configure_rocm_nar_attention_env"),
+            patch("transclip.asr._granite_nar_dtype", return_value="bf16"),
+        ):
+            processor, model = backend._load("cuda")
+
+        self.assertEqual(processor, "processor")
+        self.assertIsInstance(model, FakeModel)
+        self.assertEqual(captured["model_kwargs"]["attn_implementation"], "flash_attention_2")
+        self.assertEqual(captured["model_kwargs"]["device_map"], "cuda")
 
 
 if __name__ == "__main__":

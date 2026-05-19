@@ -52,8 +52,11 @@ def append_toggle_log(event: dict[str, Any], path: Path | None = None) -> None:
         handle.write(json.dumps(event, sort_keys=True) + "\n")
 
 
-def last_toggle_log_event(path: Path | None = None) -> dict[str, Any] | None:
-    path = path or toggle_log_path()
+def last_toggle_log_event(
+    path: Path | None = None,
+    runtime: PlatformRuntime | None = None,
+) -> dict[str, Any] | None:
+    path = path or toggle_log_path(runtime)
     if not path.exists():
         return None
     last = _last_nonempty_line(path)
@@ -112,7 +115,7 @@ def collect_status(
 
     clipboard = _clipboard_status(platform_runtime)
     paste = _paste_status(platform_runtime)
-    last_event = last_toggle_log_event()
+    last_event = last_toggle_log_event(runtime=platform_runtime)
     ready = service.get("active") is True and health.get("status") in {"ready", "recording"}
     return {
         "ready": ready,
@@ -138,11 +141,11 @@ def stream_logs(
             command.append("-f")
         runner(command, check=False)
     elif system == "Darwin":
-        for path in (logs_dir() / "service.out.log", logs_dir() / "service.err.log"):
+        for path in (logs_dir(platform_runtime) / "service.out.log", logs_dir(platform_runtime) / "service.err.log"):
             if path.exists():
                 print(f"==> {path}")
                 print(path.read_text(encoding="utf-8", errors="replace")[-8000:])
-    path = toggle_log_path()
+    path = toggle_log_path(platform_runtime)
     if path.exists():
         print(f"==> {path}")
         print(path.read_text(encoding="utf-8", errors="replace")[-8000:])

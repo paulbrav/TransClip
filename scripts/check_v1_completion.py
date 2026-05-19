@@ -79,7 +79,7 @@ def check_completion(
         blockers.append(f"real-usage eval results missing: {real_results_path}")
 
     if doctor_checked:
-        failed_checks = [check for check in doctor_checks if not check.ok]
+        failed_checks = [check for check in doctor_checks if check.required and not check.ok]
         evidence["doctor"] = [{"name": check.name, "ok": check.ok, "detail": check.detail} for check in doctor_checks]
         for check in failed_checks:
             blockers.append(f"doctor {check.name} failed: {check.detail}")

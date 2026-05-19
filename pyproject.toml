@@ -12,7 +12,9 @@ build-backend = "hatchling.build"
 
 [project.optional-dependencies]
 audio = ["sounddevice>=0.5", "numpy>=1.26"]
-models = ["transformers>=4.52.1", "torch>=2.5", "torchaudio>=2.5", "torchcodec>=0.5", "torchvision>=0.20", "accelerate>=1.0", "soundfile>=0.12", "pillow>=10"]
+models = ["transformers>=5.5.3", "torch>=2.9.1", "torchaudio>=2.5", "torchcodec>=0.5", "torchvision>=0.20", "accelerate>=1.0", "soundfile>=0.12", "pillow>=10"]
+mlx = ["mlx-audio[stt]>=0.4.3", "huggingface_hub>=0.27", "soundfile>=0.12"]
+macos-ui = []
 llama = ["llama-cpp-python>=0.3"]
 dev = [
     "coverage[toml]>=7.10",
@@ -50,6 +52,9 @@ allowed-unresolved-imports = [
     "gi",
     "gi.repository",
     "llama_cpp",
+    "mlx",
+    "mlx_audio",
+    "mlx_audio.stt.generate",
     "sounddevice",
 ]
 

@@ -1,8 +1,9 @@
 # TransClip
 
-Local-only toggle-to-talk dictation for Linux and macOS, with local ASR and
-faithful cleanup for technical notes. Granite NAR is the default backend, but
-TransClip is the product surface.
+Local-only toggle-to-talk dictation for Linux and macOS Apple Silicon, with
+local ASR and faithful cleanup for technical notes. Linux defaults to Granite
+NAR (Torch + FlashAttention 2 on GPU). macOS Apple Silicon defaults to MLX via
+`mlx-audio`.
 
 The default path is now the pure-Python dictation daemon:
 
@@ -22,7 +23,10 @@ Create default config files:
 uv run -m transclip.cli init-config
 ```
 
-This writes `settings.toml` under the platform config directory.
+This writes `settings.toml` under the platform config directory:
+
+- Linux: `~/.config/transclip/settings.toml`
+- macOS: `~/Library/Application Support/transclip/settings.toml`
 
 Install the daemon and native shortcut:
 
@@ -45,11 +49,14 @@ uv run -m transclip.cli smoke-test
 uv run -m transclip.cli logs
 ```
 
-Run the Python tray:
+Run the Python tray (Linux only):
 
 ```bash
 transclip tray
 ```
+
+On macOS, `transclip tray` exits with guidance to use a Keyboard Shortcut or
+Shortcuts.app action until a native menu bar UI exists.
 
 On Linux this uses PyGObject/Ayatana AppIndicator. When running through `uv`,
 the command hands off to system Python if the project virtual environment does
@@ -74,6 +81,34 @@ To run the service manually instead of using the service manager:
 uv run -m transclip.cli serve
 ```
 
+## macOS Apple Silicon Quick Start
+
+Requirements: Apple Silicon, native ARM Python 3.12+, macOS 14+.
+
+```bash
+uv sync --extra audio --extra mlx
+uv run -m transclip.cli init-config
+uv run -m transclip.cli models prefetch --model mlx-community/whisper-large-v3-turbo-asr-fp16
+uv run -m transclip.cli install
+uv run -m transclip.cli status
+uv run -m transclip.cli doctor
+```
+
+Configure a global shortcut or Shortcuts.app action to run
+`transclip toggle-record --paste`. Grant Microphone permission when recording
+starts. Grant Accessibility and/or Automation permission for `osascript` paste
+injection. If paste is denied, the transcript remains on the clipboard.
+
+Dev LaunchAgent logs live under `~/Library/Logs/transclip/`. Model cache defaults
+to `~/Library/Caches/huggingface/hub`. Selectable MLX models:
+
+- `mlx-community/whisper-large-v3-turbo-asr-fp16` (default)
+- `mlx-community/granite-4.0-1b-speech-8bit` (`asr_backend = "granite_mlx"`)
+
+Granite Speech 4.1 NAR is not supported on macOS. Use the MLX backends above.
+
+## Linux CUDA / ROCm Quick Start
+
 For the portable CPU/CUDA path, install the model extras first:
 
 ```bash
@@ -81,8 +116,10 @@ uv pip install -e '.[models,audio,llama]'
 ```
 
 On the current Linux `gfx1151` workstation, the V1 latency profile uses AMD's
-TheRock ROCm nightly index plus FlashAttention's Triton AMD backend. Do not use
-the local custom wheel for this app; it fails GPU tensor execution on this host.
+TheRock ROCm nightly index plus FlashAttention's Triton AMD backend. ROCm
+support here is project-validated where FlashAttention ROCm works; it is not an
+IBM-documented Granite runtime guarantee. Do not use the local custom wheel for
+this app; it fails GPU tensor execution on this host.
 
 ```bash
 uv venv --python 3.13 .venv-gfx1151
@@ -222,11 +259,27 @@ VIRTUAL_ENV=$PWD/.venv-gfx1151 uv run --active scripts/run_real_eval_pipeline.py
   ~/transclip-real-eval
 ```
 
+## Model / Runtime Matrix
+
+| Platform | Default backend | Default model | Extra |
+| --- | --- | --- | --- |
+| Linux GPU | `granite_nar` | `ibm-granite/granite-speech-4.1-2b-nar` | `models` |
+| macOS ARM | `mlx_audio_whisper` | `mlx-community/whisper-large-v3-turbo-asr-fp16` | `mlx`, `audio` |
+| Test/file | `file:/path/to.txt` | n/a | none |
+
+## Permissions (macOS TCC)
+
+| Action | Permission | Identity |
+| --- | --- | --- |
+| Recording | Microphone | Terminal, LaunchAgent Python, Shortcuts, or packaged `.app` |
+| Paste via `osascript` | Accessibility and/or Automation | Same controlling process |
+
 ## Tests
 
 ```bash
 uv run -m unittest discover -s tests -v
 uv run -m compileall scripts transclip tests
+uv run ruff check .
 VIRTUAL_ENV=$PWD/.venv-gfx1151 uv run --active scripts/check_v1_completion.py
 ```
 

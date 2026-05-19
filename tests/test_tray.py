@@ -5,8 +5,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.service_helpers import FakeRuntime
 from transclip.settings import DEFAULT_HOTKEY_LINUX, Settings, load_settings, write_settings
-from transclip.tray import run_python_tray
+from transclip.tray import run_python_tray, run_tray
 
 
 class FakeLabel:
@@ -152,6 +153,8 @@ class FakeClient:
 
 class TrayTests(unittest.TestCase):
     def setUp(self):
+        self.runtime_patch = patch("transclip.runtime_profile.get_runtime", return_value=FakeRuntime(system="Linux"))
+        self.runtime_patch.start()
         gi = types.ModuleType("gi")
         gi.require_version = lambda *_args: None
         repository = types.ModuleType("gi.repository")
@@ -177,6 +180,9 @@ class TrayTests(unittest.TestCase):
         repository.AyatanaAppIndicator3 = app_indicator
         repository.GLib = glib
         self.modules = {"gi": gi, "gi.repository": repository}
+
+    def tearDown(self):
+        self.runtime_patch.stop()
 
     def test_health_refresh_updates_existing_menu_without_replacing_it(self):
         with (
@@ -314,6 +320,25 @@ class TrayTests(unittest.TestCase):
 
         install_shortcut.assert_not_called()
         self.assertIn("not a valid", indicator.menus[0].children[0].child.text)
+
+    def test_darwin_tray_fails_clearly_without_gtk(self):
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"))
+        with patch("transclip.tray.get_runtime", return_value=runtime):
+            code = run_tray(Settings())
+        self.assertEqual(code, 1)
+
+    def test_linux_tray_filters_macos_only_models(self):
+        with (
+            patch.dict(sys.modules, self.modules),
+            patch("transclip.tray.InferenceClient", FakeClient),
+            patch("transclip.tray.read_history", return_value=[]),
+        ):
+            run_python_tray(Settings())
+            model_item = menu_item_by_label(FakeIndicatorFactory.current, "ASR model")
+
+        labels = [getattr(child.child, "text", "") for child in model_item.submenu.children]
+        self.assertIn("✓ Fast local ASR - Granite 4.1 NAR", labels)
+        self.assertNotIn("mlx-community/whisper-large-v3-turbo-asr-fp16", labels)
 
 
 def menu_item_by_label(indicator, label: str):

@@ -90,12 +90,20 @@ def build_launch_agent(
         "KeepAlive": True,
         "StandardOutPath": str(log_root / "service.out.log"),
         "StandardErrorPath": str(log_root / "service.err.log"),
-        "EnvironmentVariables": {
-            "FLASH_ATTENTION_TRITON_AMD_ENABLE": "TRUE",
-            "TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL": "1",
-        },
     }
     return plistlib.dumps(payload, sort_keys=True)
+
+
+def launchd_gui_domain(runtime: PlatformRuntime | None = None) -> str:
+    output = get_runtime(runtime).check_output(["id", "-u"])
+    if isinstance(output, bytes):
+        output = output.decode()
+    uid = output.strip()
+    return f"gui/{uid}"
+
+
+def launchd_target(runtime: PlatformRuntime | None = None) -> str:
+    return f"{launchd_gui_domain(runtime)}/{LAUNCHD_LABEL}"
 
 
 def install_daemon(
@@ -149,8 +157,10 @@ def install_macos_daemon(
     plist_path.parent.mkdir(parents=True, exist_ok=True)
     plist_path.write_bytes(build_launch_agent(settings_path, runtime=runtime))
     results.append(CommandResult(True, f"wrote {plist_path}"))
-    results.append(run_command(["launchctl", "unload", str(plist_path)], runner, tolerate_failure=True))
-    results.append(run_command(["launchctl", "load", str(plist_path)], runner))
+    domain = launchd_gui_domain(runtime)
+    target = launchd_target(runtime)
+    results.append(run_command(["launchctl", "bootout", target], runner, tolerate_failure=True))
+    results.append(run_command(["launchctl", "bootstrap", domain, str(plist_path)], runner))
     results.append(
         CommandResult(
             True,
@@ -178,7 +188,8 @@ def uninstall_daemon(
         return results
     if system == "Darwin":
         path = launch_agent_path(runtime)
-        results = [run_command(["launchctl", "unload", str(path)], runner, tolerate_failure=True)]
+        target = launchd_target(runtime)
+        results = [run_command(["launchctl", "bootout", target], runner, tolerate_failure=True)]
         if path.exists():
             path.unlink()
             results.append(CommandResult(True, f"removed {path}"))
@@ -201,14 +212,12 @@ def service_action(
         return run_command(commands[action], runner)
     if system == "Darwin":
         plist_path = str(launch_agent_path(runtime))
+        domain = launchd_gui_domain(runtime)
+        target = launchd_target(runtime)
         commands = {
-            "start": ["launchctl", "load", plist_path],
-            "stop": ["launchctl", "unload", plist_path],
-            "restart": [
-                "sh",
-                "-lc",
-                f"launchctl unload {shlex.quote(plist_path)}; launchctl load {shlex.quote(plist_path)}",
-            ],
+            "start": ["launchctl", "bootstrap", domain, plist_path],
+            "stop": ["launchctl", "bootout", target],
+            "restart": ["launchctl", "kickstart", "-k", target],
         }
         return run_command(commands[action], runner)
     return CommandResult(False, f"unsupported platform: {system}")
@@ -242,8 +251,9 @@ def service_state(
         }
     if system == "Darwin":
         path = launch_agent_path(runtime)
+        target = launchd_target(runtime)
         result = runner(
-            ["launchctl", "list", LAUNCHD_LABEL],
+            ["launchctl", "print", target],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
