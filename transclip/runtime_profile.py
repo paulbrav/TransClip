@@ -42,8 +42,8 @@ def is_apple_silicon(runtime: PlatformRuntime | None = None) -> bool:
     return machine_architecture(runtime) in {"arm64", "aarch64"}
 
 
-def is_native_arm_python() -> bool:
-    return platform.machine().lower() in {"arm64", "aarch64"}
+def is_native_arm_python(runtime: PlatformRuntime | None = None) -> bool:
+    return machine_architecture(runtime) in {"arm64", "aarch64"}
 
 
 def detect_runtime_profile(runtime: PlatformRuntime | None = None) -> RuntimeProfile:

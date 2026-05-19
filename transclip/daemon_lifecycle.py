@@ -214,6 +214,8 @@ def service_action(
         plist_path = str(launch_agent_path(runtime))
         domain = launchd_gui_domain(runtime)
         target = launchd_target(runtime)
+        if action == "start" and _launchd_is_loaded(target, runner):
+            return run_command(["launchctl", "kickstart", "-k", target], runner)
         commands = {
             "start": ["launchctl", "bootstrap", domain, plist_path],
             "stop": ["launchctl", "bootout", target],
@@ -259,9 +261,10 @@ def service_state(
             text=True,
             check=False,
         )
+        active = result.returncode == 0 and _launchd_print_reports_running(result.stdout)
         return {
             "installed": path.exists(),
-            "active": result.returncode == 0,
+            "active": active,
             "detail": result.stdout.strip() or f"exit {result.returncode}",
         }
     return {"installed": False, "active": False, "detail": f"unsupported platform: {system}"}
@@ -290,3 +293,24 @@ def run_command(
     elif result.returncode != 0:
         detail += f": exit {result.returncode}"
     return CommandResult(ok, detail)
+
+
+def _launchd_is_loaded(target: str, runner: Runner) -> bool:
+    result = runner(
+        ["launchctl", "print", target],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def _launchd_print_reports_running(output: str) -> bool:
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("state ="):
+            return stripped.removeprefix("state =").strip() == "running"
+        if stripped.startswith("pid ="):
+            return True
+    return False

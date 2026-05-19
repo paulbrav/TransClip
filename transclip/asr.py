@@ -42,6 +42,7 @@ class PreparedTorchAudio:
 class PreparedPathAudio:
     wav_path: Path
     sample_rate: int
+    temporary: bool = False
 
 
 class AudioLoader:
@@ -98,7 +99,7 @@ class PathAudioPreparer:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as handle:
             output = Path(handle.name)
         sf.write(str(output), mono, self.target_sample_rate)
-        return PreparedPathAudio(wav_path=output, sample_rate=self.target_sample_rate)
+        return PreparedPathAudio(wav_path=output, sample_rate=self.target_sample_rate, temporary=True)
 
 
 # Backward-compatible alias used in tests
@@ -214,15 +215,18 @@ class GraniteSpeechNarTransformersBackend:
 
         dtype = _granite_nar_dtype(torch, device)
         _configure_rocm_nar_attention_env(os, torch, device)
-        model = AutoModel.from_pretrained(
-            self.model,
-            trust_remote_code=True,
-            torch_dtype=dtype,
-            attn_implementation="flash_attention_2",
-            device_map=device,
-            local_files_only=self.local_files_only,
-            cache_dir=self.cache_dir or None,
-        )
+        model_kwargs = {
+            "trust_remote_code": True,
+            "torch_dtype": dtype,
+            "local_files_only": self.local_files_only,
+            "cache_dir": self.cache_dir or None,
+        }
+        if _granite_nar_uses_flash_attention(torch, device):
+            model_kwargs["attn_implementation"] = "flash_attention_2"
+            model_kwargs["device_map"] = device
+        model = AutoModel.from_pretrained(self.model, **model_kwargs)
+        if not _granite_nar_uses_flash_attention(torch, device) and hasattr(model, "to"):
+            model.to(device)
         model.eval()
         processor = AutoProcessor.from_pretrained(
             self.model,
@@ -292,9 +296,13 @@ class MlxAudioASRBackend:
             audio = self.audio_preparer.prepare(wav_path)
             model_path = self._model_path()
             try:
-                result = generate_transcription(model=model_path, audio=str(audio.wav_path))
-            except TypeError:
-                result = generate_transcription(audio_path=str(audio.wav_path), model_path=model_path)
+                try:
+                    result = generate_transcription(model=model_path, audio=str(audio.wav_path))
+                except TypeError:
+                    result = generate_transcription(audio_path=str(audio.wav_path), model_path=model_path)
+            finally:
+                if getattr(audio, "temporary", False):
+                    audio.wav_path.unlink(missing_ok=True)
             text = getattr(result, "text", None) or str(result)
         return TranscriptionResult(text.strip(), timings, self.name, self.model)
 
@@ -359,6 +367,11 @@ def _configure_rocm_nar_attention_env(os_module, torch, device: str) -> None:
     if device == "cuda" and getattr(torch.version, "hip", None):
         os_module.environ.setdefault("FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE")
         os_module.environ.setdefault("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL", "1")
+
+
+def _granite_nar_uses_flash_attention(torch, device: str) -> bool:
+    del torch
+    return device == "cuda"
 
 
 def _linear_resample(samples: Any, source_rate: int, target_rate: int) -> Any:

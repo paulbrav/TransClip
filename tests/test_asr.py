@@ -22,6 +22,7 @@ from transclip.settings import Settings
 
 class ASRTests(unittest.TestCase):
     linux = linux_runtime()
+
     def test_granite_prompt_requests_punctuation(self):
         self.assertEqual(
             granite_user_prompt(),
@@ -185,6 +186,7 @@ class ASRTests(unittest.TestCase):
         self.assertNotEqual(prepared.wav_path, Path("sample.wav"))
         self.assertEqual(captured["sample_rate"], 16000)
         self.assertEqual(len(captured["data"]), 160)
+        self.assertTrue(prepared.temporary)
 
     def test_path_preparer_returns_existing_mono_wav(self):
         wav_path = Path("/tmp/sample.wav")
@@ -194,6 +196,7 @@ class ASRTests(unittest.TestCase):
             prepared = PathAudioPreparer().prepare(wav_path)
         self.assertEqual(prepared.wav_path, wav_path)
         self.assertEqual(prepared.sample_rate, 16000)
+        self.assertFalse(prepared.temporary)
 
     def test_mlx_audio_backend_uses_current_generate_api(self):
         calls = []
@@ -209,6 +212,27 @@ class ASRTests(unittest.TestCase):
 
         self.assertEqual(result.text, "hello")
         self.assertEqual(calls, [{"model": "mlx/model", "audio": "prepared.wav"}])
+
+    def test_mlx_audio_backend_removes_temporary_prepared_wav(self):
+        temp_path = Path("/tmp/transclip-test-prepared.wav")
+        temp_path.write_bytes(b"wav")
+        fake_generate = SimpleNamespace(
+            generate_transcription=lambda **_kwargs: SimpleNamespace(text="hello"),
+        )
+        backend = MlxAudioASRBackend("mlx/model", "mlx_audio_whisper")
+        backend.local_files_only = False
+        backend.audio_preparer = SimpleNamespace(
+            prepare=lambda _path: SimpleNamespace(wav_path=temp_path, temporary=True),
+        )
+
+        try:
+            with patch.dict("sys.modules", {"mlx_audio.stt.generate": fake_generate}):
+                result = backend.transcribe(Path("input.wav"))
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+        self.assertEqual(result.text, "hello")
+        self.assertFalse(temp_path.exists())
 
     def test_granite_nar_transcribe_uses_processor_and_model_transcribe(self):
         backend = GraniteSpeechNarTransformersBackend("ibm-granite/granite-speech-4.1-2b-nar", "cpu")
@@ -271,6 +295,43 @@ class ASRTests(unittest.TestCase):
         self.assertIsInstance(model, FakeModel)
         self.assertEqual(captured["model_kwargs"]["attn_implementation"], "flash_attention_2")
         self.assertEqual(captured["model_kwargs"]["device_map"], "cuda")
+
+    def test_granite_nar_load_does_not_require_flash_attention_on_cpu(self):
+        backend = GraniteSpeechNarTransformersBackend("ibm-granite/granite-speech-4.1-2b-nar", "cpu")
+        captured: dict[str, object] = {}
+
+        class FakeModel:
+            def to(self, device):
+                captured["to_device"] = device
+                return self
+
+            def eval(self):
+                return self
+
+        def from_pretrained(_model, **kwargs):
+            captured["model_kwargs"] = kwargs
+            return FakeModel()
+
+        fake_transformers = SimpleNamespace(
+            AutoModel=SimpleNamespace(from_pretrained=from_pretrained),
+            AutoProcessor=SimpleNamespace(from_pretrained=lambda *_args, **_kwargs: "processor"),
+        )
+        fake_torch = SimpleNamespace(
+            bfloat16="bf16",
+            float32="fp32",
+            version=SimpleNamespace(hip=None),
+        )
+
+        with (
+            patch.dict("sys.modules", {"transformers": fake_transformers, "torch": fake_torch}),
+            patch("transclip.asr._configure_rocm_nar_attention_env"),
+            patch("transclip.asr._granite_nar_dtype", return_value="fp32"),
+        ):
+            backend._load("cpu")
+
+        self.assertNotIn("attn_implementation", captured["model_kwargs"])
+        self.assertNotIn("device_map", captured["model_kwargs"])
+        self.assertEqual(captured["to_device"], "cpu")
 
 
 if __name__ == "__main__":

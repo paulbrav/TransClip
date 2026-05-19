@@ -9,6 +9,7 @@ from transclip.models import (
     SUPPORTED_MODELS,
     cache_artifacts_present,
     ensure_disk_space,
+    mlx_snapshot_path,
     model_rows,
     normalize_asr_backend,
     prefetch_model,
@@ -20,6 +21,7 @@ from transclip.settings import Settings
 
 class ModelsTests(unittest.TestCase):
     linux = linux_runtime()
+
     def test_catalog_contains_current_granite_backends(self):
         rows = {(model.backend, model.model_id) for model in SUPPORTED_MODELS}
 
@@ -101,6 +103,22 @@ class ModelsTests(unittest.TestCase):
             )
 
         self.assertIn("Library/Caches/huggingface/hub", captured["cache_dir"])
+
+    def test_mlx_snapshot_path_uses_refs_main(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(model_cache_dir=tmp)
+            root = Path(tmp) / "models--mlx-community--whisper-large-v3-turbo-asr-fp16"
+            (root / "snapshots" / "aaa").mkdir(parents=True)
+            selected = root / "snapshots" / "bbb"
+            selected.mkdir()
+            (root / "snapshots" / "zzz").mkdir()
+            (root / "refs").mkdir()
+            (root / "refs" / "main").write_text("bbb\n", encoding="utf-8")
+
+            self.assertEqual(
+                mlx_snapshot_path("mlx-community/whisper-large-v3-turbo-asr-fp16", settings),
+                selected,
+            )
 
     def test_disk_space_failure_uses_catalog_estimate(self):
         usage = type("Usage", (), {"free": 1})()

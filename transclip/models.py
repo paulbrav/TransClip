@@ -193,6 +193,11 @@ def mlx_snapshot_path(model_id: str, settings: Settings, runtime: PlatformRuntim
     snapshots = cache_path / "snapshots"
     if not snapshots.exists():
         return None
+    ref = cache_path / "refs" / "main"
+    if ref.exists():
+        snapshot = snapshots / ref.read_text(encoding="utf-8").strip()
+        if snapshot.exists():
+            return snapshot
     candidates = sorted(snapshots.iterdir())
     return candidates[-1] if candidates else None
 

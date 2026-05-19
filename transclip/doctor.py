@@ -12,7 +12,7 @@ from .audio import recording_debug
 from .client import InferenceClient
 from .daemon import last_toggle_log_event, service_state
 from .daemon_lifecycle import toggle_log_path
-from .device import torch_cuda_usable, torch_mps_available
+from .device import resolve_torch_device, torch_cuda_usable, torch_mps_available
 from .gnome_shortcut import shortcut_readiness
 from .models import (
     cache_artifacts_present,
@@ -109,7 +109,7 @@ def build_mlx_checks(settings: Settings, runtime: PlatformRuntime | None = None)
         ),
         Check(
             "mlx_native_python",
-            is_native_arm_python(),
+            is_native_arm_python(runtime),
             f"Python architecture is {py_platform.machine()}; MLX requires native ARM Python",
         ),
         check_macos_version(),
@@ -377,6 +377,9 @@ def check_asr_runtime(settings: Settings) -> Check:
         import torch
     except ImportError:
         return Check("asr_runtime", False, "torch is not installed")
+    device = resolve_torch_device(settings.asr_device)
+    if device != "cuda":
+        return Check("asr_runtime", True, f"Granite NAR will use {device} without flash-attn")
     if getattr(torch.version, "hip", None):
         os.environ.setdefault("FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE")
     try:

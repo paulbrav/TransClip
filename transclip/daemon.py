@@ -125,6 +125,7 @@ def collect_status(
         "clipboard": clipboard,
         "paste": paste,
         "last_log_event": last_event,
+        "toggle_log_path": str(toggle_log_path(platform_runtime)),
     }
 
 
@@ -141,10 +142,22 @@ def stream_logs(
             command.append("-f")
         runner(command, check=False)
     elif system == "Darwin":
-        for path in (logs_dir(platform_runtime) / "service.out.log", logs_dir(platform_runtime) / "service.err.log"):
+        paths = [
+            logs_dir(platform_runtime) / "service.out.log",
+            logs_dir(platform_runtime) / "service.err.log",
+            toggle_log_path(platform_runtime),
+        ]
+        existing_paths = [path for path in paths if path.exists()]
+        if follow and existing_paths:
+            runner(["tail", "-n", "80", "-f", *[str(path) for path in existing_paths]], check=False)
+            return 0
+        for path in existing_paths:
             if path.exists():
                 print(f"==> {path}")
                 print(path.read_text(encoding="utf-8", errors="replace")[-8000:])
+        if toggle_log_path(platform_runtime) not in existing_paths:
+            print(f"no toggle log at {toggle_log_path(platform_runtime)}")
+        return 0
     path = toggle_log_path(platform_runtime)
     if path.exists():
         print(f"==> {path}")

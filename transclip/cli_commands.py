@@ -265,8 +265,9 @@ def _format_status(status: dict) -> str:
     if shortcut is not None:
         lines.append("shortcut\t" + json.dumps(shortcut, sort_keys=True))
     last_event = status.get("last_log_event")
+    log_path = status.get("toggle_log_path") or str(toggle_log_path())
     lines.append(
-        "last_log_event\t" + (json.dumps(last_event, sort_keys=True) if last_event else f"none at {toggle_log_path()}")
+        "last_log_event\t" + (json.dumps(last_event, sort_keys=True) if last_event else f"none at {log_path}")
     )
     return "\n".join(lines)
 

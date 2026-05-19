@@ -15,7 +15,7 @@ The runnable app lives in `transclip/`: Python inference service,
 settings, audio capture, cleanup, paste injection, daemon install/status/log
 commands, debug capture, Python AppIndicator tray, and eval harness.
 
-## Quick Start
+## Linux Quick Start
 
 Create default config files:
 
@@ -23,10 +23,7 @@ Create default config files:
 uv run -m transclip.cli init-config
 ```
 
-This writes `settings.toml` under the platform config directory:
-
-- Linux: `~/.config/transclip/settings.toml`
-- macOS: `~/Library/Application Support/transclip/settings.toml`
+This writes `settings.toml` under `~/.config/transclip/settings.toml`.
 
 Install the daemon and native shortcut:
 
@@ -65,6 +62,9 @@ not expose `gi`. Install the system bindings if missing:
 ```bash
 sudo apt install -y python3-gi gir1.2-ayatanaappindicator3-0.1
 ```
+
+Use the macOS Apple Silicon quick start below on M-series Macs. Intel Macs are
+not a supported runtime target for this branch.
 
 Service controls:
 
@@ -105,7 +105,8 @@ to `~/Library/Caches/huggingface/hub`. Selectable MLX models:
 - `mlx-community/whisper-large-v3-turbo-asr-fp16` (default)
 - `mlx-community/granite-4.0-1b-speech-8bit` (`asr_backend = "granite_mlx"`)
 
-Granite Speech 4.1 NAR is not supported on macOS. Use the MLX backends above.
+Granite Speech 4.1 NAR is not supported on macOS. macOS support in this branch
+is Apple Silicon only; use the MLX backends above on M-series Macs.
 
 ## Linux CUDA / ROCm Quick Start
 
