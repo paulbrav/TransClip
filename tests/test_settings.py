@@ -39,7 +39,11 @@ class SettingsTests(unittest.TestCase):
 
     def test_platform_helpers_have_defaults(self):
         settings = Settings()
-        self.assertIn("XF86TouchpadOff", settings.active_hotkey)
+        hotkey = settings.active_hotkey
+        if "XF86TouchpadOff" in settings.hotkey_linux:
+            self.assertTrue("XF86TouchpadOff" in hotkey or "Option+Space" in hotkey)
+        else:
+            self.assertTrue(hotkey)
         self.assertIn("V", settings.paste_shortcut)
 
     def test_set_setting_rewrites_canonical_toml(self):

@@ -1,5 +1,6 @@
 import subprocess
 import unittest
+from pathlib import Path
 
 from tests.service_helpers import FakeRuntime
 from transclip.gnome_shortcut import (
@@ -76,6 +77,11 @@ class GnomeShortcutTests(unittest.TestCase):
         self.assertIn("toggle-record --paste", command)
         self.assertIn("toggle-record.log", command)
         self.assertTrue(command_exists(command))
+
+    def test_build_toggle_command_uses_darwin_log_dir(self):
+        command = build_toggle_command(runtime=FakeRuntime(system="Darwin", home=Path("/Users/test")))
+
+        self.assertIn("/Users/test/Library/Logs/transclip/toggle-record.log", command)
 
     def test_shortcut_readiness_owns_policy(self):
         status = shortcut_readiness(

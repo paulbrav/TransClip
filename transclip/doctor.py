@@ -141,8 +141,15 @@ def check_hotkey_readiness(
     settings: Settings | None = None,
     runtime: PlatformRuntime | None = None,
 ) -> Check:
+    current_settings = settings or Settings()
+    platform_runtime = get_runtime(runtime)
+    expected_binding = (
+        current_settings.hotkey_macos
+        if platform_runtime.system() == "Darwin"
+        else current_settings.hotkey_linux
+    )
     readiness = shortcut_readiness(
-        expected_binding=(settings or Settings()).hotkey_linux,
+        expected_binding=expected_binding,
         runtime=runtime,
     )
     return Check("hotkey_readiness", readiness.ok, readiness.detail)
@@ -246,7 +253,7 @@ def check_torch_runtime(settings: Settings) -> Check:
     return Check("torch_runtime", True, f"torch {version} hip={hip}; auto will use CPU")
 
 
-def check_asr_runtime(settings: Settings) -> Check:
+def check_asr_runtime(settings: Settings, runtime: PlatformRuntime | None = None) -> Check:
     if settings.asr_backend not in {"granite_nar", "granite-nar", "nar"}:
         return Check("asr_runtime", True, f"{settings.asr_backend} has no extra runtime checks")
     try:
@@ -255,13 +262,20 @@ def check_asr_runtime(settings: Settings) -> Check:
         import torch
     except ImportError:
         return Check("asr_runtime", False, "torch is not installed")
+    if get_runtime(runtime).system() == "Darwin":
+        return Check(
+            "asr_runtime",
+            True,
+            "Granite NAR on macOS uses CPU/MPS; flash-attn is only required on ROCm Linux",
+        )
     if getattr(torch.version, "hip", None):
         os.environ.setdefault("FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE")
-    try:
-        import flash_attn  # noqa: F401
-    except ImportError as exc:
-        return Check("asr_runtime", False, f"Granite NAR requires flash-attn; import failed: {exc}")
-    return Check("asr_runtime", True, "Granite NAR flash-attn runtime import passed")
+        try:
+            import flash_attn  # noqa: F401
+        except ImportError as exc:
+            return Check("asr_runtime", False, f"Granite NAR on ROCm requires flash-attn; import failed: {exc}")
+        return Check("asr_runtime", True, "Granite NAR flash-attn runtime import passed")
+    return Check("asr_runtime", True, "Granite NAR CUDA path does not require flash-attn on this host")
 
 
 def checks_as_json(checks: list[Check]) -> str:

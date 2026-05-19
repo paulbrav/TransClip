@@ -71,7 +71,10 @@ def user_config_dir(app_name: str, runtime: PlatformRuntime | None = None) -> Pa
 
 
 def user_cache_dir(app_name: str, runtime: PlatformRuntime | None = None) -> Path:
-    return get_runtime(runtime).home_dir() / ".cache" / app_name
+    platform_runtime = get_runtime(runtime)
+    if platform_runtime.system() == "Darwin":
+        return platform_runtime.home_dir() / "Library" / "Caches" / app_name
+    return platform_runtime.home_dir() / ".cache" / app_name
 
 
 def user_log_dir(app_name: str, runtime: PlatformRuntime | None = None) -> Path:

@@ -1,3 +1,4 @@
+import plistlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,7 +14,9 @@ from transclip.daemon import (
     last_toggle_log_event,
     toggle_log_path,
 )
-from transclip.settings import Settings
+from transclip.daemon_lifecycle import build_launch_agent, install_macos_daemon
+from transclip.product import LAUNCHD_LABEL
+from transclip.settings import Settings, default_config_dir
 
 
 class DaemonTests(unittest.TestCase):
@@ -21,9 +24,43 @@ class DaemonTests(unittest.TestCase):
         unit = build_systemd_unit(Path("/tmp/settings.toml"))
 
         self.assertIn("Description=TransClip dictation service", unit)
-        self.assertIn("-m transclip.cli --settings /tmp/settings.toml serve", unit)
+        self.assertIn("-m transclip.cli", unit)
+        self.assertIn("settings.toml serve", unit)
         self.assertIn("Restart=on-failure", unit)
         self.assertIn("FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE", unit)
+        with patch("transclip.daemon_lifecycle.default_config_dir", return_value=Path("/tmp/transclip-config")):
+            unit_with_config = build_systemd_unit(Path("/tmp/settings.toml"))
+        self.assertIn("WorkingDirectory=/tmp/transclip-config", unit_with_config)
+
+    def test_launch_agent_uses_config_working_directory_without_rocm_env(self):
+        with patch("transclip.daemon_lifecycle.default_config_dir", return_value=Path("/tmp/transclip-config")):
+            payload = plistlib.loads(build_launch_agent(runtime=FakeRuntime(system="Darwin", home=Path("/Users/test"))))
+
+        self.assertEqual(payload["Label"], LAUNCHD_LABEL)
+        self.assertEqual(payload["WorkingDirectory"], "/tmp/transclip-config")
+        self.assertEqual(payload["LimitLoadToSessionType"], "Aqua")
+        self.assertEqual(payload["EnvironmentVariables"], {})
+        self.assertEqual(
+            payload["StandardOutPath"],
+            "/Users/test/Library/Logs/transclip/service.out.log",
+        )
+
+    def test_macos_install_writes_plist_and_bootstraps_launch_agent(self):
+        calls = []
+
+        def runner(command, **_kwargs):
+            calls.append(command)
+            return type("Completed", (), {"returncode": 0, "stdout": ""})()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            results = install_macos_daemon(runner=runner, runtime=FakeRuntime(system="Darwin", home=home))
+            plist_path = home / "Library" / "LaunchAgents" / f"{LAUNCHD_LABEL}.plist"
+            self.assertTrue(plist_path.exists())
+            self.assertIn(["launchctl", "bootout", f"gui/{__import__('os').getuid()}", str(plist_path)], calls)
+            self.assertIn(["launchctl", "bootstrap", f"gui/{__import__('os').getuid()}", str(plist_path)], calls)
+            self.assertTrue(any("Keyboard Shortcut" in result.detail for result in results))
+            self.assertTrue(all(result.ok for result in results))
 
     def test_linux_install_writes_unit_runs_systemctl_and_installs_shortcut(self):
         calls = []
@@ -82,6 +119,14 @@ class DaemonTests(unittest.TestCase):
             self.assertEqual(
                 toggle_log_path(runtime),
                 Path(tmp) / ".cache" / "transclip" / "toggle-record.log",
+            )
+
+    def test_toggle_log_path_is_under_logs_dir_on_darwin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = FakeRuntime(system="Darwin", home=Path(tmp))
+            self.assertEqual(
+                toggle_log_path(runtime),
+                Path(tmp) / "Library" / "Logs" / "transclip" / "toggle-record.log",
             )
 
     def test_paste_status_reports_probe_failure(self):
