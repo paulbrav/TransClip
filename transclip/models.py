@@ -42,8 +42,18 @@ MODEL_CATALOG: tuple[ModelCatalogEntry, ...] = (
         backend="granite",
         runtime_kind="torch",
         estimated_bytes=8 * GIB,
-        supported_platforms=frozenset({"Linux"}),
-        supported_architectures=None,
+        supported_platforms=frozenset({"Darwin", "Linux"}),
+        supported_architectures=frozenset({"arm64", "aarch64"}),
+        dependency_extra="models",
+        prefetch_strategy="transformers",
+    ),
+    ModelCatalogEntry(
+        model_id="ibm-granite/granite-speech-4.1-2b-plus",
+        backend="granite",
+        runtime_kind="torch",
+        estimated_bytes=8 * GIB,
+        supported_platforms=frozenset({"Darwin", "Linux"}),
+        supported_architectures=frozenset({"arm64", "aarch64"}),
         dependency_extra="models",
         prefetch_strategy="transformers",
     ),
@@ -131,7 +141,7 @@ def validate_platform_support(
             f"Model {entry.model_id} is not supported on {system}. "
             f"Supported platforms: {', '.join(sorted(entry.supported_platforms))}"
         )
-    if entry.supported_architectures is not None:
+    if entry.supported_architectures is not None and system == "Darwin":
         arch = _machine_arch(runtime)
         if arch not in entry.supported_architectures:
             raise ValueError(

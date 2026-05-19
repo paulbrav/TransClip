@@ -105,8 +105,19 @@ to `~/Library/Caches/huggingface/hub`. Selectable MLX models:
 - `mlx-community/whisper-large-v3-turbo-asr-fp16` (default)
 - `mlx-community/granite-4.0-1b-speech-8bit` (`asr_backend = "granite_mlx"`)
 
-Granite Speech 4.1 NAR is not supported on macOS. macOS support in this branch
-is Apple Silicon only; use the MLX backends above on M-series Macs.
+Granite Speech 4.1 autoregressive models are also selectable on Apple Silicon
+through the Torch/MPS backend with `uv sync --extra audio --extra models`:
+
+```toml
+asr_backend = "granite"
+asr_model = "ibm-granite/granite-speech-4.1-2b"
+asr_device = "auto"
+```
+
+`ibm-granite/granite-speech-4.1-2b-plus` uses the same backend. The MLX
+Whisper path remains the macOS default because it is the smallest first-class
+Apple Silicon runtime in this app. Granite Speech 4.1 NAR is still not supported
+on macOS by TransClip's current backends.
 
 ## Linux CUDA / ROCm Quick Start
 
@@ -266,6 +277,7 @@ VIRTUAL_ENV=$PWD/.venv-gfx1151 uv run --active scripts/run_real_eval_pipeline.py
 | --- | --- | --- | --- |
 | Linux GPU | `granite_nar` | `ibm-granite/granite-speech-4.1-2b-nar` | `models` |
 | macOS ARM | `mlx_audio_whisper` | `mlx-community/whisper-large-v3-turbo-asr-fp16` | `mlx`, `audio` |
+| macOS ARM optional | `granite` | `ibm-granite/granite-speech-4.1-2b` / `ibm-granite/granite-speech-4.1-2b-plus` | `models`, `audio` |
 | Test/file | `file:/path/to.txt` | n/a | none |
 
 ## Permissions (macOS TCC)

@@ -14,6 +14,7 @@ from transclip.asr import (
     TorchAudioPreparer,
     _configure_rocm_nar_attention_env,
     _granite_nar_dtype,
+    _granite_transformers_dtype,
     build_asr_backend,
     granite_user_prompt,
 )
@@ -96,6 +97,15 @@ class ASRTests(unittest.TestCase):
 
         torch.version.hip = None
         self.assertEqual(_granite_nar_dtype(torch, "cuda"), "bfloat16")
+
+    def test_granite_transformers_uses_bfloat16_on_mps(self):
+        torch = SimpleNamespace(
+            bfloat16="bfloat16",
+            float32="float32",
+        )
+
+        self.assertEqual(_granite_transformers_dtype(torch, "mps"), "bfloat16")
+        self.assertEqual(_granite_transformers_dtype(torch, "cpu"), "float32")
 
     def test_granite_nar_sets_rocm_attention_environment(self):
         environ = {}

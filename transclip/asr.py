@@ -131,7 +131,7 @@ class GraniteSpeechTransformersBackend:
                 "transformers, torch, and torchaudio are required. Install transclip[models]."
             ) from exc
 
-        dtype = torch.bfloat16 if device == "cuda" else torch.float32
+        dtype = _granite_transformers_dtype(torch, device)
         processor = AutoProcessor.from_pretrained(
             self.model,
             local_files_only=self.local_files_only,
@@ -353,6 +353,12 @@ def granite_user_prompt(keywords: list[str] | None = None) -> str:
         if keyword_text:
             return f"transcribe the speech to text. Keywords: {keyword_text}"
     return "transcribe the speech with proper punctuation and capitalization."
+
+
+def _granite_transformers_dtype(torch, device: str):
+    if device in {"cuda", "mps"}:
+        return torch.bfloat16
+    return torch.float32
 
 
 def _granite_nar_dtype(torch, device: str):

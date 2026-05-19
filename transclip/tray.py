@@ -297,6 +297,8 @@ def _model_label(model_id: str, backend: str) -> str:
     if backend == "granite_nar":
         return "Fast local ASR - Granite 4.1 NAR"
     if backend == "granite":
+        if model_id.endswith("-plus"):
+            return "Speaker/timestamp ASR - Granite 4.1 Plus"
         return "Keyword-biased ASR - Granite 4.1"
     return model_id
 

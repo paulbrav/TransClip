@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from tests.platform_helpers import darwin_arm_runtime, linux_runtime
+from tests.service_helpers import FakeRuntime
 from transclip.models import (
     SUPPORTED_MODELS,
     cache_artifacts_present,
@@ -27,6 +28,7 @@ class ModelsTests(unittest.TestCase):
 
         self.assertIn(("granite_nar", "ibm-granite/granite-speech-4.1-2b-nar"), rows)
         self.assertIn(("granite", "ibm-granite/granite-speech-4.1-2b"), rows)
+        self.assertIn(("granite", "ibm-granite/granite-speech-4.1-2b-plus"), rows)
         self.assertIn(("mlx_audio_whisper", "mlx-community/whisper-large-v3-turbo-asr-fp16"), rows)
         self.assertIn(("granite_mlx", "mlx-community/granite-4.0-1b-speech-8bit"), rows)
 
@@ -52,10 +54,31 @@ class ModelsTests(unittest.TestCase):
             ),
             "granite",
         )
+        self.assertEqual(
+            validate_asr_model_backend(
+                "granite",
+                "ibm-granite/granite-speech-4.1-2b-plus",
+                darwin_arm_runtime(),
+            ),
+            "granite",
+        )
         with self.assertRaisesRegex(ValueError, "requires asr_backend='granite'"):
             validate_asr_model_backend("granite_nar", "ibm-granite/granite-speech-4.1-2b", self.linux)
         with self.assertRaisesRegex(ValueError, "requires asr_backend='granite_nar'"):
             validate_asr_model_backend("granite", "ibm-granite/granite-speech-4.1-2b-nar", self.linux)
+
+    def test_granite_autoregressive_models_are_listed_on_darwin_arm(self):
+        rows = {(row["backend"], row["model_id"]) for row in model_rows(Settings(), runtime=darwin_arm_runtime())}
+
+        self.assertIn(("granite", "ibm-granite/granite-speech-4.1-2b"), rows)
+        self.assertIn(("granite", "ibm-granite/granite-speech-4.1-2b-plus"), rows)
+        self.assertNotIn(("granite_nar", "ibm-granite/granite-speech-4.1-2b-nar"), rows)
+
+    def test_darwin_intel_rejects_apple_silicon_granite_mps_models(self):
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"), check_output_text="x86_64")
+
+        with self.assertRaisesRegex(ValueError, "requires aarch64, arm64"):
+            validate_asr_model_backend("granite", "ibm-granite/granite-speech-4.1-2b", runtime)
 
     def test_cache_detection_and_rows_do_not_download(self):
         with tempfile.TemporaryDirectory() as tmp:
