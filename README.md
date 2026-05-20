@@ -246,39 +246,3 @@ Check host readiness:
 uv run -m transclip.cli doctor
 uv run -m transclip.cli doctor --fix
 ```
-
-## ChatGPT UI Bridge
-
-For ChatGPT-only model modes that are visible in the web app but not exposed as
-Codex/API model IDs, `scripts/chatgpt_ui_ask.py` can drive the visible ChatGPT
-browser UI with Playwright. It uses a dedicated persistent browser profile and
-does not extract or replay browser auth tokens.
-
-Install the optional dependency and browser support:
-
-```bash
-uv run --extra chatgpt-ui playwright install chrome
-```
-
-First run with the browser left open, then log in and select any account prompts
-manually:
-
-```bash
-uv run --extra chatgpt-ui scripts/chatgpt_ui_ask.py --keep-open "Say ready."
-```
-
-After the profile is logged in, ask through the visible UI:
-
-```bash
-uv run --extra chatgpt-ui scripts/chatgpt_ui_ask.py --model "Extended Pro" "Analyze this prompt."
-```
-
-Use stdin for larger prompts:
-
-```bash
-cat prompt.txt | uv run --extra chatgpt-ui scripts/chatgpt_ui_ask.py --model "Extended Pro"
-```
-
-The bridge defaults to `~/.cache/transclip-chatgpt-ui`. Use `--profile` to
-keep a separate login/profile, `--reuse-current-chat` to continue the current
-conversation, and `--keep-open` to inspect or repair the browser state.

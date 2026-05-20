@@ -22,7 +22,6 @@ dev = [
     "ruff>=0.12.11",
     "ty>=0.0.1a19",
 ]
-chatgpt-ui = ["playwright>=1.52"]
 
 [project.scripts]
 transclip = "transclip.cli:main"
