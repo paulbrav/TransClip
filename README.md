@@ -14,6 +14,11 @@ The runnable app lives in `transclip/`: Python inference service,
 settings, audio capture, cleanup, paste injection, daemon install/status/log
 commands, debug capture, Python AppIndicator tray, and eval harness.
 
+## License
+
+TransClip is licensed under the Apache License, Version 2.0. Model weights and
+third-party dependencies are governed by their own licenses.
+
 ## Quick Start
 
 Create default config files:

@@ -3,6 +3,8 @@ name = "transclip"
 version = "0.1.0"
 description = "Local-only push-to-talk dictation with local ASR-oriented harnesses."
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = []
 
