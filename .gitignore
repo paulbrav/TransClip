@@ -18,4 +18,5 @@ htmlcov/
 # Local-only runtime artifacts
 debug-captures/
 .local-tools/
+plans/
 *.wav
