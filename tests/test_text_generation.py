@@ -39,6 +39,24 @@ class TextGenerationTests(unittest.TestCase):
         self.assertEqual(state.model_loads, 1)
         self.assertEqual(state.model.max_active_generations, 1)
 
+    def test_transformers_backend_disables_chat_template_thinking(self):
+        state = FakeTransformersState()
+        backend = TransformersTextGenerationBackend("local/text-model")
+
+        with (
+            patch.dict(
+                sys.modules,
+                {
+                    "transformers": state.transformers_module(),
+                    "torch": FakeTorch(),
+                },
+            ),
+            patch("transclip.text_generation.resolve_torch_device", return_value="cpu"),
+        ):
+            backend.generate([{"role": "user", "content": "shell task"}], max_new_tokens=8)
+
+        self.assertEqual(state.tokenizer.template_kwargs["enable_thinking"], False)
+
 
 class FakeTransformersState:
     def __init__(self):
@@ -77,7 +95,11 @@ class FakeTransformersState:
 class FakeTokenizer:
     eos_token_id = 1
 
+    def __init__(self):
+        self.template_kwargs = {}
+
     def apply_chat_template(self, *_args, **_kwargs):
+        self.template_kwargs = _kwargs
         return FakeInputs()
 
     def decode(self, *_args, **_kwargs):
