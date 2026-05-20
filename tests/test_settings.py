@@ -44,6 +44,16 @@ class SettingsTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 load_settings(path)
 
+    def test_deprecated_llama_cleanup_model_path_is_ignored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "settings.toml"
+            path.write_text('cleanup_model_path = "/models/legacy.gguf"\ncleanup_runtime = "rule"\n', encoding="utf-8")
+
+            settings = load_settings(path)
+
+            self.assertEqual(settings.cleanup_runtime, "rule")
+            self.assertFalse(hasattr(settings, "cleanup_model_path"))
+
     def test_platform_helpers_have_defaults(self):
         settings = Settings()
         self.assertIn("XF86TouchpadOff", settings.active_hotkey)

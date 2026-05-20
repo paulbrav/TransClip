@@ -96,9 +96,7 @@ def model_cache_path(model_id: str, settings: Settings) -> Path:
 
 def required_model_cache_paths(settings: Settings) -> list[Path]:
     paths = [model_cache_path(settings.asr_model, settings)]
-    if settings.cleanup_runtime == "llama_cpp":
-        paths.append(Path(settings.cleanup_model_path).expanduser())
-    elif settings.cleanup_runtime == "transformers":
+    if settings.cleanup_runtime == "transformers":
         paths.append(model_cache_path(settings.cleanup_model, settings))
     if settings.text_model_runtime == "transformers" and (
         settings.voice_mode_routing_enabled or settings.voice_model_cleanup_always_on

@@ -41,6 +41,8 @@ class CleanupTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             build_cleanup_backend(Settings(cleanup_runtime="unknown"))
+        with self.assertRaisesRegex(ValueError, "Unsupported cleanup runtime: llama_cpp"):
+            build_cleanup_backend(Settings(cleanup_runtime="llama_cpp"))
 
     def test_faithful_cleanup_messages_are_conservative(self):
         messages = faithful_cleanup_messages("hello pytorch")
@@ -53,7 +55,6 @@ class CleanupTests(unittest.TestCase):
 
         self.assertEqual(policy.token_budget("one two"), 64)
         self.assertEqual(policy.token_budget("word " * 300), 512)
-        self.assertIn("Cleaned:", policy.prompt("hello ROCm"))
         self.assertEqual(policy.validate_output(" cleaned ", "provider"), "cleaned")
         with self.assertRaisesRegex(RuntimeError, "provider cleanup produced an empty response"):
             policy.validate_output("   ", "provider")

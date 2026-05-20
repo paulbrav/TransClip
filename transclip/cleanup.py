@@ -93,13 +93,6 @@ class FaithfulCleanupPolicy:
     def token_budget(self, text: str) -> int:
         return max(self.min_context_tokens, min(self.max_context_tokens, len(text.split()) * self.tokens_per_word))
 
-    def prompt(self, text: str) -> str:
-        return (
-            "Clean this ASR transcript faithfully. Add only punctuation, capitalization, "
-            "and conservative paragraphing. Do not add facts, remove meaning, rewrite tone, "
-            f"or replace technical identifiers.\n\nTranscript:\n{text}\n\nCleaned:"
-        )
-
     def messages(self, text: str) -> list[dict[str, str]]:
         return [
             {
@@ -121,36 +114,6 @@ class FaithfulCleanupPolicy:
         if not cleaned:
             raise RuntimeError(f"{provider} cleanup produced an empty response")
         return cleaned
-
-
-class LlamaCppCleanupBackend(CleanupBackend):
-    name = "llama.cpp"
-
-    def __init__(self, model_path: str, model_name: str):
-        if not model_path:
-            raise ValueError("cleanup_model_path is required for llama.cpp cleanup")
-        model_path = model_path.replace("~", __import__("os").path.expanduser("~"), 1)
-        try:
-            from llama_cpp import Llama
-        except ImportError as exc:
-            raise RuntimeError("llama-cpp-python is not installed. Install transclip[llama].") from exc
-        self.model_name = model_name
-        self.model_path = model_path
-        self.llm = Llama(model_path=model_path, n_ctx=4096, verbose=False)
-        self.policy = FaithfulCleanupPolicy()
-
-    def cleanup(self, text: str) -> CleanupResult:
-        timings: dict[str, float] = {}
-        prompt = self.policy.prompt(text)
-        with timed_ms(timings, "cleanup"):
-            output = self.llm(
-                prompt,
-                max_tokens=self.policy.token_budget(text),
-                temperature=0.0,
-                stop=["\n\nTranscript:"],
-            )
-            cleaned = self.policy.validate_output(output["choices"][0]["text"], self.name)
-        return CleanupResult(cleaned, timings, self.name)
 
 
 class GemmaTransformersCleanupBackend(CleanupBackend):
@@ -218,8 +181,6 @@ class GemmaTransformersCleanupBackend(CleanupBackend):
 
 def build_cleanup_backend(settings: Settings) -> CleanupBackend:
     runtime = settings.cleanup_runtime.lower()
-    if runtime == "llama_cpp":
-        return LlamaCppCleanupBackend(settings.cleanup_model_path, settings.cleanup_model)
     if runtime == "transformers":
         return GemmaTransformersCleanupBackend(
             settings.cleanup_model,

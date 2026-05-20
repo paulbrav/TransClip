@@ -104,7 +104,7 @@ uv run -m transclip.cli serve
 For the portable CPU/CUDA path, install the model extras first:
 
 ```bash
-uv pip install -e '.[models,audio,llama]'
+uv pip install -e '.[models,audio]'
 ```
 
 On the current Linux `gfx1151` workstation, the V1 latency profile uses AMD's
