@@ -10,13 +10,16 @@ from urllib.parse import urlparse
 
 from .asr import ASRBackend, build_asr_backend
 from .audio import AudioRecorder
-from .cleanup import CleanupBackend, build_cleanup_backend
+from .cleanup import CleanupBackend, ModelCleanupProcessor, build_cleanup_backend
 from .debug_capture import DebugCapture
 from .dictation_session import DictationSession
 from .history import append_transcript_history
 from .keyword_restore import restore_keywords
+from .mode_routing import route_voice_mode
 from .service_routes import dispatch_get, dispatch_post
 from .settings import Settings, load_settings
+from .shell_command import ShellCommandProcessor, ShellCommandResult
+from .text_generation import TextGenerationBackend, build_text_generation_backend
 
 
 class InferenceEngine:
@@ -25,10 +28,14 @@ class InferenceEngine:
         settings: Settings,
         asr_backend: ASRBackend | None = None,
         cleanup_backend: CleanupBackend | None = None,
+        text_backend: TextGenerationBackend | None = None,
     ):
         self.settings = settings
         self.asr_backend = asr_backend or build_asr_backend(settings)
         self.cleanup_backend = cleanup_backend or build_cleanup_backend(settings)
+        self.text_backend = text_backend or build_text_generation_backend(settings)
+        self.model_cleanup = ModelCleanupProcessor(self.text_backend)
+        self.shell_command = ShellCommandProcessor(settings, self.text_backend)
         self.debug_capture = DebugCapture(settings)
         self.dictation_session = DictationSession(
             settings,
@@ -45,6 +52,11 @@ class InferenceEngine:
             "cleanup_backend": self.cleanup_backend.name,
             "cleanup_model": self.settings.cleanup_model,
             "cleanup_enabled": self.settings.cleanup_enabled,
+            "voice_mode_routing_enabled": self.settings.voice_mode_routing_enabled,
+            "voice_model_cleanup_always_on": self.settings.voice_model_cleanup_always_on,
+            "voice_mode_shell_enabled": self.settings.voice_mode_shell_enabled,
+            "text_model_runtime": self.settings.text_model_runtime,
+            "text_model": self.settings.text_model,
             "language": self.settings.language,
             "max_recording_seconds": self.settings.max_recording_seconds,
             "min_recording_ms": self.settings.min_recording_ms,
@@ -105,14 +117,32 @@ class InferenceEngine:
         asr_result = self.asr_backend.transcribe(wav_path, keywords=keywords)
         should_cleanup = self.settings.cleanup_enabled if cleanup is None else cleanup
         raw_asr = restore_keywords(asr_result.text, keywords or [])
-        cleaned = raw_asr
+        route = route_voice_mode(
+            raw_asr,
+            routing_enabled=self.settings.voice_mode_routing_enabled,
+            shell_enabled=self.settings.voice_mode_shell_enabled,
+        )
+        cleaned = route.payload if route.literal else raw_asr
         cleanup_result = None
+        shell_result = None
         timings = dict(asr_result.timings_ms)
-        if should_cleanup:
-            cleanup_result = self.cleanup_backend.cleanup(raw_asr)
+        if route.mode == "cleanup":
+            cleanup_result = self.model_cleanup.cleanup(route.payload)
+            cleaned = cleanup_result.text
+            timings.update(cleanup_result.timings_ms)
+        elif route.mode == "shell":
+            shell_result = self.shell_command.generate(route.payload)
+            cleaned = shell_result.text
+            timings.update(shell_result.timings_ms)
+        elif should_cleanup and not route.literal:
+            if self.settings.voice_model_cleanup_always_on:
+                cleanup_result = self.model_cleanup.cleanup(raw_asr)
+            else:
+                cleanup_result = self.cleanup_backend.cleanup(raw_asr)
             cleaned = cleanup_result.text
             timings.update(cleanup_result.timings_ms)
         timings["end_to_end"] = round((perf_counter() - start) * 1000, 3)
+        shell_metadata = _shell_metadata(shell_result)
         capture_dir = self.debug_capture.write(
             wav_path=wav_path,
             raw_asr=asr_result.text,
@@ -123,12 +153,25 @@ class InferenceEngine:
                 "asr_model": asr_result.model,
                 "cleanup_backend": self.cleanup_backend.name,
                 "cleanup_model": self.settings.cleanup_model,
+                "text_model_runtime": self.settings.text_model_runtime,
+                "text_model": self.settings.text_model,
+            },
+            metadata={
+                "voice_mode": route.mode,
+                "voice_trigger": route.trigger,
+                "voice_literal": route.literal,
+                "shell": shell_metadata,
             },
         )
         result = {
             "text": cleaned,
             "raw_asr": raw_asr,
             "cleanup": asdict(cleanup_result) if cleanup_result else None,
+            "voice_mode": route.mode,
+            "voice_trigger": route.trigger,
+            "voice_literal": route.literal,
+            "shell": shell_metadata,
+            "submit": False if route.mode == "shell" else None,
             "timings_ms": timings,
             "debug_capture_dir": str(capture_dir) if capture_dir else None,
             "asr_backend": asr_result.backend,
@@ -159,7 +202,7 @@ def create_server(
     engine: InferenceEngine | None = None,
 ) -> ThreadingHTTPServer:
     settings = settings or load_settings()
-    engine = engine or InferenceEngine(settings)
+    active_engine = engine or InferenceEngine(settings)
 
     class Handler(BaseHTTPRequestHandler):
         def do_OPTIONS(self) -> None:
@@ -168,17 +211,17 @@ def create_server(
             self.end_headers()
 
         def do_GET(self) -> None:
-            response = dispatch_get(engine, urlparse(self.path).path)
+            response = dispatch_get(active_engine, urlparse(self.path).path)
             self._json(response.status, response.payload)
 
         def do_POST(self) -> None:
             path = urlparse(self.path).path
             try:
                 body = self._read_json()
-                response = dispatch_post(engine, path, body)
+                response = dispatch_post(active_engine, path, body)
                 self._json(response.status, response.payload)
             except Exception as exc:
-                capture_dir = engine.debug_capture.write_error(
+                capture_dir = active_engine.debug_capture.write_error(
                     "http_request",
                     exc,
                     {"path": path},
@@ -220,8 +263,26 @@ def run_server(settings: Settings | None = None) -> None:
     server.serve_forever()
 
 
-def _append_transcript_history(result: dict[str, Any], settings: Settings, **kwargs: Any) -> None:
+def _append_transcript_history(
+    result: dict[str, Any],
+    settings: Settings,
+    source: str,
+    duration_ms: float | None = None,
+) -> None:
     try:
-        append_transcript_history(result, settings, **kwargs)
+        append_transcript_history(result, settings, source=source, duration_ms=duration_ms)
     except Exception as exc:
         result["history_error"] = str(exc)
+
+
+def _shell_metadata(shell_result: ShellCommandResult | None) -> dict[str, Any] | None:
+    if shell_result is None:
+        return None
+    return {
+        "command": shell_result.command,
+        "valid": shell_result.valid,
+        "diagnostics": shell_result.diagnostics,
+        "backend": shell_result.backend,
+        "model": shell_result.model,
+        "validation": shell_result.validation,
+    }

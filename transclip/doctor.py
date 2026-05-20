@@ -11,7 +11,7 @@ from .client import InferenceClient
 from .daemon import last_toggle_log_event, service_state, toggle_log_path
 from .device import torch_cuda_usable, torch_mps_available
 from .gnome_shortcut import shortcut_readiness
-from .models import model_cache_root, required_model_cache_paths
+from .models import model_cache_path, model_cache_root, required_model_cache_paths
 from .paste import clipboard_capability, paste_capability
 from .platform_capabilities import session_info
 from .platform_runtime import PlatformRuntime, get_runtime
@@ -198,13 +198,32 @@ def check_model_cache(settings: Settings) -> Check:
     missing = [str(path) for path in required_paths if not path.exists()]
     if not missing:
         return Check("model_cache", True, f"found model artifacts under {cache_root}")
+    commands = _prefetch_commands_for_missing_cache(settings)
+    remediation = "; run: " + "; ".join(commands) if commands else ""
     return Check(
         "model_cache",
         False,
-        "missing local model artifacts: "
-        + ", ".join(missing)
-        + f"; run: transclip models prefetch --model {settings.asr_model}",
+        "missing local model artifacts: " + ", ".join(missing) + remediation,
     )
+
+
+def _prefetch_commands_for_missing_cache(settings: Settings) -> list[str]:
+    model_ids = [settings.asr_model]
+    if settings.cleanup_runtime == "transformers":
+        model_ids.append(settings.cleanup_model)
+    if settings.text_model_runtime == "transformers" and (
+        settings.voice_mode_routing_enabled or settings.voice_model_cleanup_always_on
+    ):
+        model_ids.append(settings.text_model)
+
+    commands = []
+    seen = set()
+    for model_id in model_ids:
+        if model_id in seen or model_cache_path(model_id, settings).exists():
+            continue
+        seen.add(model_id)
+        commands.append(f"transclip models prefetch --model {model_id}")
+    return commands
 
 
 def check_audio_debug(settings: Settings) -> Check:

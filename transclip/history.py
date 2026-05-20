@@ -51,6 +51,14 @@ def append_transcript_history(
         "cleanup_backend": result.get("cleanup_backend") or settings.cleanup_runtime,
         "cleanup_enabled": bool(result.get("cleanup_enabled", settings.cleanup_enabled)),
     }
+    if result.get("voice_mode"):
+        event["voice_mode"] = result.get("voice_mode")
+    if result.get("voice_trigger"):
+        event["voice_trigger"] = result.get("voice_trigger")
+    if result.get("voice_literal"):
+        event["voice_literal"] = bool(result.get("voice_literal"))
+    if result.get("shell"):
+        event["shell"] = result.get("shell")
     if duration_ms is None:
         duration_ms = result.get("duration_ms")
     if duration_ms is not None:

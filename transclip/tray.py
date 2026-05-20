@@ -119,6 +119,20 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
             state["detail"] = f"ASR model update failed: {exc}"
         update_menu()
 
+    def toggle_model_cleanup(_item=None) -> None:
+        path = explicit_settings_path or settings_path()
+        try:
+            persisted = load_settings(path) if path.exists() else settings
+            next_value = not persisted.voice_model_cleanup_always_on
+            updated = replace(persisted, voice_model_cleanup_always_on=next_value)
+            write_settings(updated, path)
+            settings.voice_model_cleanup_always_on = next_value
+            restart = service_action("restart")
+            state["detail"] = f"Model cleanup always {'on' if next_value else 'off'}; {restart.detail}"
+        except Exception as exc:
+            state["detail"] = f"Model cleanup toggle failed: {exc}"
+        update_menu()
+
     def open_settings(_item=None) -> None:
         path = explicit_settings_path or settings_path()
         write_default_settings(path)
@@ -188,6 +202,11 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
         _append_separator(menu)
         _append_item(menu, "Start service", start_service)
         _append_item(menu, "Restart service", restart_service)
+        menu_refs["model_cleanup_item"] = _append_item(
+            menu,
+            _model_cleanup_label(settings),
+            toggle_model_cleanup,
+        )
         model_menu = Gtk.Menu()
         model_item = Gtk.MenuItem(label="ASR model")
         model_item.set_submenu(model_menu)
@@ -214,6 +233,7 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
         _set_menu_item_label(menu_refs["status_item"], state["detail"] or f"Service: {state['status']}")
         _set_menu_item_label(menu_refs["toggle_item"], "Stop + paste" if state["recording"] else "Record")
         menu_refs["latest_item"].set_sensitive(bool(state["latest"] or _latest_history_text()))
+        _set_menu_item_label(menu_refs["model_cleanup_item"], _model_cleanup_label(settings))
         for item, model in menu_refs["model_items"]:
             _set_menu_item_label(item, _model_menu_label(model.model_id, model.backend, settings))
 
@@ -271,6 +291,8 @@ def _append_label(menu, label: str):
 
 
 def _set_menu_item_label(item, label: str) -> None:
+    if hasattr(item, "label"):
+        item.label = label
     child = item.get_child()
     if hasattr(child, "set_text"):
         child.set_text(label)
@@ -295,6 +317,11 @@ def _append_separator(menu) -> None:
 def _model_menu_label(model_id: str, backend: str, settings: Settings) -> str:
     prefix = "✓ " if settings.asr_model == model_id and settings.asr_backend == backend else ""
     return prefix + _model_label(model_id, backend)
+
+
+def _model_cleanup_label(settings: Settings) -> str:
+    prefix = "✓ " if settings.voice_model_cleanup_always_on else ""
+    return prefix + "Model cleanup always on"
 
 
 def _model_label(model_id: str, backend: str) -> str:

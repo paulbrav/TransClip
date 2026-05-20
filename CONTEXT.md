@@ -39,6 +39,31 @@ while improving transcript readability. The policy includes conservative
 punctuation and capitalization behavior, optional model cleanup, output
 validation, and token budgeting for model-backed cleanup.
 
+**Voice mode routing**: The deterministic post-ASR routing step that runs after
+keyword restoration and before cleanup or paste output. It matches only
+case-insensitive leading trigger phrases and returns dictation, cleanup, or
+shell mode with the original payload text preserved for model input.
+
+**Mode trigger**: A configured spoken prefix such as `clean up`, `trans
+cleanup`, `shell command`, `bash command`, or `terminal command`. Triggers are
+prefix-only; the same words in the middle of an ordinary sentence do not change
+dictation mode.
+
+**Literal escape**: The leading `literal` prefix before a configured mode
+trigger. It disables mode routing for that utterance and pastes the trigger text
+itself, for example `literal shell command list files` becomes `shell command
+list files`.
+
+**Model cleanup**: The Qwen-backed cleanup path used for explicit cleanup
+triggers and for normal dictation when `voice_model_cleanup_always_on` is
+enabled. It is separate from the conservative rule cleanup that remains the
+default for normal dictation.
+
+**Shell command generation**: The voice mode that turns a spoken task into Bash
+text using the shared Qwen text model. It validates syntax without execution and
+pastes only command text or commented diagnostics; TransClip does not press
+Enter or submit terminal input.
+
 **Eval gate**: The repeatable evaluation checks used to decide whether a build
 meets the current dictation quality and latency expectations. It covers manifest
 shape, warmup handling, measured cases, metrics, thresholds, and the JSON output

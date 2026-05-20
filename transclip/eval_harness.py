@@ -67,15 +67,12 @@ class EvalGatePolicy:
         under_700 = int(summary.get("under_700ms", 0))
         under_700_ratio = under_700 / cases
         if under_700_ratio < self.min_under_700_ratio:
-            raise ValueError(
-                f"under-700ms ratio {under_700_ratio:.3f} is below {self.min_under_700_ratio:.3f}"
-            )
+            raise ValueError(f"under-700ms ratio {under_700_ratio:.3f} is below {self.min_under_700_ratio:.3f}")
 
         keyword_score = summary.get("mean_keyword_preservation")
         if keyword_score is not None and float(keyword_score) < self.min_keyword_preservation:
             raise ValueError(
-                f"mean keyword preservation {float(keyword_score):.3f} is below "
-                f"{self.min_keyword_preservation:.3f}"
+                f"mean keyword preservation {float(keyword_score):.3f} is below {self.min_keyword_preservation:.3f}"
             )
 
         mean_wer = summary.get("mean_wer")
@@ -85,8 +82,7 @@ class EvalGatePolicy:
         cleanup_drift_failures = int(summary.get("cleanup_semantic_drift_failures", 0))
         if cleanup_drift_failures > self.max_cleanup_drift_failures:
             raise ValueError(
-                f"cleanup semantic drift failures {cleanup_drift_failures} exceed "
-                f"{self.max_cleanup_drift_failures}"
+                f"cleanup semantic drift failures {cleanup_drift_failures} exceed {self.max_cleanup_drift_failures}"
             )
 
         paste_failures = int(summary.get("paste_failures", 0))

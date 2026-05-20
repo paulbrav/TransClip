@@ -49,6 +49,27 @@ class HistoryTests(unittest.TestCase):
             self.assertEqual(event["duration_ms"], 123.4)
             self.assertEqual(event["asr_backend"], "fake")
 
+    def test_append_transcript_history_includes_voice_and_shell_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "history.jsonl"
+            append_transcript_history(
+                {
+                    "text": "ls -la",
+                    "raw_asr": "shell command list files",
+                    "voice_mode": "shell",
+                    "voice_trigger": "shell command",
+                    "shell": {"command": "ls -la", "valid": True},
+                },
+                Settings(),
+                source="/record/toggle",
+                path=path,
+            )
+
+            event = read_history(path=path)[0]
+            self.assertEqual(event["voice_mode"], "shell")
+            self.assertEqual(event["voice_trigger"], "shell command")
+            self.assertEqual(event["shell"]["command"], "ls -la")
+
 
 if __name__ == "__main__":
     unittest.main()

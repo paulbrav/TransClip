@@ -100,7 +100,7 @@ def sounddevice_summary() -> str:
         return "sounddevice unavailable"
     try:
         default = getattr(sd.default, "device", None)
-        input_device = default[0] if isinstance(default, tuple | list) else default
+        input_device = _default_input_device(default)
         if input_device in {None, -1}:
             return f"default input={input_device}"
         info = sd.query_devices(input_device, "input")
@@ -108,6 +108,14 @@ def sounddevice_summary() -> str:
         return f"default input={input_device} {name}"
     except Exception as exc:
         return f"sounddevice query failed: {exc}"
+
+
+def _default_input_device(default: object) -> object:
+    if isinstance(default, tuple):
+        return default[0] if default else None
+    if isinstance(default, list):
+        return default[0] if default else None
+    return default
 
 
 def write_wav(path: Path, pcm16_mono: bytes, sample_rate: int) -> Path:

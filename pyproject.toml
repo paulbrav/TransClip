@@ -45,14 +45,8 @@ line-ending = "lf"
 [tool.ty.environment]
 python-version = "3.12"
 
-[tool.ty.analysis]
-allowed-unresolved-imports = [
-    "flash_attn",
-    "gi",
-    "gi.repository",
-    "llama_cpp",
-    "sounddevice",
-]
+[tool.ty.rules]
+unresolved-import = "ignore"
 
 [tool.ty.src]
 include = ["transclip"]

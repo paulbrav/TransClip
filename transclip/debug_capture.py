@@ -22,6 +22,7 @@ class DebugCapture:
         cleaned: str,
         timings: dict[str, float],
         model_versions: dict[str, str],
+        metadata: dict[str, Any] | None = None,
     ) -> Path | None:
         if not self.settings.debug_capture:
             return None
@@ -35,6 +36,8 @@ class DebugCapture:
             json.dumps(_jsonable(model_versions), indent=2),
             encoding="utf-8",
         )
+        if metadata:
+            (root / "metadata.json").write_text(json.dumps(_jsonable(metadata), indent=2), encoding="utf-8")
         return root
 
     def write_error(

@@ -8,6 +8,7 @@ from transclip.asr import TranscriptionResult
 from transclip.cleanup import FaithfulRuleCleanupBackend
 from transclip.service import InferenceEngine, create_server
 from transclip.settings import Settings
+from transclip.text_generation import TextGenerationResult
 
 
 class FakeASR:
@@ -34,6 +35,20 @@ class FakeRecorder:
     def stop_to_wav(self, output_path: Path):
         output_path.write_bytes(b"not really wav")
         return output_path
+
+
+class FakeTextBackend:
+    name = "fake-text"
+    model_name = "fake-model"
+
+    def __init__(self, responses: list[str] | None = None):
+        self.responses = list(responses or ["model output"])
+        self.messages: list[list[dict[str, str]]] = []
+
+    def generate(self, messages: list[dict[str, str]], *, max_new_tokens: int) -> TextGenerationResult:
+        self.messages.append(messages)
+        text = self.responses.pop(0) if self.responses else "model output"
+        return TextGenerationResult(text, {"text_generation": 1.0}, self.name, self.model_name)
 
 
 class FakeRuntime:

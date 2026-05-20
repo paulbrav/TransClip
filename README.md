@@ -50,6 +50,28 @@ uv run -m transclip.cli smoke-test
 uv run -m transclip.cli logs
 ```
 
+### Voice Mode Quick Start
+
+With the service running, press the toggle shortcut once to start recording and
+again to stop. Ordinary speech is dictated normally. Start an utterance with one
+of these phrases to choose another mode:
+
+```text
+clean up <text>              -> Qwen model cleanup
+trans cleanup <text>         -> Qwen model cleanup
+shell command <task>         -> Bash command generation
+bash command <task>          -> Bash command generation
+terminal command <task>      -> Bash command generation
+literal shell command <text> -> paste "shell command <text>"
+literal bash command <text>  -> paste "bash command <text>"
+literal clean up <text>      -> paste "clean up <text>"
+```
+
+Trigger matching is case-insensitive and only applies at the beginning of the
+utterance, so a sentence that mentions "shell command" later is still normal
+dictation. Use `literal` when you want to dictate the trigger words themselves
+instead of activating cleanup or shell mode.
+
 Run the Python tray:
 
 ```bash
@@ -86,20 +108,31 @@ uv pip install -e '.[models,audio,llama]'
 ```
 
 On the current Linux `gfx1151` workstation, the V1 latency profile uses AMD's
-TheRock ROCm nightly index plus FlashAttention's Triton AMD backend. Do not use
-the local custom wheel for this app; it fails GPU tensor execution on this host.
+TheRock ROCm nightly index plus FlashAttention's Triton AMD backend. The
+canonical runtime environment is `.venv`; the systemd service and GNOME
+shortcut should point at `.venv/bin/python3`. Do not use the local custom wheel
+for this app; it fails GPU tensor execution on this host.
+
+Use the helper script:
 
 ```bash
-uv venv --python 3.13 .venv-gfx1151
-uv pip install --python .venv-gfx1151/bin/python \
+scripts/setup_gfx1151_env.sh
+```
+
+Or run the setup steps manually:
+
+```bash
+uv venv --python 3.13 .venv
+uv pip install --python .venv/bin/python \
   --index-url https://rocm.nightlies.amd.com/v2/gfx1151/ \
   --pre torch torchaudio torchvision pytorch-triton-rocm
-uv pip install --python .venv-gfx1151/bin/python \
+uv pip install --python .venv/bin/python \
   -e . 'transformers>=4.52.1' 'accelerate>=1.0' 'soundfile>=0.12' 'sounddevice>=0.5'
 FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE MAX_JOBS=4 \
-  uv pip install --python .venv-gfx1151/bin/python --no-deps \
+  uv pip install --python .venv/bin/python --no-deps \
   flash-attn==2.8.3 --no-build-isolation
-uv pip install --python .venv-gfx1151/bin/python einops
+uv pip install --python .venv/bin/python einops
+uv pip install --python .venv/bin/python flash-linear-attention
 ```
 
 The default ASR backend is `ibm-granite/granite-speech-4.1-2b-nar`, selected
@@ -123,7 +156,46 @@ model_cache_dir = "/path/to/local/huggingface/cache"
 ```
 
 Populate the cache before running the service; the app should not download
-models during dictation.
+models during dictation. The helper commands are:
+
+```bash
+uv run -m transclip.cli models list
+uv run -m transclip.cli models doctor
+uv run -m transclip.cli models prefetch --model ibm-granite/granite-speech-4.1-2b-nar
+uv run -m transclip.cli models prefetch --model Qwen/Qwen3.5-4B
+```
+
+Run the helper through the same Python environment that runs the service. On
+the current `gfx1151` workstation, model downloads should use:
+
+```bash
+.venv/bin/python3 -m transclip.cli models prefetch --model ibm-granite/granite-speech-4.1-2b-nar
+.venv/bin/python3 -m transclip.cli models prefetch --model Qwen/Qwen3.5-4B
+```
+
+Voice mode routing runs after ASR and keyword restoration. Ordinary dictation
+keeps the existing cleanup behavior unless a leading trigger phrase is spoken or
+the tray setting enables model cleanup for all dictation. Shell mode validates
+generated Bash with `bash -n -c <command>` when Bash is available and also uses
+ShellCheck when installed and enabled. The shell prompt includes the user's
+default shell from `$SHELL`, falling back to the login shell, while still asking
+for Bash-compatible syntax. Invalid shell output is pasted as commented
+diagnostic text. Valid shell commands are pasted for review only; TransClip
+never presses Enter, executes the command, or auto-submits terminal input.
+
+The tray menu includes `Model cleanup always on`. Enabling it persists
+`voice_model_cleanup_always_on = true` and restarts the service so subsequent
+ordinary dictation uses the shared Qwen text model:
+
+```toml
+voice_mode_routing_enabled = true
+voice_model_cleanup_always_on = false
+voice_mode_shell_enabled = true
+text_model_runtime = "transformers"
+text_model = "Qwen/Qwen3.5-4B"
+shell_syntax_validation_enabled = true
+shellcheck_enabled = true
+```
 
 Then transcribe a WAV:
 
@@ -223,7 +295,7 @@ Then build and run the eval:
 
 ```bash
 TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1 \
-VIRTUAL_ENV=$PWD/.venv-gfx1151 uv run --active scripts/run_real_eval_pipeline.py \
+VIRTUAL_ENV=$PWD/.venv uv run --active scripts/run_real_eval_pipeline.py \
   ~/transclip-real-eval
 ```
 
@@ -232,7 +304,7 @@ VIRTUAL_ENV=$PWD/.venv-gfx1151 uv run --active scripts/run_real_eval_pipeline.py
 ```bash
 uv run -m unittest discover -s tests -v
 uv run -m compileall scripts transclip tests
-VIRTUAL_ENV=$PWD/.venv-gfx1151 uv run --active scripts/check_v1_completion.py
+VIRTUAL_ENV=$PWD/.venv uv run --active scripts/check_v1_completion.py
 ```
 
 On Wayland, `wtype` is only usable when the compositor supports the virtual

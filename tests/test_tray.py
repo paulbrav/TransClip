@@ -292,6 +292,30 @@ class TrayTests(unittest.TestCase):
                 self.assertIn("ASR model set", indicator.menus[0].children[0].child.text)
                 self.assertEqual(regular_item.child.text, "✓ Keyword-biased ASR - Granite 4.1")
 
+    def test_model_cleanup_toggle_label_persists_and_restarts_service(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_file = Path(tmp) / "settings.toml"
+            settings = Settings(voice_model_cleanup_always_on=False)
+            write_settings(settings, settings_file)
+            with (
+                patch.dict(sys.modules, self.modules),
+                patch("transclip.tray.InferenceClient", FakeClient),
+                patch("transclip.tray.read_history", return_value=[]),
+                patch("transclip.tray.service_action") as service_action,
+            ):
+                service_action.return_value = types.SimpleNamespace(detail="restarted")
+                code = run_python_tray(settings, explicit_settings_path=settings_file)
+                indicator = FakeIndicatorFactory.current
+                cleanup_item = menu_item_by_label(indicator, "Model cleanup always on")
+                cleanup_item.handlers["activate"](cleanup_item)
+
+                self.assertEqual(code, 0)
+                self.assertTrue(settings.voice_model_cleanup_always_on)
+                self.assertTrue(load_settings(settings_file).voice_model_cleanup_always_on)
+                service_action.assert_called_once_with("restart")
+                self.assertEqual(cleanup_item.child.text, "✓ Model cleanup always on")
+                self.assertIn("Model cleanup always on", indicator.menus[0].children[0].child.text)
+
     def test_set_hotkey_preserves_other_current_settings(self):
         FakeDialog.next_response = 1
         FakeDialog.next_text = "<Control><Alt>space"

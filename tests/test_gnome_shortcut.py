@@ -1,7 +1,6 @@
 import subprocess
 import unittest
 
-from tests.service_helpers import FakeRuntime
 from transclip.gnome_shortcut import (
     GNOME_CUSTOM_KEYBINDINGS_KEY,
     GNOME_MEDIA_KEYS_SCHEMA,
@@ -19,6 +18,8 @@ from transclip.product import (
     SHORTCUT_ALT_NAME,
     SHORTCUT_ALT_PATH,
 )
+
+from tests.service_helpers import FakeRuntime
 
 
 class FakeGSettings:
@@ -73,7 +74,8 @@ class GnomeShortcutTests(unittest.TestCase):
     def test_installer_removes_legacy_granite_shortcut(self):
         fake = FakeGSettings()
         fake.values[(GNOME_MEDIA_KEYS_SCHEMA, GNOME_CUSTOM_KEYBINDINGS_KEY)] = (
-            "['/custom/keep/', '/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/granite-speach-toggle/']"
+            "['/custom/keep/', "
+            "'/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/granite-speach-toggle/']"
         )
         legacy_schema = (
             "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:"
@@ -95,7 +97,7 @@ class GnomeShortcutTests(unittest.TestCase):
     def test_command_exists_checks_shell_wrapper_payload(self):
         self.assertFalse(
             command_exists(
-                "/bin/sh -lc 'mkdir -p \"$HOME/.cache/transclip\"; "
+                '/bin/sh -lc \'mkdir -p "$HOME/.cache/transclip"; '
                 "/definitely/missing/python -m transclip.cli toggle-record --paste'"
             )
         )

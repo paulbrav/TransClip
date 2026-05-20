@@ -3,7 +3,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.service_helpers import FakeRuntime
 from transclip.daemon import (
     SERVICE_NAME,
     append_toggle_log,
@@ -14,6 +13,8 @@ from transclip.daemon import (
     toggle_log_path,
 )
 from transclip.settings import Settings
+
+from tests.service_helpers import FakeRuntime
 
 
 class DaemonTests(unittest.TestCase):

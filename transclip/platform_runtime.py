@@ -5,7 +5,7 @@ import platform
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 SESSION_ENV_KEYS = (
     "XDG_SESSION_TYPE",
@@ -50,10 +50,10 @@ class DefaultPlatformRuntime:
         return shutil.which(program)
 
     def run(self, command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(command, **kwargs)
+        return cast(subprocess.CompletedProcess[str], subprocess.run(command, **kwargs))
 
     def check_output(self, command: list[str], **kwargs: Any) -> str:
-        return subprocess.check_output(command, **kwargs)
+        return cast(str, subprocess.check_output(command, **kwargs))
 
 
 default_platform_runtime = DefaultPlatformRuntime()

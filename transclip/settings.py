@@ -21,6 +21,13 @@ class Settings:
     cleanup_enabled: bool = True
     cleanup_runtime: str = "rule"
     cleanup_model_path: str = ""
+    voice_mode_routing_enabled: bool = True
+    voice_model_cleanup_always_on: bool = False
+    voice_mode_shell_enabled: bool = True
+    text_model_runtime: str = "transformers"
+    text_model: str = "Qwen/Qwen3.5-4B"
+    shell_syntax_validation_enabled: bool = True
+    shellcheck_enabled: bool = True
     models_local_files_only: bool = True
     model_cache_dir: str = ""
     restore_clipboard_after_paste: bool = False
@@ -79,6 +86,13 @@ def settings_to_toml(settings: Settings) -> str:
             "cleanup_enabled",
             "cleanup_runtime",
             "cleanup_model_path",
+            "voice_mode_routing_enabled",
+            "voice_model_cleanup_always_on",
+            "voice_mode_shell_enabled",
+            "text_model_runtime",
+            "text_model",
+            "shell_syntax_validation_enabled",
+            "shellcheck_enabled",
             "models_local_files_only",
             "model_cache_dir",
         ),

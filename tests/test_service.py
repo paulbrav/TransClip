@@ -1,14 +1,16 @@
 import base64
+import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.service_helpers import FakeASR, FakeRecorder, http_json, serve_test_engine, stop_server
 from transclip.cleanup import FaithfulRuleCleanupBackend
 from transclip.history import read_history
 from transclip.service import InferenceEngine
 from transclip.settings import Settings
+
+from tests.service_helpers import FakeASR, FakeRecorder, FakeTextBackend, http_json, serve_test_engine, stop_server
 
 
 class ServiceTests(unittest.TestCase):
@@ -264,6 +266,174 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(ignored["action"], "ignored")
         self.assertEqual(ignored["reason"], "toggle_cooldown")
         self.assertEqual(ignored["cooldown_ms"], 500)
+
+    def test_normal_dictation_remains_rule_cleanup_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wav = Path(tmp) / "audio.wav"
+            wav.write_bytes(b"not really wav")
+            text_backend = FakeTextBackend(["model cleanup"])
+            engine = InferenceEngine(
+                Settings(cleanup_runtime="test_rule", voice_model_cleanup_always_on=False),
+                asr_backend=FakeASR("hello ,world"),
+                cleanup_backend=FaithfulRuleCleanupBackend(),
+                text_backend=text_backend,
+            )
+
+            result = engine.transcribe(wav)
+
+            self.assertEqual(result["text"], "Hello, world.")
+            self.assertEqual(text_backend.messages, [])
+            self.assertEqual(result["voice_mode"], "dictation")
+
+    def test_normal_dictation_does_not_call_text_model(self):
+        class ExplodingTextBackend:
+            name = "exploding-text"
+            model_name = "should-not-load"
+
+            def generate(self, messages, *, max_new_tokens):
+                raise AssertionError("normal dictation should not call the text model")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            wav = Path(tmp) / "audio.wav"
+            wav.write_bytes(b"not really wav")
+            engine = InferenceEngine(
+                Settings(cleanup_runtime="test_rule", voice_model_cleanup_always_on=False),
+                asr_backend=FakeASR("hello ,world"),
+                cleanup_backend=FaithfulRuleCleanupBackend(),
+                text_backend=ExplodingTextBackend(),
+            )
+
+            result = engine.transcribe(wav)
+
+            self.assertEqual(result["text"], "Hello, world.")
+            self.assertEqual(result["voice_mode"], "dictation")
+            self.assertIsNone(result["shell"])
+
+    def test_explicit_cleanup_trigger_uses_model_cleanup_not_heuristic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wav = Path(tmp) / "audio.wav"
+            wav.write_bytes(b"not really wav")
+            text_backend = FakeTextBackend(["Model-cleaned text"])
+            engine = InferenceEngine(
+                Settings(cleanup_runtime="test_rule"),
+                asr_backend=FakeASR("clean up hello ,world"),
+                cleanup_backend=FaithfulRuleCleanupBackend(),
+                text_backend=text_backend,
+            )
+
+            result = engine.transcribe(wav)
+
+            self.assertEqual(result["text"], "Model-cleaned text")
+            self.assertEqual(result["voice_mode"], "cleanup")
+            self.assertEqual(result["voice_trigger"], "clean up")
+            self.assertNotIn("clean up", text_backend.messages[0][1]["content"])
+            self.assertIn("hello ,world", text_backend.messages[0][1]["content"])
+
+    def test_always_on_model_cleanup_applies_to_normal_dictation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wav = Path(tmp) / "audio.wav"
+            wav.write_bytes(b"not really wav")
+            text_backend = FakeTextBackend(["Model cleaned normal dictation"])
+            engine = InferenceEngine(
+                Settings(cleanup_runtime="test_rule", voice_model_cleanup_always_on=True),
+                asr_backend=FakeASR("hello ,world"),
+                cleanup_backend=FaithfulRuleCleanupBackend(),
+                text_backend=text_backend,
+            )
+
+            result = engine.transcribe(wav)
+
+            self.assertEqual(result["text"], "Model cleaned normal dictation")
+            self.assertEqual(result["voice_mode"], "dictation")
+            self.assertEqual(len(text_backend.messages), 1)
+
+    def test_literal_escape_pastes_trigger_text_without_cleanup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wav = Path(tmp) / "audio.wav"
+            wav.write_bytes(b"not really wav")
+            engine = InferenceEngine(
+                Settings(cleanup_runtime="test_rule"),
+                asr_backend=FakeASR("literal shell command list files"),
+                cleanup_backend=FaithfulRuleCleanupBackend(),
+                text_backend=FakeTextBackend(["unused"]),
+            )
+
+            result = engine.transcribe(wav)
+
+            self.assertEqual(result["text"], "shell command list files")
+            self.assertTrue(result["voice_literal"])
+            self.assertIsNone(result["cleanup"])
+
+    def test_shell_trigger_returns_command_text_without_submit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wav = Path(tmp) / "audio.wav"
+            wav.write_bytes(b"not really wav")
+            engine = InferenceEngine(
+                Settings(cleanup_runtime="test_rule", shellcheck_enabled=False),
+                asr_backend=FakeASR("shell command list files"),
+                cleanup_backend=FaithfulRuleCleanupBackend(),
+                text_backend=FakeTextBackend(['{"command": "ls -la\\n"}']),
+            )
+
+            result = engine.transcribe(wav)
+
+            self.assertEqual(result["text"], "ls -la")
+            self.assertFalse(result["text"].endswith("\n"))
+            self.assertEqual(result["voice_mode"], "shell")
+            self.assertIs(result["submit"], False)
+            self.assertEqual(result["shell"]["command"], "ls -la")
+            self.assertTrue(result["shell"]["valid"])
+
+    def test_shell_trigger_returns_diagnostic_when_text_model_fails(self):
+        class FailingTextBackend:
+            name = "failing-text"
+            model_name = "missing-model"
+
+            def generate(self, messages, *, max_new_tokens):
+                raise RuntimeError("text model unavailable")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            wav = Path(tmp) / "audio.wav"
+            wav.write_bytes(b"not really wav")
+            engine = InferenceEngine(
+                Settings(cleanup_runtime="test_rule", shellcheck_enabled=False),
+                asr_backend=FakeASR("shell command list files"),
+                cleanup_backend=FaithfulRuleCleanupBackend(),
+                text_backend=FailingTextBackend(),
+            )
+
+            result = engine.transcribe(wav)
+
+            self.assertEqual(result["voice_mode"], "shell")
+            self.assertIs(result["submit"], False)
+            self.assertFalse(result["shell"]["valid"])
+            self.assertEqual(result["shell"]["command"], "")
+            self.assertIn("model generation failed", result["shell"]["diagnostics"][0])
+            self.assertTrue(result["text"].startswith("# TransClip could not produce valid Bash"))
+
+    def test_debug_capture_writes_voice_and_shell_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wav = Path(tmp) / "audio.wav"
+            wav.write_bytes(b"not really wav")
+            engine = InferenceEngine(
+                Settings(
+                    cleanup_runtime="test_rule",
+                    shellcheck_enabled=False,
+                    debug_capture=True,
+                    debug_capture_dir=str(Path(tmp) / "captures"),
+                ),
+                asr_backend=FakeASR("shell command list files"),
+                cleanup_backend=FaithfulRuleCleanupBackend(),
+                text_backend=FakeTextBackend(['{"command": "ls -la"}']),
+            )
+
+            result = engine.transcribe(wav)
+
+            metadata_path = Path(result["debug_capture_dir"]) / "metadata.json"
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            self.assertEqual(metadata["voice_mode"], "shell")
+            self.assertEqual(metadata["voice_trigger"], "shell command")
+            self.assertEqual(metadata["shell"]["command"], "ls -la")
 
 
 if __name__ == "__main__":

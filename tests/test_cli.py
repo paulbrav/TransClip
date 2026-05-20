@@ -7,9 +7,10 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.service_helpers import FakeRecorder, serve_test_engine, stop_server
 from transclip.cli import main
 from transclip.settings import Settings, write_settings
+
+from tests.service_helpers import FakeRecorder, serve_test_engine, stop_server
 
 
 class InMemoryClipboard:
