@@ -13,7 +13,12 @@ shortcut -> transclip toggle-record --paste -> Python service -> clipboard -> pa
 
 The runnable app lives in `transclip/`: Python inference service,
 settings, audio capture, cleanup, paste injection, daemon install/status/log
-commands, debug capture, Python AppIndicator tray, and eval harness.
+commands, debug capture, platform tray UIs, and eval harness.
+
+Platform-specific desktop integration is grouped under `transclip/desktop/`
+(paste, hotkey, tray), with service lifecycle in `transclip/daemon/` and
+readiness checks in `transclip/doctor/`. See [docs/package-layout.md](docs/package-layout.md)
+for the full package map and stable import paths.
 
 ## License
 
@@ -53,8 +58,9 @@ transclip tray
 ```
 
 On Windows, `install` registers a Task Scheduler logon task. Global hotkey
-`ctrl+shift+space` is registered when `transclip tray` is running. Sync optional
-UI dependencies for the system tray and in-process hotkey:
+`ctrl+shift+space` is registered when `transclip tray` is running (Windows tray
+in `transclip.desktop.tray.win32`). Sync optional UI dependencies for the
+system tray and in-process hotkey:
 
 ```bash
 uv sync --extra audio --extra models --extra windows-ui
@@ -102,18 +108,18 @@ Run the Python tray:
 transclip tray
 ```
 
-On Linux this uses PyGObject/Ayatana AppIndicator. When running through `uv`,
-the command hands off to system Python if the project virtual environment does
-not expose `gi`. Install the system bindings if missing:
+On Linux this uses PyGObject/Ayatana AppIndicator (GTK tray in
+`transclip.desktop.tray.gtk`). When running through `uv`, the command hands
+off to system Python if the project virtual environment does not expose `gi`. Install the system bindings if missing:
 
 ```bash
 sudo apt install -y python3-gi gir1.2-ayatanaappindicator3-0.1
 ```
 
-On macOS, `transclip tray` uses the native menu bar when `macos-ui` is
-installed (`uv sync --extra macos-ui`). The tray can copy the hotkey setup
-command for Keyboard Shortcuts; global hotkeys are configured manually in
-System Settings or Shortcuts.app.
+On macOS, `transclip tray` uses the native menu bar (`transclip.desktop.tray.macos`)
+when `macos-ui` is installed (`uv sync --extra macos-ui`). The tray can copy
+the hotkey setup command for Keyboard Shortcuts; global hotkeys are configured
+manually in System Settings or Shortcuts.app.
 
 Service controls:
 
@@ -402,6 +408,10 @@ uv run -m unittest discover -s tests -v
 uv run -m compileall scripts transclip tests
 VIRTUAL_ENV=$PWD/.venv uv run --active scripts/check_v1_completion.py
 ```
+
+Contributors changing imports or adding platform code should read
+[docs/package-layout.md](docs/package-layout.md) for package boundaries and
+public entry points.
 
 On Wayland, `wtype` is only usable when the compositor supports the virtual
 keyboard protocol; GNOME Wayland may reject it. `ydotool` can be used as a

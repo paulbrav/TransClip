@@ -86,3 +86,26 @@ Enter or submit terminal input.
 meets the current dictation quality and latency expectations. It covers manifest
 shape, warmup handling, measured cases, metrics, thresholds, and the JSON output
 consumed by scripts.
+
+## Code layout
+
+TransClip groups platform integration into packages under `transclip/`. Domain
+terms above describe product behavior; the layout below is for navigation and
+imports. Full detail: [docs/package-layout.md](docs/package-layout.md).
+
+**Platform runtime** (domain term) maps to `transclip.platform.runtime` and
+related helpers in `transclip.platform.capabilities` and
+`transclip.platform.profiles`.
+
+**Paste capability** is implemented in `transclip.desktop.paste` (clipboard
+read/write and paste injection backends).
+
+**Shortcut readiness** on Linux uses `transclip.desktop.hotkey` (`install_shortcut`,
+`get_gnome_shortcut_status`, `shortcut_readiness`). On Windows the tray registers
+the global hotkey via `transclip.desktop.hotkey.start_windows_hotkey`. On macOS
+there is no programmatic hotkey installer; setup messages and tray copy-to-clipboard
+use `transclip.desktop.hotkey` and `transclip.desktop.hotkey.common`.
+
+**Interactive dictation** tray UI is routed through `transclip.desktop.tray.run_tray`
+to GTK, Windows, or macOS adapters. Service install and status use
+`transclip.daemon`; readiness checks use `transclip.doctor`.
