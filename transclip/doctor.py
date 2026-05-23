@@ -8,6 +8,7 @@ from urllib.error import URLError
 from .audio import recording_debug
 from .client import InferenceClient
 from .daemon import last_toggle_log_event, service_state
+from .daemon_common import ServiceState
 from .daemon_lifecycle import toggle_log_path
 from .doctor_asr import (
     build_backend_checks,
@@ -19,6 +20,7 @@ from .doctor_platform import (
     check_hotkey_readiness,
     check_microphone_devices,
     check_tcc_permissions,
+    check_windows_version,
 )
 from .doctor_types import Check
 from .paste import clipboard_capability, paste_capability
@@ -63,6 +65,7 @@ def run_checks(
         check_hotkey_readiness(settings, platform_runtime),
         check_microphone_devices(settings, platform_runtime),
         check_tcc_permissions(platform_runtime),
+        check_windows_version(platform_runtime),
         check_last_shortcut_log_event(platform_runtime),
     ]
     if include_audio_debug:
@@ -88,35 +91,40 @@ def check_paste_tools(runtime: PlatformRuntime | None = None) -> Check:
 
 
 def check_service_manager(
-    state: dict | None = None,
+    state: ServiceState | None = None,
     runtime: PlatformRuntime | None = None,
 ) -> Check:
     platform_runtime = get_runtime(runtime)
     state = state or service_state(runtime=platform_runtime)
     system = platform_runtime.system()
     if system == "Linux":
-        installed = bool(state["installed"])
         return Check(
             "service_manager",
-            installed,
-            "systemd user unit installed" if installed else "missing systemd user unit; run: transclip install",
+            state.installed,
+            "systemd user unit installed" if state.installed else "missing systemd user unit; run: transclip install",
         )
     if system == "Darwin":
-        installed = bool(state["installed"])
         return Check(
             "service_manager",
-            installed,
-            "LaunchAgent installed" if installed else "missing LaunchAgent; run: transclip install",
+            state.installed,
+            "LaunchAgent installed" if state.installed else "missing LaunchAgent; run: transclip install",
         )
+    if system == "Windows":
+        detail = (
+            "Task Scheduler logon task installed"
+            if state.installed
+            else "missing Task Scheduler task; run: transclip install"
+        )
+        return Check("service_manager", state.installed, detail)
     return Check("service_manager", True, f"not checked on {system}")
 
 
-def check_service_active(state: dict | None = None) -> Check:
+def check_service_active(state: ServiceState | None = None) -> Check:
     state = state or service_state()
     return Check(
         "service_active",
-        bool(state["active"]),
-        f"active={state['active']}; {state['detail']}",
+        state.active,
+        f"active={state.active}; {state.detail}",
     )
 
 
@@ -141,6 +149,8 @@ def check_session_type(runtime: PlatformRuntime | None = None) -> Check:
         return Check("session_type", True, f"not checked on {info.system}")
     if info.system == "Darwin":
         return Check("session_type", True, "macOS")
+    if info.system == "Windows":
+        return Check("session_type", True, "Windows")
     return Check("session_type", info.session != "unknown", f"session={info.session}; desktop={info.desktop}")
 
 

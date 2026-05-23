@@ -15,4 +15,5 @@ SHORTCUT_ALT_PATH = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybin
 LEGACY_SHORTCUT_NAME = "Granite Speach Toggle"
 LEGACY_SHORTCUT_PATH = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/granite-speach-toggle/"
 FALLBACK_HOTKEY_LINUX = "XF86TouchpadOff"
+TASK_SCHEDULER_NAME = DISPLAY_NAME
 IMPORT_PACKAGE = "transclip"

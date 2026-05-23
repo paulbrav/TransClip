@@ -88,5 +88,12 @@ def read_history(limit: int | None = None, path: Path | None = None) -> list[dic
     return events
 
 
+def history_file_signature(path: Path | None = None) -> int | None:
+    path = path or history_path()
+    if not path.exists():
+        return None
+    return path.stat().st_mtime_ns
+
+
 def timestamp() -> str:
     return datetime.now(UTC).astimezone().isoformat(timespec="seconds")

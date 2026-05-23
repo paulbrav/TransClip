@@ -35,6 +35,10 @@ def run_tray(settings: Settings, explicit_settings_path: Path | None = None) -> 
     runtime = get_runtime()
     if runtime.system() == "Darwin":
         return run_macos_tray(settings, explicit_settings_path=explicit_settings_path, runtime=runtime)
+    if runtime.system() == "Windows":
+        from .tray_win32 import run_windows_tray
+
+        return run_windows_tray(settings, explicit_settings_path=explicit_settings_path, runtime=runtime)
     return run_python_tray(settings, explicit_settings_path=explicit_settings_path)
 
 

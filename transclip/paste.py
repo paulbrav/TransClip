@@ -10,9 +10,34 @@ from .platform_capabilities import SessionInfo, session_info
 from .platform_runtime import PlatformRuntime, get_runtime
 from .settings import Settings
 
+SENDINPUT_PASTE_BACKEND = "sendinput"
+
 Which = Callable[[str], str | None]
 TERMINAL_PASTE_SHORTCUT = "ctrl+shift+v"
 WTYPE_TERMINAL_PASTE_COMMAND = ("wtype", "-M", "ctrl", "-M", "shift", "v", "-m", "shift", "-m", "ctrl")
+
+
+def _win32_read_clipboard() -> str:
+    from .win32_clipboard import read_clipboard_text
+
+    return read_clipboard_text()
+
+
+def _win32_write_clipboard(text: str) -> None:
+    from .win32_clipboard import write_clipboard_text
+
+    write_clipboard_text(text)
+
+
+def _win32_sendinput_paste() -> None:
+    from .win32_clipboard import send_ctrl_v_paste
+
+    send_ctrl_v_paste()
+
+
+PASTE_INVOKERS: dict[str, Callable[[], None]] = {
+    SENDINPUT_PASTE_BACKEND: _win32_sendinput_paste,
+}
 
 
 class Clipboard(Protocol):
@@ -30,6 +55,8 @@ class ClipboardBackend:
     name: str
     read_command: list[str]
     write_command: list[str]
+    read_fn: Callable[[], str] | None = None
+    write_fn: Callable[[str], None] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,9 +91,14 @@ class SystemClipboard:
         return self.backend.name
 
     def read(self) -> str:
+        if self.backend.read_fn is not None:
+            return self.backend.read_fn()
         return self.runtime.check_output(self.backend.read_command, text=True)
 
     def write(self, text: str) -> None:
+        if self.backend.write_fn is not None:
+            self.backend.write_fn(text)
+            return
         self.runtime.run(self.backend.write_command, input=text, text=True, check=True)
 
 
@@ -88,6 +120,15 @@ class SystemPasteInjector:
         return "; ".join(self.errors)
 
     def _try(self, backend_name: str, command: list[str]) -> bool:
+        invoker = PASTE_INVOKERS.get(backend_name)
+        if invoker is not None:
+            try:
+                invoker()
+            except Exception as exc:
+                self.errors.append(f"{backend_name} paste failed: {exc}")
+                return False
+            self.backend_name = backend_name
+            return True
         error = run_paste_command(command, runtime=self.runtime)
         if error is None:
             self.backend_name = backend_name
@@ -187,6 +228,8 @@ def clipboard_capability(
         if which("pbcopy") and which("pbpaste"):
             return ClipboardCapability(True, "found pbcopy/pbpaste", "pbcopy/pbpaste", ["pbpaste"], ["pbcopy"])
         return ClipboardCapability(False, "macOS clipboard requires pbcopy and pbpaste")
+    if info.system == "Windows":
+        return ClipboardCapability(True, "native Win32 clipboard available", "win32", [], [])
     if info.session == "wayland":
         if which("wl-copy") and which("wl-paste"):
             return ClipboardCapability(
@@ -238,6 +281,8 @@ def paste_commands(
     if info.system == "Darwin":
         script = 'tell application "System Events" to keystroke "v" using command down'
         return [PasteCommand("osascript", ["osascript", "-e", script])] if which("osascript") else []
+    if info.system == "Windows":
+        return [PasteCommand(SENDINPUT_PASTE_BACKEND, [])]
     if info.session == "wayland":
         commands = []
         if which("wtype"):
@@ -281,6 +326,8 @@ def paste_capability(
             "found osascript" if ok else "requires osascript and Accessibility permission",
             "osascript" if ok else None,
         )
+    if info.system == "Windows":
+        return PasteCapability(True, "Win32 SendInput Ctrl+V paste available", SENDINPUT_PASTE_BACKEND)
     wtype = which("wtype")
     xdotool = which("xdotool")
     ydotool = which("ydotool")
@@ -347,5 +394,9 @@ def detect_clipboard_backend(runtime: PlatformRuntime | None = None) -> Clipboar
     capability = clipboard_capability(runtime=runtime)
     if not capability.ok:
         raise RuntimeError(capability.detail)
-    assert capability.backend and capability.read_command and capability.write_command
-    return ClipboardBackend(capability.backend, capability.read_command, capability.write_command)
+    assert capability.backend
+    read_command = capability.read_command or []
+    write_command = capability.write_command or []
+    read_fn = _win32_read_clipboard if capability.backend == "win32" else None
+    write_fn = _win32_write_clipboard if capability.backend == "win32" else None
+    return ClipboardBackend(capability.backend, read_command, write_command, read_fn=read_fn, write_fn=write_fn)

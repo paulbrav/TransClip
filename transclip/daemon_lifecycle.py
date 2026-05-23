@@ -3,28 +3,38 @@ from __future__ import annotations
 import plistlib
 import shlex
 import subprocess
-import sys
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 
+from .daemon_common import CommandResult, ServiceState, repo_root, run_command, service_command
 from .gnome_shortcut import install_shortcut
-from .hotkey_setup import macos_hotkey_setup_message
+from .hotkey_setup import macos_hotkey_setup_message, windows_hotkey_setup_message
 from .platform_runtime import PlatformRuntime, get_runtime, user_log_dir
-from .product import DISPLAY_NAME, IMPORT_PACKAGE, LAUNCHD_LABEL, LOG_DIR_NAME, SERVICE_NAME
+from .product import DISPLAY_NAME, LAUNCHD_LABEL, LOG_DIR_NAME, SERVICE_NAME
 from .settings import Settings, load_settings, write_default_settings
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
+__all__ = [
+    "CommandResult",
+    "ServiceState",
+    "build_systemd_unit",
+    "install_daemon",
+    "install_linux_daemon",
+    "install_macos_daemon",
+    "run_command",
+    "service_action",
+    "service_command",
+    "service_state",
+    "toggle_log_path",
+    "uninstall_daemon",
+]
 
-@dataclass(slots=True)
-class CommandResult:
-    ok: bool
-    detail: str
 
+def _daemon_windows():
+    from . import daemon_windows
 
-def repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
+    return daemon_windows
 
 
 def logs_dir(runtime: PlatformRuntime | None = None) -> Path:
@@ -41,14 +51,6 @@ def systemd_user_unit_path(runtime: PlatformRuntime | None = None) -> Path:
 
 def launch_agent_path(runtime: PlatformRuntime | None = None) -> Path:
     return get_runtime(runtime).home_dir() / "Library" / "LaunchAgents" / f"{LAUNCHD_LABEL}.plist"
-
-
-def service_command(settings_path: Path | None = None) -> list[str]:
-    command = [sys.executable, "-m", f"{IMPORT_PACKAGE}.cli"]
-    if settings_path:
-        command.extend(["--settings", str(settings_path.expanduser().resolve())])
-    command.append("serve")
-    return command
 
 
 def build_systemd_unit(settings_path: Path | None = None) -> str:
@@ -116,6 +118,14 @@ def install_daemon(
         return install_linux_daemon(settings_path=settings_path, settings=settings, runner=runner, runtime=runtime)
     if system == "Darwin":
         return install_macos_daemon(settings_path=settings_path, runner=runner, runtime=runtime)
+    if system == "Windows":
+        return _daemon_windows().install_windows_daemon(
+            settings_path=settings_path,
+            settings=settings,
+            runner=runner,
+            runtime=runtime,
+            hotkey_setup_message=windows_hotkey_setup_message,
+        )
     return [CommandResult(False, f"unsupported platform: {system}")]
 
 
@@ -191,6 +201,8 @@ def uninstall_daemon(
             path.unlink()
             results.append(CommandResult(True, f"removed {path}"))
         return results
+    if system == "Windows":
+        return _daemon_windows().uninstall_windows_daemon(runner=runner, runtime=runtime)
     return [CommandResult(False, f"unsupported platform: {system}")]
 
 
@@ -219,22 +231,24 @@ def service_action(
             "restart": ["launchctl", "bootstrap", domain, plist_path],
         }
         return run_command(commands[action], runner)
+    if system == "Windows":
+        return _daemon_windows().windows_service_action(action, runner=runner)
     return CommandResult(False, f"unsupported platform: {system}")
 
 
 def service_state(
     runner: Runner = subprocess.run,
     runtime: PlatformRuntime | None = None,
-) -> dict[str, object]:
+) -> ServiceState:
     platform_runtime = get_runtime(runtime)
     system = platform_runtime.system()
     if system == "Linux":
         if not platform_runtime.which("systemctl"):
-            return {
-                "installed": systemd_user_unit_path(runtime).exists(),
-                "active": False,
-                "detail": "systemctl missing",
-            }
+            return ServiceState(
+                installed=systemd_user_unit_path(runtime).exists(),
+                active=False,
+                detail="systemctl missing",
+            )
         result = runner(
             ["systemctl", "--user", "is-active", SERVICE_NAME],
             stdout=subprocess.PIPE,
@@ -243,11 +257,11 @@ def service_state(
             check=False,
         )
         state = result.stdout.strip() or f"exit {result.returncode}"
-        return {
-            "installed": systemd_user_unit_path(runtime).exists(),
-            "active": result.returncode == 0 and state == "active",
-            "detail": state,
-        }
+        return ServiceState(
+            installed=systemd_user_unit_path(runtime).exists(),
+            active=result.returncode == 0 and state == "active",
+            detail=state,
+        )
     if system == "Darwin":
         path = launch_agent_path(runtime)
         target = launchd_target(runtime)
@@ -259,37 +273,14 @@ def service_state(
             check=False,
         )
         active = result.returncode == 0 and _launchd_print_reports_running(result.stdout)
-        return {
-            "installed": path.exists(),
-            "active": active,
-            "detail": result.stdout.strip() or f"exit {result.returncode}",
-        }
-    return {"installed": False, "active": False, "detail": f"unsupported platform: {system}"}
-
-
-def run_command(
-    command: list[str],
-    runner: Runner,
-    tolerate_failure: bool = False,
-) -> CommandResult:
-    try:
-        result = runner(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            check=False,
+        return ServiceState(
+            installed=path.exists(),
+            active=active,
+            detail=result.stdout.strip() or f"exit {result.returncode}",
         )
-    except FileNotFoundError as exc:
-        return CommandResult(tolerate_failure, f"{command[0]} missing: {exc}")
-    output = result.stdout.strip()
-    ok = result.returncode == 0 or tolerate_failure
-    detail = shlex.join(command)
-    if output:
-        detail += f": {output}"
-    elif result.returncode != 0:
-        detail += f": exit {result.returncode}"
-    return CommandResult(ok, detail)
+    if system == "Windows":
+        return _daemon_windows().windows_service_state(runner=runner, runtime=runtime)
+    return ServiceState(installed=False, active=False, detail=f"unsupported platform: {system}")
 
 
 def _launchd_is_loaded(target: str, runner: Runner) -> bool:

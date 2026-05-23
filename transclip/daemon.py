@@ -95,7 +95,8 @@ def collect_status(
     runtime: PlatformRuntime | None = None,
 ) -> dict[str, Any]:
     platform_runtime = get_runtime(runtime)
-    service = service_state(runner=runner, runtime=platform_runtime)
+    service_state_value = service_state(runner=runner, runtime=platform_runtime)
+    service = asdict(service_state_value)
     try:
         health: dict[str, Any] = InferenceClient(settings).health()
     except URLError as exc:
@@ -113,7 +114,7 @@ def collect_status(
     clipboard = _clipboard_status(platform_runtime)
     paste = _paste_status(platform_runtime)
     last_event = last_toggle_log_event()
-    ready = service.get("active") is True and health.get("status") in {"ready", "recording"}
+    ready = service_state_value.active and health.get("status") in {"ready", "recording"}
     return {
         "ready": ready,
         "service": service,
@@ -212,6 +213,16 @@ def run_smoke_test(
                 f"installed={shortcut.installed} "
                 f"binding={shortcut.binding} "
                 f"command_exists={shortcut.command_exists}",
+            )
+        )
+    elif platform_runtime.system() == "Windows":
+        from .settings import active_hotkey
+
+        binding = active_hotkey(settings, platform_runtime)
+        results.append(
+            CommandResult(
+                True,
+                f"hotkey configured={binding}; global hotkey requires transclip tray",
             )
         )
 

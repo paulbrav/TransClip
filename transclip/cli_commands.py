@@ -192,6 +192,8 @@ def handle_config(args: argparse.Namespace, settings) -> int:
             print(f"set\t{args.field} = {args.value}")
             if args.field == "hotkey_linux":
                 print(f"run: {CLI_COMMAND} install-gnome-shortcut or {CLI_COMMAND} doctor --fix")
+            if args.field == "hotkey_windows":
+                print(f"restart {CLI_COMMAND} tray to apply the new Windows hotkey")
             return 0
     except Exception as exc:
         print(str(exc), file=sys.stderr)

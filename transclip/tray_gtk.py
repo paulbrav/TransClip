@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .gnome_shortcut import install_shortcut
-from .history import history_path
+from .history import history_file_signature
 from .platform_runtime import open_path
 from .product import APP_ID, DISPLAY_NAME, IMPORT_PACKAGE
 from .settings import Settings, patch_settings, settings_path
@@ -199,7 +199,7 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
     def refresh_history_menu(force: bool = False) -> None:
         if state["history_refreshing"]:
             return
-        signature = _history_file_signature()
+        signature = history_file_signature()
         if not force and signature == state["history_signature"]:
             return
         state["history_refreshing"] = True
@@ -274,10 +274,7 @@ def _append_separator(menu) -> None:
 
 
 def _history_file_signature(path: Path | None = None) -> int | None:
-    path = path or history_path()
-    if not path.exists():
-        return None
-    return path.stat().st_mtime_ns
+    return history_file_signature(path)
 
 
 def _reexec_with_system_python(explicit_settings_path: Path | None) -> int:
