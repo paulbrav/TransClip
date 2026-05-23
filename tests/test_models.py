@@ -1,9 +1,12 @@
+import io
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
+from transclip.cli import main
 from transclip.models import (
     MODEL_CATALOG,
     SUPPORTED_MODELS,
@@ -17,7 +20,7 @@ from transclip.models import (
     supported_catalog_entries,
     validate_asr_model_backend,
 )
-from transclip.settings import Settings, default_settings
+from transclip.settings import Settings, default_settings, write_settings
 
 from tests.service_helpers import FakeRuntime, linux_gpu_runtime, patch_linux_gpu_runtime
 
@@ -35,6 +38,14 @@ class ModelsTests(unittest.TestCase):
         self.assertGreater(len(MODEL_CATALOG), 2)
         text_rows = {(model.backend, model.model_id) for model in SUPPORTED_TEXT_MODELS}
         self.assertIn(("text_generation", "Qwen/Qwen3.5-4B"), text_rows)
+
+    def test_model_display_name_comes_from_catalog(self):
+        from transclip.models import model_display_name
+
+        self.assertEqual(
+            model_display_name("ibm-granite/granite-speech-4.1-2b"),
+            "Keyword-biased ASR - Granite 4.1",
+        )
 
     def test_model_catalog_owns_asr_backend_compatibility(self):
         runtime = self._linux_runtime()
@@ -120,7 +131,7 @@ class ModelsTests(unittest.TestCase):
         usage = type("Usage", (), {"free": 1})()
         with (
             tempfile.TemporaryDirectory() as tmp,
-            patch("transclip.models.shutil.disk_usage", return_value=usage),
+            patch("transclip.models.cache.shutil.disk_usage", return_value=usage),
             self.assertRaises(RuntimeError),
         ):
             settings = Settings(model_cache_dir=tmp)
@@ -154,6 +165,17 @@ class ModelsTests(unittest.TestCase):
                 "ibm-granite/granite-speech-4.1-2b-nar",
                 runtime,
             )
+
+    def test_cli_models_list_uses_local_catalog(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_path = Path(tmp) / "settings.toml"
+            write_settings(Settings(host="127.0.0.1", port=0), settings_path)
+            stdout = io.StringIO()
+            with patch_linux_gpu_runtime(), redirect_stdout(stdout):
+                code = main(["--settings", str(settings_path), "models", "list"])
+
+            self.assertEqual(code, 0)
+            self.assertIn("ibm-granite/granite-speech-4.1-2b-nar", stdout.getvalue())
 
 
 if __name__ == "__main__":
