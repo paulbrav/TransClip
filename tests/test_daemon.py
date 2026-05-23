@@ -30,7 +30,7 @@ class DaemonTests(unittest.TestCase):
 
         self.assertIn("Description=TransClip dictation service", unit)
         self.assertIn(
-            f"-m transclip.cli --settings {Path('/tmp/settings.toml').resolve()} serve",
+            f"-m transclip.cli --settings {service_settings_path(Path('/tmp/settings.toml'))} serve",
             unit,
         )
         self.assertIn("Restart=on-failure", unit)

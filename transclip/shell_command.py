@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import pwd
 import re
 import subprocess
 from dataclasses import dataclass
@@ -129,8 +128,10 @@ def detect_default_shell() -> str:
     if shell:
         return shell
     try:
+        import pwd
+
         shell = pwd.getpwuid(os.getuid()).pw_shell.strip()
-    except (KeyError, OSError):
+    except (ImportError, KeyError, OSError):
         shell = ""
     return shell or "/bin/sh"
 

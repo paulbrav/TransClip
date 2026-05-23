@@ -10,15 +10,18 @@ from transclip.desktop.paste.win32 import (
 
 
 class Win32ClipboardTests(unittest.TestCase):
-    def test_read_clipboard_rejects_non_windows(self):
+    @patch("transclip.desktop.paste.win32.platform.system", return_value="Linux")
+    def test_read_clipboard_rejects_non_windows(self, _system):
         with self.assertRaisesRegex(RuntimeError, "only available on Windows"):
             read_clipboard_text()
 
-    def test_write_clipboard_rejects_non_windows(self):
+    @patch("transclip.desktop.paste.win32.platform.system", return_value="Linux")
+    def test_write_clipboard_rejects_non_windows(self, _system):
         with self.assertRaisesRegex(RuntimeError, "only available on Windows"):
             write_clipboard_text("hello")
 
-    def test_send_ctrl_v_paste_rejects_non_windows(self):
+    @patch("transclip.desktop.paste.win32.platform.system", return_value="Linux")
+    def test_send_ctrl_v_paste_rejects_non_windows(self, _system):
         with self.assertRaisesRegex(RuntimeError, "only available on Windows"):
             send_ctrl_v_paste()
 
