@@ -3,15 +3,15 @@ from __future__ import annotations
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
-from .cleanup import CleanupPlan
-from .platform_runtime import PlatformRuntime, get_runtime, user_cache_dir
+from . import platform_runtime
+from .platform_runtime import PlatformRuntime, user_cache_dir
 from .runtime_profile import detect_runtime_profile, is_apple_silicon, machine_architecture
 from .settings import Settings, default_settings
 
 GIB = 1024**3
-RuntimeKind = Literal["torch", "mlx", "file"]
+ModelRuntimeKind = Literal["torch", "mlx", "file"]
 PrefetchStrategy = Literal["transformers", "snapshot_download", "none"]
 
 
@@ -19,7 +19,7 @@ PrefetchStrategy = Literal["transformers", "snapshot_download", "none"]
 class ModelCatalogEntry:
     model_id: str
     backend: str
-    runtime_kind: RuntimeKind
+    runtime_kind: ModelRuntimeKind
     estimated_bytes: int
     supported_platforms: frozenset[str]
     supported_architectures: frozenset[str] | None
@@ -80,8 +80,18 @@ MODEL_CATALOG: tuple[ModelCatalogEntry, ...] = (
     ),
 )
 
-SupportedModel = ModelCatalogEntry
 SUPPORTED_MODELS = list(MODEL_CATALOG)
+
+
+@dataclass(frozen=True, slots=True)
+class ModelRow:
+    model_id: str
+    backend: str
+    runtime: str
+    marker: str
+    cached: bool
+    cache_path: str
+
 
 SUPPORTED_TEXT_MODELS = [
     ModelCatalogEntry(
@@ -147,8 +157,8 @@ def validate_platform_support(
     entry: ModelCatalogEntry,
     runtime: PlatformRuntime | None = None,
 ) -> None:
-    platform_runtime = get_runtime(runtime)
-    system = platform_runtime.system()
+    platform_runtime_instance = platform_runtime.get_runtime(runtime)
+    system = platform_runtime_instance.system()
     if system not in entry.supported_platforms:
         raise ValueError(
             f"Model {entry.model_id} is not supported on {system}. "
@@ -225,15 +235,21 @@ def mlx_snapshot_path(model_id: str, settings: Settings, runtime: PlatformRuntim
     return candidates[-1] if candidates else None
 
 
-def required_model_cache_paths(settings: Settings, runtime: PlatformRuntime | None = None) -> list[Path]:
-    if settings.asr_backend.startswith("file:"):
-        paths: list[Path] = []
-    else:
-        paths = [model_cache_path(settings.asr_model, settings, runtime)]
-    if CleanupPlan.from_settings(settings).requires_text_model:
-        text_path = model_cache_path(settings.text_model, settings, runtime)
-        if text_path not in paths:
-            paths.append(text_path)
+def required_model_cache_paths(
+    settings: Settings,
+    *,
+    extra_model_ids: tuple[str, ...] = (),
+    runtime: PlatformRuntime | None = None,
+) -> list[Path]:
+    paths: list[Path] = []
+    if not settings.asr_backend.startswith("file:") and settings.asr_model:
+        paths.append(model_cache_path(settings.asr_model, settings, runtime))
+    for model_id in extra_model_ids:
+        if not model_id:
+            continue
+        path = model_cache_path(model_id, settings, runtime)
+        if path not in paths:
+            paths.append(path)
     return paths
 
 
@@ -267,9 +283,9 @@ def supported_catalog_entries(runtime: PlatformRuntime | None = None) -> list[Mo
     return entries
 
 
-def model_rows(settings: Settings, runtime: PlatformRuntime | None = None) -> list[dict[str, Any]]:
+def model_rows(settings: Settings, runtime: PlatformRuntime | None = None) -> list[ModelRow]:
     defaults = default_settings(runtime)
-    rows: list[dict[str, Any]] = []
+    rows: list[ModelRow] = []
     for entry in supported_catalog_entries(runtime):
         markers = []
         if entry.model_id == settings.asr_model and entry.backend == normalize_asr_backend(settings.asr_backend):
@@ -277,14 +293,14 @@ def model_rows(settings: Settings, runtime: PlatformRuntime | None = None) -> li
         if entry.model_id == defaults.asr_model and entry.backend == normalize_asr_backend(defaults.asr_backend):
             markers.append("default")
         rows.append(
-            {
-                "model_id": entry.model_id,
-                "backend": entry.backend,
-                "runtime": entry.runtime_kind,
-                "marker": ",".join(markers) if markers else "-",
-                "cached": cache_artifacts_present(entry.model_id, settings, runtime),
-                "cache_path": str(model_cache_path(entry.model_id, settings, runtime)),
-            }
+            ModelRow(
+                model_id=entry.model_id,
+                backend=entry.backend,
+                runtime=entry.runtime_kind,
+                marker=",".join(markers) if markers else "-",
+                cached=cache_artifacts_present(entry.model_id, settings, runtime),
+                cache_path=str(model_cache_path(entry.model_id, settings, runtime)),
+            )
         )
     for model in SUPPORTED_TEXT_MODELS:
         markers = []
@@ -293,16 +309,20 @@ def model_rows(settings: Settings, runtime: PlatformRuntime | None = None) -> li
         if model.model_id == defaults.text_model:
             markers.append("default-text")
         rows.append(
-            {
-                "model_id": model.model_id,
-                "backend": model.backend,
-                "runtime": model.runtime_kind,
-                "marker": ",".join(markers) if markers else "-",
-                "cached": cache_artifacts_present(model.model_id, settings, runtime),
-                "cache_path": str(model_cache_path(model.model_id, settings, runtime)),
-            }
+            ModelRow(
+                model_id=model.model_id,
+                backend=model.backend,
+                runtime=model.runtime_kind,
+                marker=",".join(markers) if markers else "-",
+                cached=cache_artifacts_present(model.model_id, settings, runtime),
+                cache_path=str(model_cache_path(model.model_id, settings, runtime)),
+            )
         )
     return rows
+
+
+def asr_model_rows(settings: Settings, runtime: PlatformRuntime | None = None) -> list[ModelRow]:
+    return [row for row in model_rows(settings, runtime) if row.backend != "text_generation"]
 
 
 def ensure_disk_space(
@@ -332,62 +352,92 @@ def prefetch_model(model_id: str, settings: Settings, runtime: PlatformRuntime |
     cache_dir = str(model_cache_root(settings, runtime))
 
     if entry.prefetch_strategy == "snapshot_download":
-        try:
-            from huggingface_hub import snapshot_download
-        except ImportError as exc:
-            raise RuntimeError("huggingface_hub is required for MLX model prefetch.") from exc
-        snapshot_download(
-            repo_id=entry.model_id,
-            cache_dir=cache_dir,
-        )
+        _prefetch_snapshot(entry, cache_dir)
         return model_cache_path(entry.model_id, settings, runtime)
 
-    if entry.backend == "text_generation":
+    if entry.prefetch_strategy == "transformers":
         try:
-            from transformers import AutoModelForImageTextToText, AutoProcessor
-        except ImportError as exc:
-            raise RuntimeError("transformers is required. Install transclip[models].") from exc
-        AutoModelForImageTextToText.from_pretrained(
-            entry.model_id,
-            dtype="auto",
-            local_files_only=False,
-            cache_dir=cache_dir,
-        )
-        AutoProcessor.from_pretrained(
-            entry.model_id,
-            local_files_only=False,
-            cache_dir=cache_dir,
-        )
-    elif entry.backend == "granite_nar":
-        try:
-            from transformers import AutoModel, AutoProcessor
-        except ImportError as exc:
-            raise RuntimeError("transformers is required. Install transclip[models].") from exc
-        AutoModel.from_pretrained(
-            entry.model_id,
-            trust_remote_code=True,
-            local_files_only=False,
-            cache_dir=cache_dir,
-        )
-        AutoProcessor.from_pretrained(
-            entry.model_id,
-            trust_remote_code=True,
-            local_files_only=False,
-            cache_dir=cache_dir,
-        )
-    else:
-        try:
-            from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
-        except ImportError as exc:
-            raise RuntimeError("transformers is required. Install transclip[models].") from exc
-        AutoModelForSpeechSeq2Seq.from_pretrained(
-            entry.model_id,
-            local_files_only=False,
-            cache_dir=cache_dir,
-        )
-        AutoProcessor.from_pretrained(
-            entry.model_id,
-            local_files_only=False,
-            cache_dir=cache_dir,
-        )
-    return model_cache_path(entry.model_id, settings, runtime)
+            handler = _PREFETCH_BY_BACKEND[entry.backend]
+        except KeyError as exc:
+            raise RuntimeError(
+                f"No prefetch handler for backend {entry.backend!r} (model {entry.model_id!r})"
+            ) from exc
+        handler(entry, cache_dir)
+        return model_cache_path(entry.model_id, settings, runtime)
+
+    if entry.prefetch_strategy == "none":
+        return model_cache_path(entry.model_id, settings, runtime)
+
+    raise RuntimeError(f"Unsupported prefetch strategy {entry.prefetch_strategy!r} for {entry.model_id!r}")
+
+
+def _prefetch_snapshot(entry: ModelCatalogEntry, cache_dir: str) -> None:
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError as exc:
+        raise RuntimeError("huggingface_hub is required for MLX model prefetch.") from exc
+    snapshot_download(
+        repo_id=entry.model_id,
+        cache_dir=cache_dir,
+    )
+
+
+def _prefetch_text_generation(entry: ModelCatalogEntry, cache_dir: str) -> None:
+    try:
+        from transformers import AutoModelForImageTextToText, AutoProcessor
+    except ImportError as exc:
+        raise RuntimeError("transformers is required. Install transclip[models].") from exc
+    AutoModelForImageTextToText.from_pretrained(
+        entry.model_id,
+        dtype="auto",
+        local_files_only=False,
+        cache_dir=cache_dir,
+    )
+    AutoProcessor.from_pretrained(
+        entry.model_id,
+        local_files_only=False,
+        cache_dir=cache_dir,
+    )
+
+
+def _prefetch_granite_nar(entry: ModelCatalogEntry, cache_dir: str) -> None:
+    try:
+        from transformers import AutoModel, AutoProcessor
+    except ImportError as exc:
+        raise RuntimeError("transformers is required. Install transclip[models].") from exc
+    AutoModel.from_pretrained(
+        entry.model_id,
+        trust_remote_code=True,
+        local_files_only=False,
+        cache_dir=cache_dir,
+    )
+    AutoProcessor.from_pretrained(
+        entry.model_id,
+        trust_remote_code=True,
+        local_files_only=False,
+        cache_dir=cache_dir,
+    )
+
+
+def _prefetch_transformers_speech(entry: ModelCatalogEntry, cache_dir: str) -> None:
+    try:
+        from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
+    except ImportError as exc:
+        raise RuntimeError("transformers is required. Install transclip[models].") from exc
+    AutoModelForSpeechSeq2Seq.from_pretrained(
+        entry.model_id,
+        local_files_only=False,
+        cache_dir=cache_dir,
+    )
+    AutoProcessor.from_pretrained(
+        entry.model_id,
+        local_files_only=False,
+        cache_dir=cache_dir,
+    )
+
+
+_PREFETCH_BY_BACKEND = {
+    "text_generation": _prefetch_text_generation,
+    "granite_nar": _prefetch_granite_nar,
+    "granite": _prefetch_transformers_speech,
+}

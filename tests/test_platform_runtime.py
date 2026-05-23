@@ -101,8 +101,18 @@ class PlatformRuntimeTests(unittest.TestCase):
         runtime = FakeRuntime(system="Linux", home=Path("/home/user"))
         settings = Settings()
         rows = model_rows(settings, runtime)
-        backends = {row["backend"] for row in rows}
+        backends = {row.backend for row in rows}
         self.assertIn("text_generation", backends)
+
+    def test_open_path_uses_platform_opener(self):
+        runtime = FakeRuntime(system="Linux", home=Path("/home/user"))
+        with patch("transclip.platform_runtime.subprocess.Popen") as popen:
+            from transclip.platform_runtime import open_path
+
+            open_path(Path("/tmp/settings.toml"), runtime=runtime)
+
+        popen.assert_called_once()
+        self.assertEqual(popen.call_args.args[0], ["xdg-open", "/tmp/settings.toml"])
 
 
 if __name__ == "__main__":

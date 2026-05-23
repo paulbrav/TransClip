@@ -59,11 +59,11 @@ class ModelsTests(unittest.TestCase):
             model_dir.mkdir(parents=True)
 
             self.assertTrue(cache_artifacts_present(settings.asr_model, settings))
-            current = next(row for row in model_rows(settings, runtime) if row["model_id"] == settings.asr_model)
-            text = next(row for row in model_rows(settings, runtime) if row["model_id"] == settings.text_model)
-            self.assertEqual(current["marker"], "current,default")
-            self.assertTrue(current["cached"])
-            self.assertEqual(text["marker"], "current-text,default-text")
+            current = next(row for row in model_rows(settings, runtime) if row.model_id == settings.asr_model)
+            text = next(row for row in model_rows(settings, runtime) if row.model_id == settings.text_model)
+            self.assertEqual(current.marker, "current,default")
+            self.assertTrue(current.cached)
+            self.assertEqual(text.marker, "current-text,default-text")
 
     def test_required_model_cache_paths_include_text_model_for_model_cleanup(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -74,7 +74,10 @@ class ModelsTests(unittest.TestCase):
             )
 
             self.assertEqual(
-                required_model_cache_paths(settings),
+                required_model_cache_paths(
+                    settings,
+                    extra_model_ids=(settings.text_model,),
+                ),
                 [
                     Path(tmp) / "models--local--asr",
                     Path(tmp) / "models--Qwen--Qwen3.5-4B",

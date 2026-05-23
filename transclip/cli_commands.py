@@ -25,9 +25,10 @@ from .doctor import (
 from .eval_harness import run_eval
 from .gnome_shortcut import install_shortcut
 from .history import read_history
-from .models import model_rows, prefetch_model
+from .models import ModelRow, model_rows, prefetch_model
 from .notify import notify
 from .paste import SystemClipboard
+from .platform_runtime import get_runtime
 from .product import CLI_COMMAND, DISPLAY_NAME
 from .recording_ops import toggle_recording
 from .service import InferenceEngine, run_server
@@ -96,7 +97,7 @@ def handle_command(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
 def handle_doctor(args: argparse.Namespace, settings, config_dir: Path | None) -> int:
     if args.fix:
         logs_dir().mkdir(parents=True, exist_ok=True)
-        if sys.platform.startswith("linux"):
+        if get_runtime().system() == "Linux":
             try:
                 install_shortcut(settings_path=args.settings, binding=settings.hotkey_linux)
             except Exception as exc:
@@ -278,8 +279,8 @@ def _copy_history(events: list[dict], index: int) -> int:
     return 0
 
 
-def _format_model_rows(rows: list[dict]) -> str:
+def _format_model_rows(rows: list[ModelRow]) -> str:
     lines = ["model_id\tbackend\tmarker\tcached\tcache_path"]
     for row in rows:
-        lines.append(f"{row['model_id']}\t{row['backend']}\t{row['marker']}\t{row['cached']}\t{row['cache_path']}")
+        lines.append(f"{row.model_id}\t{row.backend}\t{row.marker}\t{row.cached}\t{row.cache_path}")
     return "\n".join(lines)

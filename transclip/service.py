@@ -12,7 +12,6 @@ from .asr import ASRBackend, build_asr_backend
 from .audio import AudioRecorder
 from .cleanup import (
     CleanupBackend,
-    CleanupPlan,
     FaithfulRuleCleanupBackend,
     ModelCleanupProcessor,
 )
@@ -21,6 +20,8 @@ from .dictation_session import DictationSession
 from .history import append_transcript_history
 from .keyword_restore import restore_keywords
 from .mode_routing import route_voice_mode
+from .platform_runtime import get_runtime
+from .service_health import build_health_status, cleanup_labels
 from .service_routes import dispatch_get, dispatch_post
 from .settings import Settings, load_settings
 from .shell_command import ShellCommandProcessor
@@ -55,32 +56,21 @@ class InferenceEngine:
 
     def health(self) -> dict[str, Any]:
         status = self.dictation_session.status()
-        cleanup_plan = CleanupPlan.from_settings(self.settings)
-        return {
-            "status": status,
-            "asr_backend": self.asr_backend.name,
-            "asr_model": self.asr_backend.model,
-            "cleanup_backend": cleanup_plan.backend_label(
-                rule_name=self.cleanup_backend.name,
-                text_backend=self.text_backend.name,
-                text_model=self.text_backend.model_name,
-            ),
-            "dictation_cleanup": cleanup_plan.dictation_mode,
-            "cleanup_enabled": self.settings.cleanup_enabled,
-            "voice_mode_routing_enabled": self.settings.voice_mode_routing_enabled,
-            "voice_model_cleanup_always_on": self.settings.voice_model_cleanup_always_on,
-            "voice_mode_shell_enabled": self.settings.voice_mode_shell_enabled,
-            "text_model_runtime": self.settings.text_model_runtime,
-            "text_model": self.settings.text_model,
-            "language": self.settings.language,
-            "max_recording_seconds": self.settings.max_recording_seconds,
-            "min_recording_ms": self.settings.min_recording_ms,
-            "toggle_cooldown_ms": self.settings.toggle_cooldown_ms,
-            "hotkey": self.settings.active_hotkey,
-            "paste_shortcut": self.settings.paste_shortcut,
-            "clipboard_restore_delay_ms": self.settings.clipboard_restore_delay_ms,
-            "restore_clipboard_after_paste": self.settings.restore_clipboard_after_paste,
-        }
+        cleanup_backend, dictation_cleanup = cleanup_labels(
+            self.settings,
+            rule_name=self.cleanup_backend.name,
+            text_backend=self.text_backend.name,
+            text_model=self.text_backend.model_name,
+        )
+        return build_health_status(
+            status=status,
+            settings=self.settings,
+            asr_backend_name=self.asr_backend.name,
+            asr_model=self.asr_backend.model,
+            cleanup_backend=cleanup_backend,
+            dictation_cleanup=dictation_cleanup,
+            runtime=get_runtime(),
+        ).to_dict()
 
     def start_recording(self) -> dict[str, Any]:
         return self.dictation_session.start_recording()

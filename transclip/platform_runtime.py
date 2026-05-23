@@ -84,3 +84,13 @@ def user_log_dir(app_name: str, runtime: PlatformRuntime | None = None) -> Path:
     if platform_runtime.system() == "Darwin":
         return platform_runtime.home_dir() / "Library" / "Logs" / app_name
     return user_cache_dir(app_name, platform_runtime)
+
+
+def open_path(path: Path, runtime: PlatformRuntime | None = None) -> None:
+    platform_runtime = get_runtime(runtime)
+    opener = "open" if platform_runtime.system() == "Darwin" else "xdg-open"
+    subprocess.Popen(
+        [opener, str(path)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )

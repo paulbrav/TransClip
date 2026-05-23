@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .device import resolve_torch_device
+from .mlx_audio_compat import generate_transcription
 from .models import (
     mlx_snapshot_path,
     model_cache_path,
@@ -109,11 +110,18 @@ DefaultASRAudioPreparer = TorchAudioPreparer
 class GraniteSpeechTransformersBackend:
     name = "granite-transformers"
 
-    def __init__(self, model: str, device: str = "auto"):
+    def __init__(
+        self,
+        model: str,
+        device: str = "auto",
+        *,
+        local_files_only: bool = True,
+        cache_dir: str = "",
+    ):
         self.model = model
         self.device = device
-        self.local_files_only = True
-        self.cache_dir = ""
+        self.local_files_only = local_files_only
+        self.cache_dir = cache_dir
         self._loaded = None
         self.audio_preparer = TorchAudioPreparer()
 
@@ -187,11 +195,18 @@ class GraniteSpeechTransformersBackend:
 class GraniteSpeechNarTransformersBackend:
     name = "granite-nar-transformers"
 
-    def __init__(self, model: str, device: str = "auto"):
+    def __init__(
+        self,
+        model: str,
+        device: str = "auto",
+        *,
+        local_files_only: bool = True,
+        cache_dir: str = "",
+    ):
         self.model = model
         self.device = device
-        self.local_files_only = True
-        self.cache_dir = ""
+        self.local_files_only = local_files_only
+        self.cache_dir = cache_dir
         self._loaded = None
         self.audio_preparer = TorchAudioPreparer()
 
@@ -248,14 +263,23 @@ class GraniteSpeechNarTransformersBackend:
 class MlxAudioASRBackend:
     name = "mlx-audio"
 
-    def __init__(self, model: str, backend_kind: str, settings: Settings | None = None):
+    def __init__(
+        self,
+        model: str,
+        settings: Settings | None = None,
+        *,
+        local_files_only: bool = True,
+        cache_dir: str = "",
+        validate_cache: bool = False,
+    ):
         self.model = model
-        self.backend_kind = backend_kind
         self.settings = settings
-        self.local_files_only = True
-        self.cache_dir = ""
+        self.local_files_only = local_files_only
+        self.cache_dir = cache_dir
         self._resolved_path: str | None = None
         self.audio_preparer = PathAudioPreparer()
+        if validate_cache:
+            self._model_path()
 
     def _model_path(self) -> str:
         if self._resolved_path:
@@ -281,31 +305,12 @@ class MlxAudioASRBackend:
         del keywords
         timings: dict[str, float] = {}
         with timed_ms(timings, "asr"):
-            try:
-                from mlx_audio.stt.generate import generate_transcription
-            except ImportError as exc:
-                raise RuntimeError(
-                    "mlx-audio is required on macOS Apple Silicon. Install transclip[mlx]."
-                ) from exc
             model_path = self._model_path()
             audio = self.audio_preparer.prepare(wav_path)
             try:
                 with tempfile.TemporaryDirectory(prefix="transclip-mlx-") as tmp:
                     output_stem = str(Path(tmp) / "transcript")
-                    try:
-                        result = generate_transcription(
-                            model=model_path,
-                            audio=str(audio.wav_path),
-                            output_path=output_stem,
-                            format="txt",
-                        )
-                    except TypeError:
-                        result = generate_transcription(
-                            audio_path=str(audio.wav_path),
-                            model_path=model_path,
-                            output_path=output_stem,
-                            format="txt",
-                        )
+                    result = generate_transcription(model_path, audio.wav_path, output_stem)
                     text = getattr(result, "text", None) or str(result)
             finally:
                 if getattr(audio, "temporary", False):
@@ -340,17 +345,21 @@ def build_asr_backend(
         raise ValueError(f"Unsupported ASR configuration: {settings.asr_backend} / {settings.asr_model}")
 
     torch_device = "auto" if backend_kind == "granite" and settings.asr_device == "mlx" else settings.asr_device
+    cache_options = {
+        "local_files_only": settings.models_local_files_only,
+        "cache_dir": settings.model_cache_dir,
+    }
     if backend_kind == "granite_nar":
-        backend = GraniteSpeechNarTransformersBackend(settings.asr_model, torch_device)
+        backend = GraniteSpeechNarTransformersBackend(settings.asr_model, torch_device, **cache_options)
     elif backend_kind in {"mlx_audio_whisper", "granite_mlx"}:
-        backend = MlxAudioASRBackend(settings.asr_model, backend_kind, settings)
+        backend = MlxAudioASRBackend(
+            settings.asr_model,
+            settings,
+            **cache_options,
+            validate_cache=settings.models_local_files_only,
+        )
     else:
-        backend = GraniteSpeechTransformersBackend(settings.asr_model, torch_device)
-
-    backend.local_files_only = settings.models_local_files_only
-    backend.cache_dir = settings.model_cache_dir
-    if isinstance(backend, MlxAudioASRBackend) and settings.models_local_files_only:
-        backend._model_path()
+        backend = GraniteSpeechTransformersBackend(settings.asr_model, torch_device, **cache_options)
     return backend
 
 
