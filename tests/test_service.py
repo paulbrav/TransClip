@@ -163,7 +163,7 @@ class ServiceTests(unittest.TestCase):
                 asr_backend=FakeASR(),
                 cleanup_backend=FaithfulRuleCleanupBackend(),
             )
-            with patch("transclip.service.append_transcript_history", side_effect=OSError("history full")):
+            with patch("transclip.service.engine.append_transcript_history", side_effect=OSError("history full")):
                 result = engine.transcribe(wav, record_history=True)
 
             self.assertEqual(result["text"], "Hello from ROCm.")
@@ -180,7 +180,7 @@ class ServiceTests(unittest.TestCase):
         server, thread, host, port = serve_test_engine(settings, engine)
         base_url = f"http://{host}:{port}"
         try:
-            with patch("transclip.service.AudioRecorder", FakeRecorder):
+            with patch("transclip.audio.AudioRecorder", FakeRecorder):
                 started = http_json("POST", f"{base_url}/record/start", {})
                 health = http_json("GET", f"{base_url}/health")
                 stopped = http_json("POST", f"{base_url}/record/stop", {"cleanup": True})
@@ -203,7 +203,7 @@ class ServiceTests(unittest.TestCase):
         server, thread, host, port = serve_test_engine(settings, engine)
         base_url = f"http://{host}:{port}"
         try:
-            with patch("transclip.service.AudioRecorder", FakeRecorder):
+            with patch("transclip.audio.AudioRecorder", FakeRecorder):
                 http_json("POST", f"{base_url}/record/start", {})
                 stopped = http_json("POST", f"{base_url}/record/stop", {"discard": True})
 
@@ -227,7 +227,7 @@ class ServiceTests(unittest.TestCase):
         server, thread, host, port = serve_test_engine(settings, engine)
         base_url = f"http://{host}:{port}"
         try:
-            with patch("transclip.service.AudioRecorder", FakeRecorder):
+            with patch("transclip.audio.AudioRecorder", FakeRecorder):
                 started = http_json("POST", f"{base_url}/record/toggle", {})
                 stopped = http_json("POST", f"{base_url}/record/toggle", {"cleanup": True})
 
@@ -255,7 +255,7 @@ class ServiceTests(unittest.TestCase):
         server, thread, host, port = serve_test_engine(settings, engine)
         base_url = f"http://{host}:{port}"
         try:
-            with patch("transclip.service.AudioRecorder", FakeRecorder):
+            with patch("transclip.audio.AudioRecorder", FakeRecorder):
                 http_json("POST", f"{base_url}/record/toggle", {})
                 stopped = http_json("POST", f"{base_url}/record/toggle", {})
 
@@ -303,7 +303,7 @@ class ServiceTests(unittest.TestCase):
             asr_backend=FakeASR(),
             cleanup_backend=FaithfulRuleCleanupBackend(),
         )
-        with patch("transclip.service.AudioRecorder", FakeRecorder):
+        with patch("transclip.audio.AudioRecorder", FakeRecorder):
             started = engine.toggle_recording()
             ignored = engine.toggle_recording()
 

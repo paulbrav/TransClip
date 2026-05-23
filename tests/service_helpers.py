@@ -130,9 +130,8 @@ def patch_linux_gpu_runtime(home: Path | None = None):
     get_runtime_targets = (
         "transclip.platform.runtime.get_runtime",
         "transclip.platform.profiles.get_runtime",
-        "transclip.models.get_runtime",
         "transclip.settings.get_runtime",
-        "transclip.cli_commands.get_runtime",
+        "transclip.cli.doctor_cmd.get_runtime",
     )
 
     @contextmanager
@@ -172,7 +171,7 @@ def serve_test_engine(
 def stop_server(server, thread: threading.Thread) -> None:
     server.shutdown()
     server.server_close()
-    thread.join(timeout=2)
+    thread.join(timeout=5)
 
 
 def http_json(method: str, url: str, payload: dict | None = None) -> dict:

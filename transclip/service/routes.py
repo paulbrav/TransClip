@@ -4,7 +4,10 @@ import base64
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .engine import InferenceEngine
 
 
 @dataclass(frozen=True, slots=True)
@@ -13,13 +16,13 @@ class RouteResponse:
     payload: dict[str, Any]
 
 
-def dispatch_get(engine, path: str) -> RouteResponse:
+def dispatch_get(engine: InferenceEngine, path: str) -> RouteResponse:
     if path == "/health":
         return RouteResponse(200, engine.health())
     return RouteResponse(404, {"error": "not found"})
 
 
-def dispatch_post(engine, path: str, body: dict[str, Any]) -> RouteResponse:
+def dispatch_post(engine: InferenceEngine, path: str, body: dict[str, Any]) -> RouteResponse:
     if path == "/cleanup":
         return RouteResponse(
             200,

@@ -3,16 +3,18 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from pathlib import Path
-from urllib.error import URLError
 
 from transclip.audio import recording_debug
-from transclip.client import InferenceClient
-from transclip.daemon import last_toggle_log_event, service_state
+from transclip.daemon import last_toggle_log_event, service_state, toggle_log_path
 from transclip.daemon.common import ServiceState
-from transclip.daemon.lifecycle import toggle_log_path
 from transclip.desktop.paste import clipboard_capability, paste_capability
 from transclip.platform.capabilities import session_info
 from transclip.platform.runtime import PlatformRuntime, get_runtime
+from transclip.service.client_health import (
+    fetch_service_health_result,
+    service_health_check_detail,
+    service_health_is_ready,
+)
 from transclip.settings import Settings, default_config_dir, settings_path
 
 from .asr import (
@@ -43,6 +45,7 @@ __all__ = [
     "checks_as_json",
     "checks_as_text",
     "run_checks",
+    "run_model_checks",
 ]
 
 
@@ -74,6 +77,15 @@ def run_checks(
     return checks
 
 
+def run_model_checks(settings: Settings, runtime: PlatformRuntime | None = None) -> list[Check]:
+    platform_runtime = get_runtime(runtime)
+    return [
+        check_model_cache(settings, platform_runtime),
+        check_torch_runtime(settings, platform_runtime),
+        check_asr_runtime(settings),
+    ]
+
+
 def check_config_files(config_dir: Path | None = None) -> Check:
     missing = [str(settings_path(config_dir))] if not settings_path(config_dir).exists() else []
     if not missing:
@@ -98,26 +110,24 @@ def check_service_manager(
     platform_runtime = get_runtime(runtime)
     state = state or service_state(runtime=platform_runtime)
     system = platform_runtime.system()
-    if system == "Linux":
-        return Check(
-            "service_manager",
-            state.installed,
-            "systemd user unit installed" if state.installed else "missing systemd user unit; run: transclip install",
-        )
-    if system == "Darwin":
-        return Check(
-            "service_manager",
-            state.installed,
-            "LaunchAgent installed" if state.installed else "missing LaunchAgent; run: transclip install",
-        )
-    if system == "Windows":
-        detail = (
-            "Task Scheduler logon task installed"
-            if state.installed
-            else "missing Task Scheduler task; run: transclip install"
-        )
-        return Check("service_manager", state.installed, detail)
-    return Check("service_manager", True, f"not checked on {system}")
+    messages = {
+        "Linux": (
+            "systemd user unit installed",
+            "missing systemd user unit; run: transclip install",
+        ),
+        "Darwin": (
+            "LaunchAgent installed",
+            "missing LaunchAgent; run: transclip install",
+        ),
+        "Windows": (
+            "Task Scheduler logon task installed",
+            "missing Task Scheduler task; run: transclip install",
+        ),
+    }
+    if system not in messages:
+        return Check("service_manager", True, f"not checked on {system}")
+    ok_detail, missing_detail = messages[system]
+    return Check("service_manager", state.installed, ok_detail if state.installed else missing_detail)
 
 
 def check_service_active(state: ServiceState | None = None) -> Check:
@@ -130,28 +140,20 @@ def check_service_active(state: ServiceState | None = None) -> Check:
 
 
 def check_service_health(settings: Settings) -> Check:
-    try:
-        health = InferenceClient(settings).health()
-    except URLError as exc:
-        return Check("service_health", False, f"/health failed: {exc}")
-    except Exception as exc:
-        return Check("service_health", False, f"/health failed: {exc}")
-    status = health.get("status")
+    health, error = fetch_service_health_result(settings)
     return Check(
         "service_health",
-        status in {"ready", "recording"},
-        f"/health status={status}; asr={health.get('asr_backend')}; cleanup={health.get('cleanup_backend')}",
+        service_health_is_ready(health),
+        service_health_check_detail(health, error=error),
     )
 
 
 def check_session_type(runtime: PlatformRuntime | None = None) -> Check:
     info = session_info(runtime=runtime)
-    if info.system not in {"Linux", "Darwin"}:
-        return Check("session_type", True, f"not checked on {info.system}")
     if info.system == "Darwin":
         return Check("session_type", True, "macOS")
-    if info.system == "Windows":
-        return Check("session_type", True, "Windows")
+    if info.system not in {"Linux", "Darwin"}:
+        return Check("session_type", True, f"not checked on {info.system}")
     return Check("session_type", info.session != "unknown", f"session={info.session}; desktop={info.desktop}")
 
 

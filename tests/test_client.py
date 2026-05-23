@@ -3,7 +3,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from transclip.client import InferenceClient
+from transclip.service import InferenceClient
 from transclip.settings import Settings
 
 

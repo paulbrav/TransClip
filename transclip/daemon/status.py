@@ -6,9 +6,7 @@ import subprocess
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
-from urllib.error import URLError
 
-from transclip.client import InferenceClient
 from transclip.desktop.hotkey import get_gnome_shortcut_status
 from transclip.desktop.paste import (
     SystemClipboard,
@@ -18,6 +16,12 @@ from transclip.desktop.paste import (
 )
 from transclip.platform.runtime import PlatformRuntime, get_runtime
 from transclip.product import SERVICE_NAME
+from transclip.service import InferenceClient
+from transclip.service.client_health import (
+    fetch_service_health_result,
+    service_health_check_detail,
+    service_health_is_ready,
+)
 from transclip.settings import Settings
 
 from .common import CommandResult, Runner, logs_dir, toggle_log_path
@@ -84,12 +88,11 @@ def collect_status(
     platform_runtime = get_runtime(runtime)
     service_state_value = service_state(runner=runner, runtime=platform_runtime)
     service = asdict(service_state_value)
-    try:
-        health: dict[str, Any] = InferenceClient(settings).health()
-    except URLError as exc:
-        health = {"ok": False, "error": str(exc)}
-    except Exception as exc:
-        health = {"ok": False, "error": str(exc)}
+    health_payload, health_error = fetch_service_health_result(settings)
+    if health_error is not None:
+        health: dict[str, Any] = {"ok": False, "error": health_error}
+    else:
+        health = health_payload or {"ok": False, "error": "no response"}
 
     shortcut = None
     if platform_runtime.system() == "Linux":
@@ -101,7 +104,7 @@ def collect_status(
     clipboard = _clipboard_status(platform_runtime)
     paste = _paste_status(platform_runtime)
     last_event = last_toggle_log_event()
-    ready = service_state_value.active and health.get("status") in {"ready", "recording"}
+    ready = service_state_value.active and service_health_is_ready(health)
     return {
         "ready": ready,
         "service": service,
@@ -146,14 +149,13 @@ def run_smoke_test(
 ) -> list[CommandResult]:
     platform_runtime = get_runtime(runtime)
     results: list[CommandResult] = []
-    client = InferenceClient(settings)
-    try:
-        health = client.health()
-        results.append(CommandResult(True, f"/health status={health.get('status')}"))
-    except Exception as exc:
-        results.append(CommandResult(False, f"/health failed: {exc}"))
+    health, error = fetch_service_health_result(settings)
+    if error is not None:
+        results.append(CommandResult(False, service_health_check_detail(None, error=error)))
         return results
+    results.append(CommandResult(True, service_health_check_detail(health)))
 
+    client = InferenceClient(settings)
     try:
         started = client.record_toggle()
         results.append(

@@ -1,33 +1,29 @@
 from __future__ import annotations
 
-import json
 from dataclasses import asdict
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from time import perf_counter
 from typing import Any
-from urllib.parse import urlparse
 
-from transclip.platform.runtime import get_runtime
-
-from .asr import ASRBackend, build_asr_backend
-from .audio import AudioRecorder
-from .cleanup import (
+from transclip.asr import ASRBackend, build_asr_backend
+from transclip.audio import AudioRecorder
+from transclip.cleanup import (
     CleanupBackend,
     FaithfulRuleCleanupBackend,
     ModelCleanupProcessor,
 )
-from .debug_capture import DebugCapture
-from .dictation_session import DictationSession
-from .history import append_transcript_history
-from .keyword_restore import restore_keywords
-from .mode_routing import route_voice_mode
-from .service_health import build_health_status, cleanup_labels
-from .service_routes import dispatch_get, dispatch_post
-from .settings import Settings, load_settings
-from .shell_command import ShellCommandProcessor
-from .text_generation import TextGenerationBackend, build_text_generation_backend
-from .transcript_pipeline import TranscriptProcessor, shell_metadata
+from transclip.debug_capture import DebugCapture
+from transclip.history import append_transcript_history
+from transclip.keyword_restore import restore_keywords
+from transclip.mode_routing import route_voice_mode
+from transclip.platform.runtime import get_runtime
+from transclip.settings import Settings
+from transclip.shell_command import ShellCommandProcessor
+from transclip.text_generation import TextGenerationBackend, build_text_generation_backend
+from transclip.transcript_pipeline import TranscriptProcessor, shell_metadata
+
+from .health import build_health_status, cleanup_labels
+from .session import DictationSession
 
 
 class InferenceEngine:
@@ -71,7 +67,7 @@ class InferenceEngine:
             cleanup_backend=cleanup_backend,
             dictation_cleanup=dictation_cleanup,
             runtime=get_runtime(),
-        ).to_dict()
+        )
 
     def start_recording(self) -> dict[str, Any]:
         return self.dictation_session.start_recording()
@@ -88,16 +84,13 @@ class InferenceEngine:
             discard=discard,
             source=source,
         )
-        if record_history:
-            history_error = _append_transcript_history(
-                result,
-                self.settings,
-                source=source,
-                duration_ms=result.get("duration_ms"),
-            )
-            if history_error:
-                result["history_error"] = history_error
-        return result
+        return _with_optional_history(
+            result,
+            self.settings,
+            source=source,
+            record_history=record_history,
+            duration_ms=result.get("duration_ms"),
+        )
 
     def toggle_recording(
         self,
@@ -105,16 +98,13 @@ class InferenceEngine:
         record_history: bool = False,
     ) -> dict[str, Any]:
         result = self.dictation_session.toggle_recording(cleanup=cleanup)
-        if record_history:
-            history_error = _append_transcript_history(
-                result,
-                self.settings,
-                source="/record/toggle",
-                duration_ms=result.get("duration_ms"),
-            )
-            if history_error:
-                result["history_error"] = history_error
-        return result
+        return _with_optional_history(
+            result,
+            self.settings,
+            source="/record/toggle",
+            record_history=record_history,
+            duration_ms=result.get("duration_ms"),
+        )
 
     def cleanup_text(self, text: str) -> dict[str, Any]:
         result = self.transcript_processor.cleanup_dictation(text)
@@ -168,11 +158,12 @@ class InferenceEngine:
         result = outcome.to_dict()
         result["timings_ms"] = timings_ms
         result["debug_capture_dir"] = str(capture_dir) if capture_dir else None
-        if record_history:
-            history_error = _append_transcript_history(result, self.settings, source=source)
-            if history_error:
-                result["history_error"] = history_error
-        return result
+        return _with_optional_history(
+            result,
+            self.settings,
+            source=source,
+            record_history=record_history,
+        )
 
     def _transcribe_for_session(
         self,
@@ -188,70 +179,25 @@ class InferenceEngine:
         )
 
 
-def create_server(
-    settings: Settings | None = None,
-    engine: InferenceEngine | None = None,
-) -> ThreadingHTTPServer:
-    settings = settings or load_settings()
-    active_engine = engine or InferenceEngine(settings)
-
-    class Handler(BaseHTTPRequestHandler):
-        def do_OPTIONS(self) -> None:
-            self.send_response(204)
-            self._cors()
-            self.end_headers()
-
-        def do_GET(self) -> None:
-            response = dispatch_get(active_engine, urlparse(self.path).path)
-            self._json(response.status, response.payload)
-
-        def do_POST(self) -> None:
-            path = urlparse(self.path).path
-            try:
-                body = self._read_json()
-                response = dispatch_post(active_engine, path, body)
-                self._json(response.status, response.payload)
-            except Exception as exc:
-                capture_dir = active_engine.debug_capture.write_error(
-                    "http_request",
-                    exc,
-                    {"path": path},
-                )
-                payload = {"error": str(exc)}
-                if capture_dir:
-                    payload["debug_capture_dir"] = str(capture_dir)
-                self._json(500, payload)
-
-        def log_message(self, format: str, *args: Any) -> None:
-            return
-
-        def _read_json(self) -> dict[str, Any]:
-            length = int(self.headers.get("content-length", "0"))
-            raw = self.rfile.read(length) if length else b"{}"
-            return json.loads(raw.decode("utf-8"))
-
-        def _json(self, status: int, payload: dict[str, Any]) -> None:
-            encoded = json.dumps(payload).encode("utf-8")
-            self.send_response(status)
-            self._cors()
-            self.send_header("content-type", "application/json")
-            self.send_header("content-length", str(len(encoded)))
-            self.end_headers()
-            self.wfile.write(encoded)
-
-        def _cors(self) -> None:
-            self.send_header("access-control-allow-origin", "*")
-            self.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
-            self.send_header("access-control-allow-headers", "content-type")
-
-    return ThreadingHTTPServer((settings.host, settings.port), Handler)
-
-
-def run_server(settings: Settings | None = None) -> None:
-    settings = settings or load_settings()
-    server = create_server(settings)
-    print(f"transclip service listening on http://{settings.host}:{settings.port}", flush=True)
-    server.serve_forever()
+def _with_optional_history(
+    result: dict[str, Any],
+    settings: Settings,
+    *,
+    source: str,
+    record_history: bool,
+    duration_ms: float | None = None,
+) -> dict[str, Any]:
+    if not record_history:
+        return result
+    history_error = _append_transcript_history(
+        result,
+        settings,
+        source=source,
+        duration_ms=duration_ms,
+    )
+    if history_error:
+        result["history_error"] = history_error
+    return result
 
 
 def _append_transcript_history(

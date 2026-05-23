@@ -5,8 +5,9 @@ from urllib.error import HTTPError, URLError
 
 from transclip.daemon import append_toggle_log
 from transclip.desktop.paste import paste_transcript
+from transclip.service import InferenceClient
+from transclip.service.types import RecordSessionResponse
 
-from .client import InferenceClient
 from .history import timestamp
 from .settings import Settings
 
@@ -14,7 +15,7 @@ from .settings import Settings
 @dataclass(slots=True)
 class ToggleOutcome:
     ok: bool
-    payload: dict
+    payload: RecordSessionResponse
     service_url: str
     error_message: str = ""
     paste_failed_message: str = ""

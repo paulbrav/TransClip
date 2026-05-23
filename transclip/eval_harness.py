@@ -8,7 +8,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
-from .service import InferenceEngine
+from transclip.service import InferenceEngine
 
 
 def _manifest_gate_thresholds(thresholds: dict[str, Any]) -> tuple[float, float, float, float, float]:

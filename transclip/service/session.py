@@ -7,8 +7,8 @@ from threading import Lock
 from time import perf_counter
 from typing import Any, Protocol
 
-from .audio import AudioRecorder
-from .settings import Settings
+from transclip.audio import AudioRecorder
+from transclip.settings import Settings
 
 
 class Recorder(Protocol):
@@ -66,14 +66,13 @@ class DictationSession:
             started_at = self._recording_started_at
             self._recorder = None
             self._recording_started_at = 0.0
-        duration_ms = round((self._clock() - started_at) * 1000, 3)
-        with tempfile.TemporaryDirectory() as tmp:
-            wav_path = recorder.stop_to_wav(Path(tmp) / "recording.wav")
-            if discard:
-                return {"status": "ready", "duration_ms": duration_ms, "discarded": True}
-            result = self._transcribe(wav_path, cleanup, source)
-        result["duration_ms"] = duration_ms
-        return result
+        return self._finish_recording(
+            recorder,
+            started_at,
+            cleanup=cleanup,
+            discard=discard,
+            source=source,
+        )
 
     def toggle_recording(
         self,
@@ -94,20 +93,45 @@ class DictationSession:
                     "cooldown_ms": self.settings.toggle_cooldown_ms,
                 }
             self._last_toggle_accepted_at = now
-            recording = self._recorder is not None
+            if self._recorder is None:
+                recorder = self._recorder_factory(self.settings)
+                recorder.start()
+                self._recorder = recorder
+                self._recording_started_at = now
+                return {"status": "recording", "action": "started", "already_recording": False}
+
+            recorder = self._recorder
             started_at = self._recording_started_at
-        if not recording:
-            result = self.start_recording()
-            result["action"] = "started"
-            return result
+            self._recorder = None
+            self._recording_started_at = 0.0
 
         duration_ms = (self._clock() - started_at) * 1000
         discard = duration_ms < self.settings.min_recording_ms
-        result = self.stop_recording(
+        result = self._finish_recording(
+            recorder,
+            started_at,
             cleanup=cleanup,
             discard=discard,
             source="/record/toggle",
         )
         result["status"] = "ready"
         result["action"] = "discarded" if discard else "stopped"
+        return result
+
+    def _finish_recording(
+        self,
+        recorder: Recorder,
+        started_at: float,
+        *,
+        cleanup: bool | None,
+        discard: bool,
+        source: str,
+    ) -> dict[str, Any]:
+        duration_ms = round((self._clock() - started_at) * 1000, 3)
+        with tempfile.TemporaryDirectory() as tmp:
+            wav_path = recorder.stop_to_wav(Path(tmp) / "recording.wav")
+            if discard:
+                return {"status": "ready", "duration_ms": duration_ms, "discarded": True}
+            result = self._transcribe(wav_path, cleanup, source)
+        result["duration_ms"] = duration_ms
         return result

@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from transclip.dictation_session import DictationSession
+from transclip.service import DictationSession
 from transclip.settings import Settings
 
 from tests.service_helpers import FakeRecorder
