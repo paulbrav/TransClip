@@ -6,9 +6,10 @@ from collections.abc import Callable
 from pathlib import Path
 
 from transclip.desktop.hotkey import install_shortcut
+from transclip.models import normalize_asr_backend
 from transclip.platform.runtime import PlatformRuntime, get_runtime
 from transclip.product import DISPLAY_NAME, SERVICE_NAME
-from transclip.settings import Settings
+from transclip.settings import Settings, load_settings
 
 from .common import CommandResult, ServiceState, repo_root, run_command, service_command
 
@@ -21,20 +22,29 @@ def systemd_user_unit_path(runtime: PlatformRuntime | None = None) -> Path:
 
 def build_systemd_unit(settings_path: Path | None = None) -> str:
     exec_start = shlex.join(service_command(settings_path))
+    settings = load_settings(settings_path)
+    service_lines = [
+        "[Service]",
+        "Type=simple",
+        f"WorkingDirectory={repo_root()}",
+        f"ExecStart={exec_start}",
+        "Restart=on-failure",
+        "RestartSec=2",
+    ]
+    if normalize_asr_backend(settings.asr_backend) == "granite_nar":
+        service_lines.extend(
+            [
+                "Environment=FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE",
+                "Environment=TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1",
+            ]
+        )
     return "\n".join(
         [
             "[Unit]",
             f"Description={DISPLAY_NAME} dictation service",
             "After=graphical-session.target",
             "",
-            "[Service]",
-            "Type=simple",
-            f"WorkingDirectory={repo_root()}",
-            f"ExecStart={exec_start}",
-            "Restart=on-failure",
-            "RestartSec=2",
-            "Environment=FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE",
-            "Environment=TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1",
+            *service_lines,
             "",
             "[Install]",
             "WantedBy=default.target",

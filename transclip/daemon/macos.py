@@ -4,10 +4,10 @@ import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
-from transclip.desktop.hotkey.common import macos_hotkey_setup_message
+from transclip.desktop.hotkey import macos_hotkey_setup_message
 from transclip.platform.runtime import PlatformRuntime, get_runtime
 from transclip.product import LAUNCHD_LABEL
-from transclip.settings import load_settings
+from transclip.settings import Settings, load_settings
 
 from .common import CommandResult, ServiceState, logs_dir, repo_root, run_command, service_command
 
@@ -51,9 +51,11 @@ def launchd_target(runtime: PlatformRuntime | None = None) -> str:
 
 def install_macos_daemon(
     settings_path: Path | None = None,
+    settings: Settings | None = None,
     runner: Runner = subprocess.run,
     runtime: PlatformRuntime | None = None,
 ) -> list[CommandResult]:
+    resolved_settings = settings or load_settings(settings_path)
     results: list[CommandResult] = []
     logs_dir(runtime).mkdir(parents=True, exist_ok=True)
     plist_path = launch_agent_path(runtime)
@@ -67,7 +69,7 @@ def install_macos_daemon(
     results.append(
         CommandResult(
             True,
-            macos_hotkey_setup_message(load_settings(settings_path), settings_path, runtime=runtime),
+            macos_hotkey_setup_message(resolved_settings, settings_path, runtime=runtime),
         )
     )
     return results

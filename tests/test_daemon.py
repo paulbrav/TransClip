@@ -1,13 +1,14 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from transclip.daemon import (
     SERVICE_NAME,
     append_toggle_log,
     build_systemd_unit,
     collect_status,
+    install_daemon,
     install_linux_daemon,
     install_macos_daemon,
     last_toggle_log_event,
@@ -313,6 +314,33 @@ class DaemonTests(unittest.TestCase):
 
         self.assertFalse(_windows_task_reports_running("Last Result: Running tasks only"))
         self.assertTrue(_windows_task_reports_running("Status: Running"))
+
+    def test_install_daemon_passes_settings_to_platform_backend(self):
+        from transclip.daemon.common import CommandResult
+
+        settings = Settings()
+        mock_backend = MagicMock()
+        mock_backend.install.return_value = [CommandResult(True, "ok")]
+
+        with (
+            patch("transclip.daemon.lifecycle.write_default_settings"),
+            patch("transclip.daemon.lifecycle.load_settings", return_value=settings),
+            patch("transclip.daemon.lifecycle._backend", return_value=mock_backend),
+        ):
+            runtime = FakeRuntime(system="Darwin", home=Path("/tmp"))
+            results = install_daemon(runtime=runtime)
+
+        self.assertTrue(results[0].ok)
+        mock_backend.install.assert_called_once()
+        self.assertIs(mock_backend.install.call_args.kwargs["settings"], settings)
+        self.assertIs(mock_backend.install.call_args.kwargs["runtime"], runtime)
+
+    def test_install_daemon_reports_unsupported_platform(self):
+        with patch("transclip.daemon.lifecycle._backend", return_value=None):
+            results = install_daemon(runtime=FakeRuntime(system="OpenBSD", home=Path("/tmp")))
+
+        self.assertFalse(results[0].ok)
+        self.assertIn("unsupported platform", results[0].detail)
 
 
 if __name__ == "__main__":
