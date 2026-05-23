@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +14,7 @@ from .models import SUPPORTED_MODELS
 from .paste import SystemClipboard
 from .product import APP_ID, DISPLAY_NAME, IMPORT_PACKAGE
 from .recording_ops import toggle_recording
-from .settings import Settings, load_settings, settings_path, write_default_settings, write_settings
+from .settings import Settings, patch_settings, settings_path, write_default_settings
 
 
 def run_python_tray(settings: Settings, explicit_settings_path: Path | None = None) -> int:
@@ -106,17 +105,33 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
         refresh_health()
 
     def set_asr_model(model_id: str, backend: str) -> None:
+        nonlocal settings
         path = explicit_settings_path or settings_path()
         try:
-            persisted = load_settings(path) if path.exists() else settings
-            updated = replace(persisted, asr_model=model_id, asr_backend=backend)
-            write_settings(updated, path)
-            settings.asr_model = model_id
-            settings.asr_backend = backend
+            settings = patch_settings(
+                path,
+                asr_model=model_id,
+                asr_backend=backend,
+            )
             restart = service_action("restart")
             state["detail"] = f"ASR model set to {_model_label(model_id, backend)}; {restart.detail}"
         except Exception as exc:
             state["detail"] = f"ASR model update failed: {exc}"
+        update_menu()
+
+    def toggle_model_cleanup(_item=None) -> None:
+        nonlocal settings
+        path = explicit_settings_path or settings_path()
+        try:
+            next_value = not settings.voice_model_cleanup_always_on
+            settings = patch_settings(
+                path,
+                voice_model_cleanup_always_on=next_value,
+            )
+            restart = service_action("restart")
+            state["detail"] = f"Model cleanup always {'on' if next_value else 'off'}; {restart.detail}"
+        except Exception as exc:
+            state["detail"] = f"Model cleanup toggle failed: {exc}"
         update_menu()
 
     def open_settings(_item=None) -> None:
@@ -125,6 +140,7 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
         _open_path(path)
 
     def set_hotkey(_item=None) -> None:
+        nonlocal settings
         current = settings.hotkey_linux
         dialog = Gtk.Dialog(title="Set hotkey")
         dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
@@ -153,15 +169,10 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
             return
         path = explicit_settings_path or settings_path()
         try:
-            persisted = load_settings(path) if path.exists() else settings
-            updated = replace(persisted, hotkey_linux=value)
-            write_settings(updated, path)
             install_shortcut(settings_path=explicit_settings_path, binding=value)
-            settings.hotkey_linux = value
+            settings = patch_settings(path, hotkey_linux=value)
             state["detail"] = f"Hotkey set to {value}"
         except Exception as exc:
-            if "persisted" in locals():
-                write_settings(persisted, path)
             state["detail"] = f"Hotkey update failed: {exc}"
         update_menu()
 
@@ -188,6 +199,11 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
         _append_separator(menu)
         _append_item(menu, "Start service", start_service)
         _append_item(menu, "Restart service", restart_service)
+        menu_refs["model_cleanup_item"] = _append_item(
+            menu,
+            _model_cleanup_label(settings),
+            toggle_model_cleanup,
+        )
         model_menu = Gtk.Menu()
         model_item = Gtk.MenuItem(label="ASR model")
         model_item.set_submenu(model_menu)
@@ -214,6 +230,7 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
         _set_menu_item_label(menu_refs["status_item"], state["detail"] or f"Service: {state['status']}")
         _set_menu_item_label(menu_refs["toggle_item"], "Stop + paste" if state["recording"] else "Record")
         menu_refs["latest_item"].set_sensitive(bool(state["latest"] or _latest_history_text()))
+        _set_menu_item_label(menu_refs["model_cleanup_item"], _model_cleanup_label(settings))
         for item, model in menu_refs["model_items"]:
             _set_menu_item_label(item, _model_menu_label(model.model_id, model.backend, settings))
 
@@ -271,6 +288,8 @@ def _append_label(menu, label: str):
 
 
 def _set_menu_item_label(item, label: str) -> None:
+    if hasattr(item, "label"):
+        item.label = label
     child = item.get_child()
     if hasattr(child, "set_text"):
         child.set_text(label)
@@ -295,6 +314,11 @@ def _append_separator(menu) -> None:
 def _model_menu_label(model_id: str, backend: str, settings: Settings) -> str:
     prefix = "✓ " if settings.asr_model == model_id and settings.asr_backend == backend else ""
     return prefix + _model_label(model_id, backend)
+
+
+def _model_cleanup_label(settings: Settings) -> str:
+    prefix = "✓ " if settings.voice_model_cleanup_always_on else ""
+    return prefix + "Model cleanup always on"
 
 
 def _model_label(model_id: str, backend: str) -> str:

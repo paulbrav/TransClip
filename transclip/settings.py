@@ -17,10 +17,14 @@ class Settings:
     hotkey_macos: str = "Option+Space"
     language: str = "en"
     asr_model: str = "ibm-granite/granite-speech-4.1-2b-nar"
-    cleanup_model: str = "google/gemma-4-E2B-it"
     cleanup_enabled: bool = True
-    cleanup_runtime: str = "rule"
-    cleanup_model_path: str = ""
+    voice_mode_routing_enabled: bool = True
+    voice_model_cleanup_always_on: bool = False
+    voice_mode_shell_enabled: bool = True
+    text_model_runtime: str = "transformers"
+    text_model: str = "Qwen/Qwen3.5-4B"
+    shell_syntax_validation_enabled: bool = True
+    shellcheck_enabled: bool = True
     models_local_files_only: bool = True
     model_cache_dir: str = ""
     restore_clipboard_after_paste: bool = False
@@ -62,7 +66,8 @@ def load_settings(path: Path | None = None) -> Settings:
     unknown = sorted(set(data) - allowed)
     if unknown:
         raise ValueError(f"Unknown settings field(s): {', '.join(unknown)}")
-    return Settings(**data)
+    settings = Settings(**data)
+    return settings
 
 
 def settings_field_names() -> list[str]:
@@ -75,10 +80,14 @@ def settings_to_toml(settings: Settings) -> str:
         ("hotkey_linux", "hotkey_macos", "language"),
         (
             "asr_model",
-            "cleanup_model",
             "cleanup_enabled",
-            "cleanup_runtime",
-            "cleanup_model_path",
+            "voice_mode_routing_enabled",
+            "voice_model_cleanup_always_on",
+            "voice_mode_shell_enabled",
+            "text_model_runtime",
+            "text_model",
+            "shell_syntax_validation_enabled",
+            "shellcheck_enabled",
             "models_local_files_only",
             "model_cache_dir",
         ),
@@ -104,12 +113,22 @@ def get_setting(settings: Settings, field_name: str) -> Any:
 
 
 def set_setting(path: Path | None, field_name: str, raw_value: str) -> Settings:
+    """Update one settings field from a CLI string value and persist canonical TOML."""
     current = load_settings(path)
     allowed = settings_field_names()
     if field_name not in allowed:
         raise ValueError(f"Unknown settings field(s): {field_name}")
     value = coerce_setting_value(field_name, raw_value)
     updated = replace(current, **{field_name: value})
+    write_settings(updated, path)
+    return updated
+
+
+def patch_settings(path: Path | None, **changes) -> Settings:
+    """Merge typed settings changes into the on-disk config and return the updated object."""
+    resolved = path or settings_path()
+    current = load_settings(resolved) if resolved.exists() else Settings()
+    updated = replace(current, **changes)
     write_settings(updated, path)
     return updated
 

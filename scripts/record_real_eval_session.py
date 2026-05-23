@@ -106,11 +106,7 @@ def main(argv: list[str] | None = None) -> int:
 
     measured = count_measured_cases(args.clip_dir)
     print(f"\nrecorded {recorded} clips; found {measured} measured case clips in {args.clip_dir}")
-    print(
-        "next: uv run scripts/prepare_real_eval.py "
-        f"{args.clip_dir} --warmup-stem warmup "
-        "--output eval/real-usage/manifest.json"
-    )
+    print(f"next: uv run scripts/run_real_eval_pipeline.py {args.clip_dir} --warmup-stem warmup")
     return 0
 
 

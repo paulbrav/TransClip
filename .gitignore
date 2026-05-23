@@ -13,8 +13,10 @@ htmlcov/
 # Virtual environments
 .venv
 .venv*/
+.venv-*
 
 # Local-only runtime artifacts
 debug-captures/
 .local-tools/
+plans/
 *.wav

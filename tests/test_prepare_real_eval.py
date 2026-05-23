@@ -3,11 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "prepare_real_eval.py"
-SPEC = importlib.util.spec_from_file_location("prepare_real_eval", SCRIPT_PATH)
-prepare_real_eval = importlib.util.module_from_spec(SPEC)
-assert SPEC and SPEC.loader
-SPEC.loader.exec_module(prepare_real_eval)
+from transclip.eval_harness import build_manifest, load_keyword_file
 
 RECORD_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "record_real_eval_clip.py"
 RECORD_SPEC = importlib.util.spec_from_file_location("record_real_eval_clip", RECORD_SCRIPT_PATH)
@@ -40,11 +36,11 @@ class PrepareRealEvalTests(unittest.TestCase):
                 (clips / f"{stem}.txt").write_text(text, encoding="utf-8")
             (clips / "case_02.keywords.txt").write_text("Wayland\n", encoding="utf-8")
 
-            manifest = prepare_real_eval.build_manifest(
+            manifest = build_manifest(
                 clips,
                 output_path=output,
                 warmup_stem="warmup",
-                global_keywords=prepare_real_eval.load_keyword_file(global_keywords),
+                global_keywords=load_keyword_file(global_keywords),
                 allow_small=True,
             )
 
@@ -62,7 +58,7 @@ class PrepareRealEvalTests(unittest.TestCase):
             (clips / "case.txt").write_text("hello", encoding="utf-8")
 
             with self.assertRaisesRegex(ValueError, "expected at least 20"):
-                prepare_real_eval.build_manifest(clips)
+                build_manifest(clips)
 
     def test_missing_reference_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -71,7 +67,7 @@ class PrepareRealEvalTests(unittest.TestCase):
             (clips / "case.wav").write_bytes(b"not really wav")
 
             with self.assertRaisesRegex(ValueError, "missing reference text"):
-                prepare_real_eval.build_manifest(clips, allow_small=True)
+                build_manifest(clips, allow_small=True)
 
     def test_record_clip_arecord_command(self):
         command = record_real_eval_clip.arecord_command(

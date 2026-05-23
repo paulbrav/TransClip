@@ -99,5 +99,6 @@ class EvalHarnessTests(unittest.TestCase):
         self.assertEqual(result["summary"]["paste_successes"], 1)
         self.assertEqual(result["summary"]["paste_failures"], 0)
 
+
 if __name__ == "__main__":
     unittest.main()

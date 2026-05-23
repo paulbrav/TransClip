@@ -3,6 +3,8 @@ name = "transclip"
 version = "0.1.0"
 description = "Local-only push-to-talk dictation with local ASR-oriented harnesses."
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = []
 
@@ -13,14 +15,12 @@ build-backend = "hatchling.build"
 [project.optional-dependencies]
 audio = ["sounddevice>=0.5", "numpy>=1.26"]
 models = ["transformers>=4.52.1", "torch>=2.5", "torchaudio>=2.5", "torchcodec>=0.5", "torchvision>=0.20", "accelerate>=1.0", "soundfile>=0.12", "pillow>=10"]
-llama = ["llama-cpp-python>=0.3"]
 dev = [
     "coverage[toml]>=7.10",
     "pytest>=8.4",
     "ruff>=0.12.11",
     "ty>=0.0.1a19",
 ]
-chatgpt-ui = ["playwright>=1.52"]
 
 [project.scripts]
 transclip = "transclip.cli:main"
@@ -44,14 +44,8 @@ line-ending = "lf"
 [tool.ty.environment]
 python-version = "3.12"
 
-[tool.ty.analysis]
-allowed-unresolved-imports = [
-    "flash_attn",
-    "gi",
-    "gi.repository",
-    "llama_cpp",
-    "sounddevice",
-]
+[tool.ty.rules]
+unresolved-import = "ignore"
 
 [tool.ty.src]
 include = ["transclip"]

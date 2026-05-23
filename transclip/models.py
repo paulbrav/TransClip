@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .cleanup import CleanupPlan
 from .platform_runtime import user_cache_dir
 from .settings import Settings
 
@@ -31,6 +32,14 @@ SUPPORTED_MODELS = [
     ),
 ]
 
+SUPPORTED_TEXT_MODELS = [
+    SupportedModel(
+        "Qwen/Qwen3.5-4B",
+        "text_generation",
+        10 * GIB,
+    ),
+]
+
 ASR_BACKEND_ALIASES = {
     "granite_nar": "granite_nar",
     "granite-nar": "granite_nar",
@@ -41,10 +50,10 @@ ASR_BACKEND_ALIASES = {
 
 
 def model_by_id(model_id: str) -> SupportedModel:
-    for model in SUPPORTED_MODELS:
+    for model in SUPPORTED_MODELS + SUPPORTED_TEXT_MODELS:
         if model.model_id == model_id:
             return model
-    supported = ", ".join(model.model_id for model in SUPPORTED_MODELS)
+    supported = ", ".join(model.model_id for model in SUPPORTED_MODELS + SUPPORTED_TEXT_MODELS)
     raise ValueError(f"Unsupported model: {model_id}. Supported models: {supported}")
 
 
@@ -88,10 +97,10 @@ def model_cache_path(model_id: str, settings: Settings) -> Path:
 
 def required_model_cache_paths(settings: Settings) -> list[Path]:
     paths = [model_cache_path(settings.asr_model, settings)]
-    if settings.cleanup_runtime == "llama_cpp":
-        paths.append(Path(settings.cleanup_model_path).expanduser())
-    elif settings.cleanup_runtime == "transformers":
-        paths.append(model_cache_path(settings.cleanup_model, settings))
+    if CleanupPlan.from_settings(settings).requires_text_model:
+        text_path = model_cache_path(settings.text_model, settings)
+        if text_path not in paths:
+            paths.append(text_path)
     return paths
 
 
@@ -108,12 +117,16 @@ def cache_artifacts_present(model_id: str, settings: Settings) -> bool:
 def model_rows(settings: Settings) -> list[dict[str, Any]]:
     default = Settings()
     rows = []
-    for model in SUPPORTED_MODELS:
+    for model in SUPPORTED_MODELS + SUPPORTED_TEXT_MODELS:
         markers = []
         if model.model_id == settings.asr_model:
             markers.append("current")
+        if model.model_id == settings.text_model:
+            markers.append("current-text")
         if model.model_id == default.asr_model:
             markers.append("default")
+        if model.model_id == default.text_model:
+            markers.append("default-text")
         rows.append(
             {
                 "model_id": model.model_id,
@@ -145,7 +158,23 @@ def prefetch_model(model_id: str, settings: Settings) -> Path:
     model = model_by_id(model_id)
     ensure_disk_space(settings, model)
     cache_dir = str(model_cache_root(settings)) if settings.model_cache_dir else None
-    if model.backend == "granite_nar":
+    if model.backend == "text_generation":
+        try:
+            from transformers import AutoModelForImageTextToText, AutoProcessor
+        except ImportError as exc:
+            raise RuntimeError("transformers is required. Install transclip[models].") from exc
+        AutoModelForImageTextToText.from_pretrained(
+            model.model_id,
+            dtype="auto",
+            local_files_only=False,
+            cache_dir=cache_dir,
+        )
+        AutoProcessor.from_pretrained(
+            model.model_id,
+            local_files_only=False,
+            cache_dir=cache_dir,
+        )
+    elif model.backend == "granite_nar":
         try:
             from transformers import AutoFeatureExtractor, AutoModel
         except ImportError as exc:

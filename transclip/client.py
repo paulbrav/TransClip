@@ -14,9 +14,6 @@ class InferenceClient:
     def health(self) -> dict:
         return self._get("/health")
 
-    def cleanup(self, text: str) -> dict:
-        return self._post("/cleanup", {"text": text})
-
     def transcribe(self, wav_path: Path, cleanup: bool | None = None) -> dict:
         payload: dict[str, object] = {"audio_path": str(wav_path)}
         if cleanup is not None:

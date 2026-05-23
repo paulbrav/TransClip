@@ -71,9 +71,7 @@ class GraniteSpeechTransformersBackend:
             import torch
             from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
         except ImportError as exc:
-            raise RuntimeError(
-                "transformers, torch, and torchaudio are required. Install transclip[models]."
-            ) from exc
+            raise RuntimeError("transformers, torch, and torchaudio are required. Install transclip[models].") from exc
 
         dtype = torch.bfloat16 if device == "cuda" else torch.float32
         processor = AutoProcessor.from_pretrained(
@@ -153,9 +151,7 @@ class GraniteSpeechNarTransformersBackend:
             import torch
             from transformers import AutoFeatureExtractor, AutoModel
         except ImportError as exc:
-            raise RuntimeError(
-                "transformers, torch, and torchaudio are required. Install transclip[models]."
-            ) from exc
+            raise RuntimeError("transformers, torch, and torchaudio are required. Install transclip[models].") from exc
 
         dtype = _granite_nar_dtype(torch, device)
         _configure_rocm_nar_attention_env(os, torch, device)

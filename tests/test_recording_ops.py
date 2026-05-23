@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import dataclass
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
@@ -19,14 +20,15 @@ class FakeClient:
         return dict(self.result)
 
 
+@dataclass
 class FakePasteResult:
-    copied = True
-    pasted = False
-    restored = False
-    transcript_left_on_clipboard = True
-    clipboard_backend = "fake-clipboard"
-    paste_backend = None
-    error_detail = "fake paste failed"
+    copied: bool = True
+    pasted: bool = False
+    restored: bool = False
+    transcript_left_on_clipboard: bool = True
+    clipboard_backend: str = "fake-clipboard"
+    paste_backend: str | None = None
+    error_detail: str = "fake paste failed"
 
 
 class RecordingOpsTests(unittest.TestCase):

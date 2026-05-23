@@ -12,9 +12,8 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from transclip.doctor import Check, run_checks  # noqa: E402
+from transclip.eval_harness import check_results  # noqa: E402
 from transclip.settings import load_settings  # noqa: E402
-
-from check_eval_results import check_results  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:

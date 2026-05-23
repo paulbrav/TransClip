@@ -157,3 +157,49 @@ Keywords: global shortcut
 Leave the transcript on the clipboard when paste simulation fails.
 
 Keywords: clipboard
+
+## Voice mode routing prompts
+
+Read these prompts aloud when checking trigger recognition.
+
+### route_cleanup_01
+
+Clean up the release notes and preserve the command line flag dash dash verbose.
+
+Keywords: cleanup
+
+### route_cleanup_02
+
+Trans cleanup add punctuation but keep slash tmp slash transclip and Qwen exactly.
+
+Keywords: Qwen
+
+### route_shell_01
+
+Shell command list Python files sorted by modified time.
+
+Keywords: shell command
+
+### route_shell_02
+
+Bash command show the current git branch.
+
+Keywords: bash command
+
+### route_shell_03
+
+Terminal command find files larger than one hundred megabytes under downloads.
+
+Keywords: terminal command
+
+### route_literal_01
+
+Literal shell command list files.
+
+Keywords: literal shell command
+
+### route_prefix_only_01
+
+Please write the words shell command in the middle of this sentence.
+
+Keywords: shell command

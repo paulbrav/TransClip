@@ -4,7 +4,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from tests.service_helpers import FakeRuntime
 from transclip.doctor import (
     Check,
     check_asr_runtime,
@@ -20,6 +19,8 @@ from transclip.gnome_shortcut import GnomeShortcutStatus
 from transclip.models import hf_cache_dir
 from transclip.settings import Settings
 
+from tests.service_helpers import FakeRuntime
+
 
 class DoctorTests(unittest.TestCase):
     def test_hf_cache_dir(self):
@@ -32,19 +33,23 @@ class DoctorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(
                 asr_model="local/asr",
-                cleanup_model="local/cleanup",
-                cleanup_runtime="transformers",
+                voice_model_cleanup_always_on=True,
                 model_cache_dir=tmp,
             )
             self.assertFalse(check_model_cache(settings).ok)
             (Path(tmp) / "models--local--asr").mkdir()
-            (Path(tmp) / "models--local--cleanup").mkdir()
+            (Path(tmp) / "models--Qwen--Qwen3.5-4B").mkdir()
             self.assertTrue(check_model_cache(settings).ok)
 
-    def test_model_cache_skips_rule_cleanup_model(self):
+    def test_model_cache_checks_text_model_when_required(self):
         with tempfile.TemporaryDirectory() as tmp:
-            settings = Settings(asr_model="local/asr", cleanup_runtime="rule", model_cache_dir=tmp)
+            settings = Settings(asr_model="local/asr", model_cache_dir=tmp)
             (Path(tmp) / "models--local--asr").mkdir()
+            check = check_model_cache(settings)
+            self.assertFalse(check.ok)
+            self.assertIn("Qwen/Qwen3.5-4B", check.detail)
+            self.assertIn("transclip models prefetch --model Qwen/Qwen3.5-4B", check.detail)
+            (Path(tmp) / "models--Qwen--Qwen3.5-4B").mkdir()
             self.assertTrue(check_model_cache(settings).ok)
 
     def test_nar_asr_runtime_checks_flash_attn(self):

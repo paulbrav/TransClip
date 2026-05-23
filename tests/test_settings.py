@@ -7,6 +7,7 @@ from transclip.settings import (
     Settings,
     coerce_setting_value,
     load_settings,
+    patch_settings,
     set_setting,
     write_default_settings,
 )
@@ -25,8 +26,13 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(settings.toggle_cooldown_ms, 500)
             self.assertEqual(settings.asr_backend, "granite_nar")
             self.assertEqual(settings.asr_model, "ibm-granite/granite-speech-4.1-2b-nar")
-            self.assertEqual(settings.cleanup_runtime, "rule")
-            self.assertEqual(settings.cleanup_model, "google/gemma-4-E2B-it")
+            self.assertTrue(settings.voice_mode_routing_enabled)
+            self.assertFalse(settings.voice_model_cleanup_always_on)
+            self.assertTrue(settings.voice_mode_shell_enabled)
+            self.assertEqual(settings.text_model_runtime, "transformers")
+            self.assertEqual(settings.text_model, "Qwen/Qwen3.5-4B")
+            self.assertTrue(settings.shell_syntax_validation_enabled)
+            self.assertTrue(settings.shellcheck_enabled)
             self.assertTrue(settings.models_local_files_only)
             self.assertEqual(settings.model_cache_dir, "")
 
@@ -42,6 +48,18 @@ class SettingsTests(unittest.TestCase):
         self.assertIn("XF86TouchpadOff", settings.active_hotkey)
         self.assertIn("V", settings.paste_shortcut)
 
+    def test_patch_settings_returns_new_object_without_mutating_original(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "settings.toml"
+            write_default_settings(path)
+            original = load_settings(path)
+
+            updated = patch_settings(path, toggle_cooldown_ms=750)
+
+            self.assertEqual(updated.toggle_cooldown_ms, 750)
+            self.assertEqual(original.toggle_cooldown_ms, 500)
+            self.assertEqual(load_settings(path).toggle_cooldown_ms, 750)
+
     def test_set_setting_rewrites_canonical_toml(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "settings.toml"
@@ -55,6 +73,7 @@ class SettingsTests(unittest.TestCase):
 
     def test_setting_type_coercion_and_unknown_field(self):
         self.assertIs(coerce_setting_value("cleanup_enabled", "false"), False)
+        self.assertIs(coerce_setting_value("voice_model_cleanup_always_on", "on"), True)
         self.assertEqual(coerce_setting_value("sample_rate", "22050"), 22050)
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "settings.toml"
