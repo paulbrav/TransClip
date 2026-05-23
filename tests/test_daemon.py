@@ -111,6 +111,12 @@ class DaemonTests(unittest.TestCase):
             self.assertIn(["launchctl", "bootout", "gui/501/com.paulbrav.transclip"], calls)
             self.assertIn(["launchctl", "bootstrap", "gui/501", str(plist_path)], calls)
             self.assertTrue(any("Keyboard Shortcut" in result.detail for result in results))
+            self.assertTrue(
+                any(
+                    "Library/Logs/transclip/toggle-record.log" in result.detail
+                    for result in results
+                )
+            )
             self.assertTrue(all(result.ok for result in results))
 
     def test_macos_start_kickstarts_loaded_launch_agent(self):

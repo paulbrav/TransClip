@@ -1,7 +1,9 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from transclip.platform_runtime import DefaultPlatformRuntime
 from transclip.settings import (
     DEFAULT_HOTKEY_LINUX,
     Settings,
@@ -47,6 +49,13 @@ class SettingsTests(unittest.TestCase):
         settings = Settings()
         self.assertIn("XF86TouchpadOff", settings.active_hotkey)
         self.assertIn("V", settings.paste_shortcut)
+
+    def test_active_hotkey_uses_macos_binding_on_darwin(self):
+        with patch.object(DefaultPlatformRuntime, "system", return_value="Darwin"):
+            settings = Settings()
+            self.assertEqual(settings.active_hotkey, "Option+Space")
+            self.assertNotIn("XF86TouchpadOff", settings.active_hotkey)
+            self.assertEqual(settings.paste_shortcut, "Command+V")
 
     def test_patch_settings_returns_new_object_without_mutating_original(self):
         with tempfile.TemporaryDirectory() as tmp:
