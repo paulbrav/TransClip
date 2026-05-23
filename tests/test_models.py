@@ -18,8 +18,13 @@ from transclip.models import (
 )
 from transclip.settings import Settings
 
+from tests.service_helpers import FakeRuntime
+
 
 class ModelsTests(unittest.TestCase):
+    @staticmethod
+    def _linux_runtime() -> FakeRuntime:
+        return FakeRuntime(system="Linux", home=Path("/home/user"))
     def test_catalog_contains_current_granite_backends(self):
         rows = {(model.backend, model.model_id) for model in SUPPORTED_MODELS}
 
@@ -30,29 +35,31 @@ class ModelsTests(unittest.TestCase):
         self.assertIn(("text_generation", "Qwen/Qwen3.5-4B"), text_rows)
 
     def test_model_catalog_owns_asr_backend_compatibility(self):
+        runtime = self._linux_runtime()
         self.assertEqual(normalize_asr_backend("nar"), "granite_nar")
         self.assertEqual(
-            validate_asr_model_backend("granite_nar", "ibm-granite/granite-speech-4.1-2b-nar"),
+            validate_asr_model_backend("granite_nar", "ibm-granite/granite-speech-4.1-2b-nar", runtime),
             "granite_nar",
         )
         self.assertEqual(
-            validate_asr_model_backend("transformers", "ibm-granite/granite-speech-4.1-2b"),
+            validate_asr_model_backend("transformers", "ibm-granite/granite-speech-4.1-2b", runtime),
             "granite",
         )
         with self.assertRaisesRegex(ValueError, "requires asr_backend='granite'"):
-            validate_asr_model_backend("granite_nar", "ibm-granite/granite-speech-4.1-2b")
+            validate_asr_model_backend("granite_nar", "ibm-granite/granite-speech-4.1-2b", runtime)
         with self.assertRaisesRegex(ValueError, "requires asr_backend='granite_nar'"):
-            validate_asr_model_backend("granite", "ibm-granite/granite-speech-4.1-2b-nar")
+            validate_asr_model_backend("granite", "ibm-granite/granite-speech-4.1-2b-nar", runtime)
 
     def test_cache_detection_and_rows_do_not_download(self):
         with tempfile.TemporaryDirectory() as tmp:
+            runtime = self._linux_runtime()
             settings = Settings(model_cache_dir=tmp)
             model_dir = Path(tmp) / "models--ibm-granite--granite-speech-4.1-2b-nar" / "snapshots" / "abc"
             model_dir.mkdir(parents=True)
 
             self.assertTrue(cache_artifacts_present(settings.asr_model, settings))
-            current = next(row for row in model_rows(settings) if row["model_id"] == settings.asr_model)
-            text = next(row for row in model_rows(settings) if row["model_id"] == settings.text_model)
+            current = next(row for row in model_rows(settings, runtime) if row["model_id"] == settings.asr_model)
+            text = next(row for row in model_rows(settings, runtime) if row["model_id"] == settings.text_model)
             self.assertEqual(current["marker"], "current,default")
             self.assertTrue(current["cached"])
             self.assertEqual(text["marker"], "current-text,default-text")

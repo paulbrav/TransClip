@@ -113,7 +113,7 @@ def recording_debug(
 def sounddevice_summary() -> str:
     try:
         import sounddevice as sd
-    except ImportError:
+    except (ImportError, OSError):
         return "sounddevice unavailable"
     try:
         default = getattr(sd.default, "device", None)

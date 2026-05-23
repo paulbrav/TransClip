@@ -23,7 +23,10 @@ class DaemonTests(unittest.TestCase):
         unit = build_systemd_unit(Path("/tmp/settings.toml"))
 
         self.assertIn("Description=TransClip dictation service", unit)
-        self.assertIn("-m transclip.cli --settings /tmp/settings.toml serve", unit)
+        self.assertIn(
+            f"-m transclip.cli --settings {Path('/tmp/settings.toml').resolve()} serve",
+            unit,
+        )
         self.assertIn("Restart=on-failure", unit)
         self.assertIn("FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE", unit)
 

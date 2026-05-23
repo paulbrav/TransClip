@@ -47,6 +47,17 @@ class AudioDebugTests(unittest.TestCase):
         with patch.dict("sys.modules", {"sounddevice": None}):
             self.assertEqual(sounddevice_summary(), "sounddevice unavailable")
 
+    def test_sounddevice_summary_handles_missing_portaudio(self):
+        real_import = __import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "sounddevice":
+                raise OSError("PortAudio library not found")
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            self.assertEqual(sounddevice_summary(), "sounddevice unavailable")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -53,8 +53,14 @@ class DoctorTests(unittest.TestCase):
             self.assertTrue(check_model_cache(settings).ok)
 
     def test_nar_asr_runtime_checks_flash_attn(self):
-        torch = SimpleNamespace(version=SimpleNamespace(hip=None))
-        with patch.dict("sys.modules", {"flash_attn": object(), "torch": torch}):
+        torch = SimpleNamespace(
+            version=SimpleNamespace(hip=None),
+            backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: False)),
+        )
+        with (
+            patch.dict("sys.modules", {"flash_attn": object(), "torch": torch}),
+            patch("transclip.doctor.resolve_torch_device", return_value="cuda"),
+        ):
             self.assertTrue(check_asr_runtime(Settings()).ok)
 
     def test_formatters(self):

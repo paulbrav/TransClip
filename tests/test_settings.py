@@ -14,14 +14,17 @@ from transclip.settings import (
     write_default_settings,
 )
 
+from tests.service_helpers import FakeRuntime
+
 
 class SettingsTests(unittest.TestCase):
     def test_default_files_round_trip(self):
+        runtime = FakeRuntime(system="Linux", home=Path("/home/user"))
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            settings_file = write_default_settings(root / "settings.toml")
+            settings_file = write_default_settings(root / "settings.toml", runtime=runtime)
 
-            settings = load_settings(settings_file)
+            settings = load_settings(settings_file, runtime=runtime)
 
             self.assertEqual(settings.hotkey_linux, DEFAULT_HOTKEY_LINUX)
             self.assertEqual(settings.max_recording_seconds, 60)
@@ -46,9 +49,10 @@ class SettingsTests(unittest.TestCase):
                 load_settings(path)
 
     def test_platform_helpers_have_defaults(self):
-        settings = Settings()
-        self.assertIn("XF86TouchpadOff", settings.active_hotkey)
-        self.assertIn("V", settings.paste_shortcut)
+        with patch.object(DefaultPlatformRuntime, "system", return_value="Linux"):
+            settings = Settings()
+            self.assertIn("XF86TouchpadOff", settings.active_hotkey)
+            self.assertIn("V", settings.paste_shortcut)
 
     def test_active_hotkey_uses_macos_binding_on_darwin(self):
         with patch.object(DefaultPlatformRuntime, "system", return_value="Darwin"):

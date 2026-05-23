@@ -39,8 +39,9 @@ class PlatformRuntimeTests(unittest.TestCase):
 
     def test_linux_profile_defaults(self):
         runtime = FakeRuntime(system="Linux", home=Path("/home/user"))
-        profile = detect_runtime_profile(runtime)
-        settings = default_settings(runtime)
+        with patch("transclip.runtime_profile.machine_architecture", return_value="x86_64"):
+            profile = detect_runtime_profile(runtime)
+            settings = default_settings(runtime)
 
         self.assertEqual(profile.profile_id, "linux_gpu")
         self.assertEqual(settings.asr_backend, "granite_nar")
