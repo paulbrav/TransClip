@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .cleanup import CleanupPlan
 from .platform_runtime import user_cache_dir
 from .settings import Settings
 
@@ -96,11 +97,7 @@ def model_cache_path(model_id: str, settings: Settings) -> Path:
 
 def required_model_cache_paths(settings: Settings) -> list[Path]:
     paths = [model_cache_path(settings.asr_model, settings)]
-    if settings.cleanup_runtime == "transformers":
-        paths.append(model_cache_path(settings.cleanup_model, settings))
-    if settings.text_model_runtime == "transformers" and (
-        settings.voice_mode_routing_enabled or settings.voice_model_cleanup_always_on
-    ):
+    if CleanupPlan.from_settings(settings).requires_text_model:
         text_path = model_cache_path(settings.text_model, settings)
         if text_path not in paths:
             paths.append(text_path)

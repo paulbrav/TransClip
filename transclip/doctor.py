@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.error import URLError
 
 from .audio import recording_debug
+from .cleanup import CleanupPlan
 from .client import InferenceClient
 from .daemon import last_toggle_log_event, service_state, toggle_log_path
 from .device import torch_cuda_usable, torch_mps_available
@@ -209,11 +210,7 @@ def check_model_cache(settings: Settings) -> Check:
 
 def _prefetch_commands_for_missing_cache(settings: Settings) -> list[str]:
     model_ids = [settings.asr_model]
-    if settings.cleanup_runtime == "transformers":
-        model_ids.append(settings.cleanup_model)
-    if settings.text_model_runtime == "transformers" and (
-        settings.voice_mode_routing_enabled or settings.voice_model_cleanup_always_on
-    ):
+    if CleanupPlan.from_settings(settings).requires_text_model:
         model_ids.append(settings.text_model)
 
     commands = []

@@ -55,12 +55,11 @@ class ModelsTests(unittest.TestCase):
             self.assertTrue(current["cached"])
             self.assertEqual(text["marker"], "current-text,default-text")
 
-    def test_required_model_cache_paths_include_cleanup_transformers(self):
+    def test_required_model_cache_paths_include_text_model_for_model_cleanup(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(
                 asr_model="local/asr",
-                cleanup_model="local/cleanup",
-                cleanup_runtime="transformers",
+                voice_model_cleanup_always_on=True,
                 model_cache_dir=tmp,
             )
 
@@ -68,7 +67,6 @@ class ModelsTests(unittest.TestCase):
                 required_model_cache_paths(settings),
                 [
                     Path(tmp) / "models--local--asr",
-                    Path(tmp) / "models--local--cleanup",
                     Path(tmp) / "models--Qwen--Qwen3.5-4B",
                 ],
             )
