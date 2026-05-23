@@ -39,6 +39,9 @@ src = ["transclip", "scripts", "tests"]
 [tool.ruff.lint]
 select = ["B", "C4", "E", "F", "I", "RUF", "SIM", "UP"]
 
+[tool.ruff.lint.per-file-ignores]
+"transclip/desktop/paste/win32.py" = ["RUF012"]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"

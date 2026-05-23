@@ -17,7 +17,7 @@ VK_V = 0x56
 
 
 class KEYBDINPUT(ctypes.Structure):
-    _fields_ = [  # noqa: RUF012
+    _fields_ = [
         ("wVk", wintypes.WORD),
         ("wScan", wintypes.WWORD),
         ("dwFlags", wintypes.DWORD),
@@ -28,10 +28,10 @@ class KEYBDINPUT(ctypes.Structure):
 
 class INPUT(ctypes.Structure):
     class _INPUTUNION(ctypes.Union):
-        _fields_ = [("ki", KEYBDINPUT)]  # noqa: RUF012
+        _fields_ = [("ki", KEYBDINPUT)]
 
     _anonymous_ = ("u",)
-    _fields_ = [  # noqa: RUF012
+    _fields_ = [
         ("type", wintypes.DWORD),
         ("u", _INPUTUNION),
     ]
