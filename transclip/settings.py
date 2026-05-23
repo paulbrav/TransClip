@@ -17,9 +17,7 @@ class Settings:
     hotkey_macos: str = "Option+Space"
     language: str = "en"
     asr_model: str = "ibm-granite/granite-speech-4.1-2b-nar"
-    cleanup_model: str = "google/gemma-4-E2B-it"
     cleanup_enabled: bool = True
-    cleanup_runtime: str = "rule"
     voice_mode_routing_enabled: bool = True
     voice_model_cleanup_always_on: bool = False
     voice_mode_shell_enabled: bool = True
@@ -64,12 +62,12 @@ def load_settings(path: Path | None = None) -> Settings:
     if not path.exists():
         return Settings()
     data = tomllib.loads(path.read_text(encoding="utf-8"))
-    data.pop("cleanup_model_path", None)
     allowed = {field.name for field in fields(Settings)}
     unknown = sorted(set(data) - allowed)
     if unknown:
         raise ValueError(f"Unknown settings field(s): {', '.join(unknown)}")
-    return Settings(**data)
+    settings = Settings(**data)
+    return settings
 
 
 def settings_field_names() -> list[str]:
@@ -82,9 +80,7 @@ def settings_to_toml(settings: Settings) -> str:
         ("hotkey_linux", "hotkey_macos", "language"),
         (
             "asr_model",
-            "cleanup_model",
             "cleanup_enabled",
-            "cleanup_runtime",
             "voice_mode_routing_enabled",
             "voice_model_cleanup_always_on",
             "voice_mode_shell_enabled",

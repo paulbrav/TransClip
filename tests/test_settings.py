@@ -26,8 +26,6 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(settings.toggle_cooldown_ms, 500)
             self.assertEqual(settings.asr_backend, "granite_nar")
             self.assertEqual(settings.asr_model, "ibm-granite/granite-speech-4.1-2b-nar")
-            self.assertEqual(settings.cleanup_runtime, "rule")
-            self.assertEqual(settings.cleanup_model, "google/gemma-4-E2B-it")
             self.assertTrue(settings.voice_mode_routing_enabled)
             self.assertFalse(settings.voice_model_cleanup_always_on)
             self.assertTrue(settings.voice_mode_shell_enabled)
@@ -44,16 +42,6 @@ class SettingsTests(unittest.TestCase):
             path.write_text('hotkey_linux = "Ctrl+Space"\nwat = true\n', encoding="utf-8")
             with self.assertRaises(ValueError):
                 load_settings(path)
-
-    def test_deprecated_llama_cleanup_model_path_is_ignored(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "settings.toml"
-            path.write_text('cleanup_model_path = "/models/legacy.gguf"\ncleanup_runtime = "rule"\n', encoding="utf-8")
-
-            settings = load_settings(path)
-
-            self.assertEqual(settings.cleanup_runtime, "rule")
-            self.assertFalse(hasattr(settings, "cleanup_model_path"))
 
     def test_platform_helpers_have_defaults(self):
         settings = Settings()
