@@ -38,15 +38,28 @@ class FakeRecorder:
 
 
 class FakeTextBackend:
-    name = "fake-text"
-    model_name = "fake-model"
-
-    def __init__(self, responses: list[str] | None = None):
-        self.responses = list(responses or ["model output"])
+    def __init__(
+        self,
+        responses: str | list[str] | None = None,
+        *,
+        name: str = "fake-text",
+        model_name: str = "fake-model",
+    ):
+        if responses is None:
+            normalized = ["model output"]
+        elif isinstance(responses, str):
+            normalized = [responses]
+        else:
+            normalized = list(responses)
+        self.responses = normalized
+        self.name = name
+        self.model_name = model_name
         self.messages: list[list[dict[str, str]]] = []
+        self.max_new_tokens: list[int] = []
 
     def generate(self, messages: list[dict[str, str]], *, max_new_tokens: int) -> TextGenerationResult:
         self.messages.append(messages)
+        self.max_new_tokens.append(max_new_tokens)
         text = self.responses.pop(0) if self.responses else "model output"
         return TextGenerationResult(text, {"text_generation": 1.0}, self.name, self.model_name)
 
@@ -105,7 +118,6 @@ def serve_test_engine(
     settings = settings or Settings(
         host="127.0.0.1",
         port=0,
-        cleanup_runtime="test_rule",
         min_recording_ms=0,
         toggle_cooldown_ms=0,
     )
