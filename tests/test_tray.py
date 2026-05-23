@@ -258,8 +258,8 @@ class TrayTests(unittest.TestCase):
                 set_hotkey_item.handlers["activate"](set_hotkey_item)
 
                 self.assertEqual(code, 0)
-                self.assertEqual(settings.hotkey_linux, "<Control><Alt>space")
-                self.assertEqual(load_settings(settings_file).hotkey_linux, "<Control><Alt>space")
+                saved = load_settings(settings_file)
+                self.assertEqual(saved.hotkey_linux, "<Control><Alt>space")
                 install_shortcut.assert_called_once()
                 self.assertEqual(install_shortcut.call_args.kwargs["binding"], "<Control><Alt>space")
                 self.assertIn("Hotkey set", indicator.menus[0].children[0].child.text)
@@ -283,8 +283,6 @@ class TrayTests(unittest.TestCase):
                 regular_item.handlers["activate"](regular_item)
 
                 self.assertEqual(code, 0)
-                self.assertEqual(settings.asr_backend, "granite")
-                self.assertEqual(settings.asr_model, "ibm-granite/granite-speech-4.1-2b")
                 saved = load_settings(settings_file)
                 self.assertEqual(saved.asr_backend, "granite")
                 self.assertEqual(saved.asr_model, "ibm-granite/granite-speech-4.1-2b")
@@ -310,7 +308,6 @@ class TrayTests(unittest.TestCase):
                 cleanup_item.handlers["activate"](cleanup_item)
 
                 self.assertEqual(code, 0)
-                self.assertTrue(settings.voice_model_cleanup_always_on)
                 self.assertTrue(load_settings(settings_file).voice_model_cleanup_always_on)
                 service_action.assert_called_once_with("restart")
                 self.assertEqual(cleanup_item.child.text, "✓ Model cleanup always on")

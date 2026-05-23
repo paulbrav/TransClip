@@ -117,12 +117,22 @@ def get_setting(settings: Settings, field_name: str) -> Any:
 
 
 def set_setting(path: Path | None, field_name: str, raw_value: str) -> Settings:
+    """Update one settings field from a CLI string value and persist canonical TOML."""
     current = load_settings(path)
     allowed = settings_field_names()
     if field_name not in allowed:
         raise ValueError(f"Unknown settings field(s): {field_name}")
     value = coerce_setting_value(field_name, raw_value)
     updated = replace(current, **{field_name: value})
+    write_settings(updated, path)
+    return updated
+
+
+def patch_settings(path: Path | None, **changes) -> Settings:
+    """Merge typed settings changes into the on-disk config and return the updated object."""
+    resolved = path or settings_path()
+    current = load_settings(resolved) if resolved.exists() else Settings()
+    updated = replace(current, **changes)
     write_settings(updated, path)
     return updated
 

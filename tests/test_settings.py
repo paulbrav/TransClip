@@ -7,6 +7,7 @@ from transclip.settings import (
     Settings,
     coerce_setting_value,
     load_settings,
+    patch_settings,
     set_setting,
     write_default_settings,
 )
@@ -58,6 +59,18 @@ class SettingsTests(unittest.TestCase):
         settings = Settings()
         self.assertIn("XF86TouchpadOff", settings.active_hotkey)
         self.assertIn("V", settings.paste_shortcut)
+
+    def test_patch_settings_returns_new_object_without_mutating_original(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "settings.toml"
+            write_default_settings(path)
+            original = load_settings(path)
+
+            updated = patch_settings(path, toggle_cooldown_ms=750)
+
+            self.assertEqual(updated.toggle_cooldown_ms, 750)
+            self.assertEqual(original.toggle_cooldown_ms, 500)
+            self.assertEqual(load_settings(path).toggle_cooldown_ms, 750)
 
     def test_set_setting_rewrites_canonical_toml(self):
         with tempfile.TemporaryDirectory() as tmp:

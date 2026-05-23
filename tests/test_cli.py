@@ -152,33 +152,35 @@ class CliTests(unittest.TestCase):
         self.assertIn(".cache", payload["log_error"])
 
     def test_history_json_and_copy(self):
-        stdout = io.StringIO()
-        events = [{"text": "latest", "timestamp": "now", "source": "/transcribe"}]
-        with (
-            patch("transclip.cli_commands.read_history", return_value=events),
-            redirect_stdout(stdout),
-        ):
-            code = main(["history", "--json"])
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_path = write_test_settings(Path(tmp), "127.0.0.1", unused_local_port())
+            stdout = io.StringIO()
+            events = [{"text": "latest", "timestamp": "now", "source": "/transcribe"}]
+            with (
+                patch("transclip.cli_commands.read_history", return_value=events),
+                redirect_stdout(stdout),
+            ):
+                code = main(["--settings", str(settings_path), "history", "--json"])
 
-        self.assertEqual(code, 0)
-        self.assertIn('"text": "latest"', stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertIn('"text": "latest"', stdout.getvalue())
 
-        class Clipboard:
-            text = ""
+            class Clipboard:
+                text = ""
 
-            def write(self, text):
-                type(self).text = text
+                def write(self, text):
+                    type(self).text = text
 
-        stdout = io.StringIO()
-        with (
-            patch("transclip.cli_commands.read_history", return_value=events),
-            patch("transclip.cli_commands.SystemClipboard", Clipboard),
-            redirect_stdout(stdout),
-        ):
-            code = main(["history", "--copy", "1"])
+            stdout = io.StringIO()
+            with (
+                patch("transclip.cli_commands.read_history", return_value=events),
+                patch("transclip.cli_commands.SystemClipboard", Clipboard),
+                redirect_stdout(stdout),
+            ):
+                code = main(["--settings", str(settings_path), "history", "--copy", "1"])
 
-        self.assertEqual(code, 0)
-        self.assertEqual(Clipboard.text, "latest")
+            self.assertEqual(code, 0)
+            self.assertEqual(Clipboard.text, "latest")
 
     def test_config_get_set_uses_settings_file(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -196,12 +198,14 @@ class CliTests(unittest.TestCase):
             self.assertEqual(stdout.getvalue().strip(), "250")
 
     def test_models_list_uses_local_catalog(self):
-        stdout = io.StringIO()
-        with redirect_stdout(stdout):
-            code = main(["models", "list"])
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_path = write_test_settings(Path(tmp), "127.0.0.1", unused_local_port())
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = main(["--settings", str(settings_path), "models", "list"])
 
-        self.assertEqual(code, 0)
-        self.assertIn("ibm-granite/granite-speech-4.1-2b-nar", stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertIn("ibm-granite/granite-speech-4.1-2b-nar", stdout.getvalue())
 
     def test_install_gnome_shortcut_uses_configured_hotkey(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -229,17 +233,18 @@ class CliTests(unittest.TestCase):
         self.assertIn("Binding: <Control><Alt>space", stdout.getvalue())
 
     def test_tray_command_runs_python_tray(self):
-        with patch("transclip.tray.run_python_tray", return_value=7):
-            code = main(["tray"])
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_path = write_test_settings(Path(tmp), "127.0.0.1", unused_local_port())
+            with patch("transclip.tray.run_python_tray", return_value=7):
+                code = main(["--settings", str(settings_path), "tray"])
 
-        self.assertEqual(code, 7)
+            self.assertEqual(code, 7)
 
 
 def write_test_settings(root: Path, host: str, port: int, **overrides) -> Path:
     settings = Settings(
         host=host,
         port=port,
-        cleanup_runtime="test_rule",
         min_recording_ms=0,
         toggle_cooldown_ms=0,
         clipboard_restore_delay_ms=0,
