@@ -16,6 +16,7 @@ from .menu import tray_icon_for_health, tray_menu_nodes
 from .menu_update import HistoryMenuState
 from .session import TraySession
 from .sinks.gtk import GtkMenuSink
+from .views import RefDrivenMenuView
 
 
 def run_python_tray(settings: Settings, explicit_settings_path: Path | None = None) -> int:
@@ -41,37 +42,32 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
     indicator.set_title(DISPLAY_NAME)
     indicator.set_status(AppIndicator.IndicatorStatus.ACTIVE)
 
-    class GtkMenuView:
-        def set_label(self, ref: str, text: str) -> None:
-            _set_menu_item_label(menu_refs[ref], text)
+    def rebuild_history(entries) -> None:
+        history_menu = menu_refs["history_menu"]
+        for child in history_menu.get_children():
+            history_menu.remove(child)
+        for preview, full_text in entries:
+            if not full_text:
+                item = _append_label(history_menu, preview)
+            else:
+                item = _append_item(
+                    history_menu,
+                    preview,
+                    lambda _item, value=full_text: controller.copy_history_text(value),
+                )
+            item.show_all()
 
-        def set_enabled(self, ref: str, enabled: bool) -> None:
-            menu_refs[ref].set_sensitive(enabled)
+    def set_health_icon(icon: str) -> None:
+        themed = tray_icon_for_health(icon, system=session.runtime.system())
+        indicator.set_icon_full(themed, DISPLAY_NAME)
 
-        def set_model_labels(self, rows) -> None:
-            for item, label in rows:
-                _set_menu_item_label(item, label)
-
-        def rebuild_history(self, entries) -> None:
-            history_menu = menu_refs["history_menu"]
-            for child in history_menu.get_children():
-                history_menu.remove(child)
-            for preview, full_text in entries:
-                if not full_text:
-                    item = _append_label(history_menu, preview)
-                else:
-                    item = _append_item(
-                        history_menu,
-                        preview,
-                        lambda _item, value=full_text: controller.copy_history_text(value),
-                    )
-                item.show_all()
-
-        def set_health_icon(self, icon: str) -> None:
-            themed = tray_icon_for_health(icon, system=session.runtime.system())
-            indicator.set_icon_full(themed, DISPLAY_NAME)
-
-    menu_view = GtkMenuView()
+    menu_view = RefDrivenMenuView(
+        menu_refs,
+        set_item_label=_set_menu_item_label,
+        set_item_enabled=lambda item, enabled: item.set_sensitive(enabled),
+        rebuild_history=rebuild_history,
+        set_health_icon=set_health_icon,
+    )
     controller = TrayController(
         session,
         menu_view,

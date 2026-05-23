@@ -16,6 +16,7 @@ from .menu import tray_menu_nodes
 from .menu_update import HistoryMenuState
 from .session import TraySession
 from .sinks.win32 import PystrayMenuSink
+from .views import RefDrivenMenuView
 
 
 def run_windows_tray(
@@ -53,26 +54,21 @@ def run_windows_tray(
             stop()
         hotkey_holder["stop"] = start_windows_hotkey(on_hotkey, session.settings, session.runtime)
 
-    class PystrayMenuView:
-        def set_label(self, ref: str, text: str) -> None:
-            menu_refs[ref].text = text
+    def rebuild_history(entries) -> None:
+        menu_refs["_history_entries"] = list(entries)
 
-        def set_enabled(self, ref: str, enabled: bool) -> None:
-            menu_refs[ref].enabled = enabled
+    def set_health_icon(icon: str) -> None:
+        icon_obj = icon_holder["icon"]
+        if icon_obj is not None:
+            icon_obj.icon = build_image(icon)
 
-        def set_model_labels(self, rows) -> None:
-            for item, label in rows:
-                item.text = label
-
-        def rebuild_history(self, entries) -> None:
-            menu_refs["_history_entries"] = list(entries)
-
-        def set_health_icon(self, icon: str) -> None:
-            icon_obj = icon_holder["icon"]
-            if icon_obj is not None:
-                icon_obj.icon = build_image(icon)
-
-    menu_view = PystrayMenuView()
+    menu_view = RefDrivenMenuView(
+        menu_refs,
+        set_item_label=lambda item, text: setattr(item, "text", text),
+        set_item_enabled=lambda item, enabled: setattr(item, "enabled", enabled),
+        rebuild_history=rebuild_history,
+        set_health_icon=set_health_icon,
+    )
     controller = TrayController(
         session,
         menu_view,

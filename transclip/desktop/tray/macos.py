@@ -16,6 +16,7 @@ from .menu import tray_icon_for_health, tray_menu_nodes
 from .menu_update import HistoryMenuState
 from .session import TraySession
 from .sinks.macos import MacOSMenuSink
+from .views import RefDrivenMenuView
 
 _MACOS_TRAY_REFS: list[Any] = []
 
@@ -46,46 +47,39 @@ def run_macos_tray(
     session = TraySession(settings, explicit_settings_path, runtime)
     history_state = HistoryMenuState(signature=object())
 
-    class MacOSMenuView:
-        def __init__(self, controller) -> None:
-            self._controller = controller
-
-        def set_label(self, ref: str, text: str) -> None:
-            self._controller.menu_refs[ref].setTitle_(text)
-
-        def set_enabled(self, ref: str, enabled: bool) -> None:
-            self._controller.menu_refs[ref].setEnabled_(enabled)
-
-        def set_model_labels(self, rows) -> None:
-            for item, label in rows:
-                item.setTitle_(label)
-
-        def rebuild_history(self, entries) -> None:
-            history_menu = self._controller.menu_refs["history_menu"]
-            for item in list(history_menu.itemArray()):
-                history_menu.removeItem_(item)
-            for preview, full_text in entries:
-                if not full_text:
-                    self._controller.appendLabel_toMenu_(preview, history_menu)
-                    continue
-                item = self._controller.appendItem_action_toMenu_(
-                    preview,
-                    "copyHistoryItem:",
-                    history_menu,
-                )
-                item.setRepresentedObject_(full_text)
-
-        def set_health_icon(self, icon: str) -> None:
-            themed = tray_icon_for_health(icon, system=session.runtime.system())
-            self._controller.status_item.button().setTitle_(themed)
-
     class MacOSTrayDelegate(NSObject):
         def initWithSession_(self, tray_session):
             self = self.init()
             self.session = tray_session
             self.menu_refs: dict[str, Any] = {}
             self.action_callbacks: dict[str, Any] = {}
-            self.menu_view = MacOSMenuView(self)
+
+            def rebuild_history(entries) -> None:
+                history_menu = self.menu_refs["history_menu"]
+                for item in list(history_menu.itemArray()):
+                    history_menu.removeItem_(item)
+                for preview, full_text in entries:
+                    if not full_text:
+                        self.appendLabel_toMenu_(preview, history_menu)
+                        continue
+                    item = self.appendItem_action_toMenu_(
+                        preview,
+                        "copyHistoryItem:",
+                        history_menu,
+                    )
+                    item.setRepresentedObject_(full_text)
+
+            def set_health_icon(icon: str) -> None:
+                themed = tray_icon_for_health(icon, system=session.runtime.system())
+                self.status_item.button().setTitle_(themed)
+
+            self.menu_view = RefDrivenMenuView(
+                self.menu_refs,
+                set_item_label=lambda item, text: item.setTitle_(text),
+                set_item_enabled=lambda item, enabled: item.setEnabled_(enabled),
+                rebuild_history=rebuild_history,
+                set_health_icon=set_health_icon,
+            )
             self.tray_controller = TrayController(
                 self.session,
                 self.menu_view,

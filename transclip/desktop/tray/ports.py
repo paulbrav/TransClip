@@ -5,11 +5,12 @@ from typing import Any, Protocol
 
 from transclip.daemon.common import CommandResult
 from transclip.recording_ops import ToggleOutcome
+from transclip.service.types import ServiceHealthResponse
 from transclip.settings import Settings
 
 
 class FetchHealth(Protocol):
-    def __call__(self, settings: Settings) -> tuple[dict[str, Any] | None, str | None]: ...
+    def __call__(self, settings: Settings) -> tuple[ServiceHealthResponse | None, str | None]: ...
 
 
 class ToggleRecording(Protocol):
