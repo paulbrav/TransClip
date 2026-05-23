@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
-
 from transclip.cleanup import CleanupPlan
 from transclip.platform.runtime import PlatformRuntime, get_runtime
 from transclip.settings import Settings, active_hotkey, paste_shortcut
+
+from .types import ServiceHealthResponse
 
 _SETTINGS_HEALTH_FIELDS = (
     "cleanup_enabled",
@@ -25,8 +25,10 @@ _SETTINGS_HEALTH_FIELDS = (
 def settings_health_payload(
     settings: Settings,
     runtime: PlatformRuntime,
-) -> dict[str, Any]:
-    payload = {field: getattr(settings, field) for field in _SETTINGS_HEALTH_FIELDS}
+) -> ServiceHealthResponse:
+    payload: ServiceHealthResponse = {}
+    for field in _SETTINGS_HEALTH_FIELDS:
+        payload[field] = getattr(settings, field)  # type: ignore[literal-required]
     payload["hotkey"] = active_hotkey(settings, runtime)
     payload["paste_shortcut"] = paste_shortcut(settings, runtime)
     return payload
@@ -41,7 +43,7 @@ def build_health_status(
     cleanup_backend: str,
     dictation_cleanup: str,
     runtime: PlatformRuntime | None = None,
-) -> dict[str, Any]:
+) -> ServiceHealthResponse:
     platform_runtime = get_runtime(runtime)
     return {
         "status": status,

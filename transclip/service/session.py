@@ -5,10 +5,12 @@ from collections.abc import Callable
 from pathlib import Path
 from threading import Lock
 from time import perf_counter
-from typing import Any, Protocol
+from typing import Protocol
 
 from transclip.audio import AudioRecorder
 from transclip.settings import Settings
+
+from .types import RecordSessionResponse, TranscribeResponse
 
 
 class Recorder(Protocol):
@@ -18,7 +20,7 @@ class Recorder(Protocol):
 
 
 RecorderFactory = Callable[[Settings], Recorder]
-Transcriber = Callable[[Path, bool | None, str], dict[str, Any]]
+Transcriber = Callable[[Path, bool | None, str], TranscribeResponse]
 Clock = Callable[[], float]
 
 
@@ -43,7 +45,7 @@ class DictationSession:
         with self._lock:
             return "recording" if self._recorder else "ready"
 
-    def start_recording(self) -> dict[str, Any]:
+    def start_recording(self) -> RecordSessionResponse:
         with self._lock:
             if self._recorder is not None:
                 return {"status": "recording", "already_recording": True}
@@ -58,7 +60,7 @@ class DictationSession:
         cleanup: bool | None = None,
         discard: bool = False,
         source: str = "/record/stop",
-    ) -> dict[str, Any]:
+    ) -> RecordSessionResponse:
         with self._lock:
             if self._recorder is None:
                 raise RuntimeError("Recorder is not running")
@@ -77,7 +79,7 @@ class DictationSession:
     def toggle_recording(
         self,
         cleanup: bool | None = None,
-    ) -> dict[str, Any]:
+    ) -> RecordSessionResponse:
         now = self._clock()
         with self._lock:
             cooldown_seconds = max(0, self.settings.toggle_cooldown_ms) / 1000
@@ -126,12 +128,12 @@ class DictationSession:
         cleanup: bool | None,
         discard: bool,
         source: str,
-    ) -> dict[str, Any]:
+    ) -> RecordSessionResponse:
         duration_ms = round((self._clock() - started_at) * 1000, 3)
         with tempfile.TemporaryDirectory() as tmp:
             wav_path = recorder.stop_to_wav(Path(tmp) / "recording.wav")
             if discard:
                 return {"status": "ready", "duration_ms": duration_ms, "discarded": True}
-            result = self._transcribe(wav_path, cleanup, source)
+            result = dict(self._transcribe(wav_path, cleanup, source))
         result["duration_ms"] = duration_ms
         return result

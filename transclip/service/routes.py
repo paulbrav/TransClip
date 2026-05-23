@@ -9,11 +9,13 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .engine import InferenceEngine
 
+from .types import JsonPayload
+
 
 @dataclass(frozen=True, slots=True)
 class RouteResponse:
     status: int
-    payload: dict[str, Any]
+    payload: JsonPayload
 
 
 def dispatch_get(engine: InferenceEngine, path: str) -> RouteResponse:

@@ -11,6 +11,18 @@ class ServiceHealthResponse(TypedDict, total=False):
     dictation_cleanup: str
     hotkey: str
     paste_shortcut: str
+    cleanup_enabled: bool
+    voice_mode_routing_enabled: bool
+    voice_model_cleanup_always_on: bool
+    voice_mode_shell_enabled: bool
+    text_model_runtime: str
+    text_model: str
+    language: str
+    max_recording_seconds: int
+    min_recording_ms: int
+    toggle_cooldown_ms: int
+    clipboard_restore_delay_ms: int
+    restore_clipboard_after_paste: bool
 
 
 class RecordSessionResponse(TypedDict, total=False):
@@ -37,11 +49,19 @@ class RecordSessionResponse(TypedDict, total=False):
 
 class CleanupTextResponse(TypedDict, total=False):
     text: str
+    backend: str
+    timings_ms: dict[str, float]
     voice_mode: str
     voice_trigger: str
     voice_literal: bool
     cleanup_backend: str
 
 
+JsonPayload = dict[str, object]
+
+
 class TranscribeResponse(RecordSessionResponse):
     raw_asr: str
+    cleanup: dict[str, Any]
+    cleanup_enabled: bool
+    submit: bool | None

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 from pathlib import Path
 from time import perf_counter
-from typing import Any
 
 from transclip.asr import ASRBackend, build_asr_backend
 from transclip.audio import AudioRecorder
+from transclip.best_effort import best_effort
 from transclip.cleanup import (
     CleanupBackend,
     FaithfulRuleCleanupBackend,
@@ -23,7 +22,14 @@ from transclip.text_generation import TextGenerationBackend, build_text_generati
 from transclip.transcript_pipeline import TranscriptProcessor, shell_metadata
 
 from .health import build_health_status, cleanup_labels
+from .serialize import to_cleanup_text_response, to_transcribe_response
 from .session import DictationSession
+from .types import (
+    CleanupTextResponse,
+    RecordSessionResponse,
+    ServiceHealthResponse,
+    TranscribeResponse,
+)
 
 
 class InferenceEngine:
@@ -51,7 +57,7 @@ class InferenceEngine:
             recorder_factory=lambda current_settings: AudioRecorder(current_settings),
         )
 
-    def health(self) -> dict[str, Any]:
+    def health(self) -> ServiceHealthResponse:
         status = self.dictation_session.status()
         cleanup_backend, dictation_cleanup = cleanup_labels(
             self.settings,
@@ -69,7 +75,7 @@ class InferenceEngine:
             runtime=get_runtime(),
         )
 
-    def start_recording(self) -> dict[str, Any]:
+    def start_recording(self) -> RecordSessionResponse:
         return self.dictation_session.start_recording()
 
     def stop_recording(
@@ -78,7 +84,7 @@ class InferenceEngine:
         discard: bool = False,
         source: str = "/record/stop",
         record_history: bool = False,
-    ) -> dict[str, Any]:
+    ) -> RecordSessionResponse:
         result = self.dictation_session.stop_recording(
             cleanup=cleanup,
             discard=discard,
@@ -96,7 +102,7 @@ class InferenceEngine:
         self,
         cleanup: bool | None = None,
         record_history: bool = False,
-    ) -> dict[str, Any]:
+    ) -> RecordSessionResponse:
         result = self.dictation_session.toggle_recording(cleanup=cleanup)
         return _with_optional_history(
             result,
@@ -106,9 +112,9 @@ class InferenceEngine:
             duration_ms=result.get("duration_ms"),
         )
 
-    def cleanup_text(self, text: str) -> dict[str, Any]:
+    def cleanup_text(self, text: str) -> CleanupTextResponse:
         result = self.transcript_processor.cleanup_dictation(text)
-        return asdict(result)
+        return to_cleanup_text_response(result)
 
     def transcribe(
         self,
@@ -117,7 +123,7 @@ class InferenceEngine:
         source: str = "/transcribe",
         record_history: bool = False,
         keywords: list[str] | None = None,
-    ) -> dict[str, Any]:
+    ) -> TranscribeResponse:
         start = perf_counter()
         asr_result = self.asr_backend.transcribe(wav_path, keywords=keywords)
         raw_asr = restore_keywords(asr_result.text, keywords or [])
@@ -155,9 +161,11 @@ class InferenceEngine:
                 "shell": shell_metadata(outcome.shell),
             },
         )
-        result = outcome.to_dict()
-        result["timings_ms"] = timings_ms
-        result["debug_capture_dir"] = str(capture_dir) if capture_dir else None
+        result = to_transcribe_response(
+            outcome,
+            timings_ms=timings_ms,
+            debug_capture_dir=str(capture_dir) if capture_dir else None,
+        )
         return _with_optional_history(
             result,
             self.settings,
@@ -170,7 +178,7 @@ class InferenceEngine:
         wav_path: Path,
         cleanup: bool | None,
         source: str,
-    ) -> dict[str, Any]:
+    ) -> TranscribeResponse:
         return self.transcribe(
             wav_path,
             cleanup=cleanup,
@@ -180,13 +188,13 @@ class InferenceEngine:
 
 
 def _with_optional_history(
-    result: dict[str, Any],
+    result: RecordSessionResponse | TranscribeResponse,
     settings: Settings,
     *,
     source: str,
     record_history: bool,
     duration_ms: float | None = None,
-) -> dict[str, Any]:
+) -> RecordSessionResponse | TranscribeResponse:
     if not record_history:
         return result
     history_error = _append_transcript_history(
@@ -201,13 +209,16 @@ def _with_optional_history(
 
 
 def _append_transcript_history(
-    result: dict[str, Any],
+    result: RecordSessionResponse | TranscribeResponse,
     settings: Settings,
     source: str,
     duration_ms: float | None = None,
 ) -> str | None:
-    try:
-        append_transcript_history(result, settings, source=source, duration_ms=duration_ms)
-    except Exception as exc:
-        return str(exc)
-    return None
+    return best_effort(
+        lambda: append_transcript_history(
+            result,
+            settings,
+            source=source,
+            duration_ms=duration_ms,
+        )
+    )
