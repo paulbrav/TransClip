@@ -168,7 +168,7 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
 
     def build_menu() -> None:
         menu = Gtk.Menu()
-        for node in tray_menu_nodes(session.runtime.system()):
+        for node in tray_menu_nodes("Linux"):
             append_menu_node(node, menu)
         refresh_history_menu()
         update_menu()
