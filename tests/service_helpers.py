@@ -110,6 +110,32 @@ class FakeRuntime:
         return self.check_output_text
 
 
+def linux_gpu_runtime(home: Path | None = None) -> FakeRuntime:
+    return FakeRuntime(system="Linux", home=home or Path("/home/user"))
+
+
+def patch_linux_gpu_runtime(home: Path | None = None):
+    from contextlib import contextmanager
+    from unittest.mock import patch
+
+    runtime = linux_gpu_runtime(home)
+
+    def _runtime(runtime_override=None):
+        return runtime if runtime_override is None else runtime_override
+
+    @contextmanager
+    def _patch():
+        with (
+            patch("transclip.platform_runtime.get_runtime", side_effect=_runtime),
+            patch("transclip.models.get_runtime", side_effect=_runtime),
+            patch("transclip.runtime_profile.get_runtime", side_effect=_runtime),
+            patch("transclip.runtime_profile.machine_architecture", return_value="x86_64"),
+        ):
+            yield runtime
+
+    return _patch()
+
+
 def serve_test_engine(
     settings: Settings | None = None,
     engine: InferenceEngine | None = None,

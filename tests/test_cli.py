@@ -11,7 +11,7 @@ from transclip.cli import main
 from transclip.daemon_lifecycle import toggle_log_path
 from transclip.settings import Settings, write_settings
 
-from tests.service_helpers import FakeRecorder, FakeRuntime, serve_test_engine, stop_server
+from tests.service_helpers import FakeRecorder, FakeRuntime, patch_linux_gpu_runtime, serve_test_engine, stop_server
 
 
 class InMemoryClipboard:
@@ -201,11 +201,7 @@ class CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             settings_path = write_test_settings(Path(tmp), "127.0.0.1", unused_local_port())
             stdout = io.StringIO()
-            runtime = FakeRuntime(system="Linux", home=Path("/home/user"))
-            with (
-                patch("transclip.models.get_runtime", return_value=runtime),
-                redirect_stdout(stdout),
-            ):
+            with patch_linux_gpu_runtime(), redirect_stdout(stdout):
                 code = main(["--settings", str(settings_path), "models", "list"])
 
             self.assertEqual(code, 0)

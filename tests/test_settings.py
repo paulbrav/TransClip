@@ -14,14 +14,14 @@ from transclip.settings import (
     write_default_settings,
 )
 
-from tests.service_helpers import FakeRuntime
+from tests.service_helpers import linux_gpu_runtime, patch_linux_gpu_runtime
 
 
 class SettingsTests(unittest.TestCase):
     def test_default_files_round_trip(self):
-        runtime = FakeRuntime(system="Linux", home=Path("/home/user"))
-        with tempfile.TemporaryDirectory() as tmp:
+        with patch_linux_gpu_runtime(), tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            runtime = linux_gpu_runtime()
             settings_file = write_default_settings(root / "settings.toml", runtime=runtime)
 
             settings = load_settings(settings_file, runtime=runtime)

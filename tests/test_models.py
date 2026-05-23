@@ -18,13 +18,14 @@ from transclip.models import (
 )
 from transclip.settings import Settings
 
-from tests.service_helpers import FakeRuntime
+from tests.service_helpers import FakeRuntime, linux_gpu_runtime, patch_linux_gpu_runtime
 
 
 class ModelsTests(unittest.TestCase):
     @staticmethod
     def _linux_runtime() -> FakeRuntime:
         return FakeRuntime(system="Linux", home=Path("/home/user"))
+
     def test_catalog_contains_current_granite_backends(self):
         rows = {(model.backend, model.model_id) for model in SUPPORTED_MODELS}
 
@@ -51,8 +52,8 @@ class ModelsTests(unittest.TestCase):
             validate_asr_model_backend("granite", "ibm-granite/granite-speech-4.1-2b-nar", runtime)
 
     def test_cache_detection_and_rows_do_not_download(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            runtime = self._linux_runtime()
+        with tempfile.TemporaryDirectory() as tmp, patch_linux_gpu_runtime():
+            runtime = linux_gpu_runtime()
             settings = Settings(model_cache_dir=tmp)
             model_dir = Path(tmp) / "models--ibm-granite--granite-speech-4.1-2b-nar" / "snapshots" / "abc"
             model_dir.mkdir(parents=True)
