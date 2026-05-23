@@ -60,10 +60,6 @@ def main(argv: list[str] | None = None) -> int:
     cleanup = sub.add_parser("cleanup")
     cleanup.add_argument("text", nargs="*")
 
-    record = sub.add_parser("record-once")
-    record.add_argument("--seconds", type=float, default=5.0)
-    record.add_argument("--paste", action="store_true")
-
     toggle = sub.add_parser("toggle-record")
     toggle.add_argument("--paste", action="store_true")
 

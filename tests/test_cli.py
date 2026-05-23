@@ -3,14 +3,15 @@ import json
 import socket
 import tempfile
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
 from transclip.cli import main
+from transclip.daemon_lifecycle import toggle_log_path
 from transclip.settings import Settings, write_settings
 
-from tests.service_helpers import FakeRecorder, serve_test_engine, stop_server
+from tests.service_helpers import FakeRecorder, FakeRuntime, patch_linux_gpu_runtime, serve_test_engine, stop_server
 
 
 class InMemoryClipboard:
@@ -41,6 +42,21 @@ class FakePasteInjector:
 
 
 class CliTests(unittest.TestCase):
+    def _linux_runtime(self, root: Path) -> FakeRuntime:
+        return FakeRuntime(system="Linux", home=root)
+
+    def _toggle_log_path(self, root: Path) -> Path:
+        return toggle_log_path(self._linux_runtime(root))
+
+    def _enter_toggle_patches(self, stack: ExitStack, root: Path, **extra) -> None:
+        stack.enter_context(patch("transclip.service.AudioRecorder", FakeRecorder))
+        stack.enter_context(patch("transclip.paste.SystemClipboard", InMemoryClipboard))
+        stack.enter_context(patch("transclip.paste.SystemPasteInjector", FakePasteInjector))
+        stack.enter_context(patch("transclip.cli_commands.notify"))
+        stack.enter_context(patch("transclip.daemon.toggle_log_path", return_value=self._toggle_log_path(root)))
+        for key, value in extra.items():
+            stack.enter_context(patch(key, value))
+
     def test_toggle_record_starts_without_paste(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -48,14 +64,9 @@ class CliTests(unittest.TestCase):
             settings_path = write_test_settings(root, host, port)
             try:
                 stdout = io.StringIO()
-                with (
-                    patch("transclip.service.AudioRecorder", FakeRecorder),
-                    patch("transclip.paste.SystemClipboard", InMemoryClipboard),
-                    patch("transclip.paste.SystemPasteInjector", FakePasteInjector),
-                    patch("transclip.cli_commands.notify"),
-                    patch("transclip.daemon_lifecycle.Path.home", return_value=root),
-                    redirect_stdout(stdout),
-                ):
+                with ExitStack() as stack:
+                    self._enter_toggle_patches(stack, root)
+                    stack.enter_context(redirect_stdout(stdout))
                     code = main(["--settings", str(settings_path), "toggle-record", "--paste"])
             finally:
                 stop_server(server, thread)
@@ -75,25 +86,15 @@ class CliTests(unittest.TestCase):
             settings_path = write_test_settings(root, host, port)
             try:
                 InMemoryClipboard.value = "prior"
-                with (
-                    patch("transclip.service.AudioRecorder", FakeRecorder),
-                    patch("transclip.paste.SystemClipboard", InMemoryClipboard),
-                    patch("transclip.paste.SystemPasteInjector", FakePasteInjector),
-                    patch("transclip.cli_commands.notify"),
-                    patch("transclip.daemon_lifecycle.Path.home", return_value=root),
-                    redirect_stdout(io.StringIO()),
-                ):
+                with ExitStack() as stack:
+                    self._enter_toggle_patches(stack, root)
+                    stack.enter_context(redirect_stdout(io.StringIO()))
                     self.assertEqual(main(["--settings", str(settings_path), "toggle-record"]), 0)
 
                 stdout = io.StringIO()
-                with (
-                    patch("transclip.service.AudioRecorder", FakeRecorder),
-                    patch("transclip.paste.SystemClipboard", InMemoryClipboard),
-                    patch("transclip.paste.SystemPasteInjector", FakePasteInjector),
-                    patch("transclip.cli_commands.notify"),
-                    patch("transclip.daemon_lifecycle.Path.home", return_value=root),
-                    redirect_stdout(stdout),
-                ):
+                with ExitStack() as stack:
+                    self._enter_toggle_patches(stack, root)
+                    stack.enter_context(redirect_stdout(stdout))
                     code = main(["--settings", str(settings_path), "toggle-record", "--paste"])
             finally:
                 stop_server(server, thread)
@@ -115,11 +116,9 @@ class CliTests(unittest.TestCase):
             root = Path(tmp)
             settings_path = write_test_settings(root, "127.0.0.1", unused_local_port())
             stderr = io.StringIO()
-            with (
-                patch("transclip.cli_commands.notify"),
-                patch("transclip.daemon_lifecycle.Path.home", return_value=root),
-                redirect_stderr(stderr),
-            ):
+            with ExitStack() as stack:
+                self._enter_toggle_patches(stack, root)
+                stack.enter_context(redirect_stderr(stderr))
                 code = main(["--settings", str(settings_path), "toggle-record", "--paste"])
 
             self.assertEqual(code, 1)
@@ -136,11 +135,12 @@ class CliTests(unittest.TestCase):
             settings_path = write_test_settings(root, host, port)
             try:
                 stdout = io.StringIO()
-                with (
-                    patch("transclip.service.AudioRecorder", FakeRecorder),
-                    patch("transclip.daemon_lifecycle.Path.home", return_value=root),
-                    redirect_stdout(stdout),
-                ):
+                with ExitStack() as stack:
+                    stack.enter_context(patch("transclip.service.AudioRecorder", FakeRecorder))
+                    stack.enter_context(
+                        patch("transclip.daemon.toggle_log_path", return_value=self._toggle_log_path(root))
+                    )
+                    stack.enter_context(redirect_stdout(stdout))
                     code = main(["--settings", str(settings_path), "toggle-record"])
             finally:
                 stop_server(server, thread)
@@ -152,33 +152,35 @@ class CliTests(unittest.TestCase):
         self.assertIn(".cache", payload["log_error"])
 
     def test_history_json_and_copy(self):
-        stdout = io.StringIO()
-        events = [{"text": "latest", "timestamp": "now", "source": "/transcribe"}]
-        with (
-            patch("transclip.cli_commands.read_history", return_value=events),
-            redirect_stdout(stdout),
-        ):
-            code = main(["history", "--json"])
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_path = write_test_settings(Path(tmp), "127.0.0.1", unused_local_port())
+            stdout = io.StringIO()
+            events = [{"text": "latest", "timestamp": "now", "source": "/transcribe"}]
+            with (
+                patch("transclip.cli_commands.read_history", return_value=events),
+                redirect_stdout(stdout),
+            ):
+                code = main(["--settings", str(settings_path), "history", "--json"])
 
-        self.assertEqual(code, 0)
-        self.assertIn('"text": "latest"', stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertIn('"text": "latest"', stdout.getvalue())
 
-        class Clipboard:
-            text = ""
+            class Clipboard:
+                text = ""
 
-            def write(self, text):
-                type(self).text = text
+                def write(self, text):
+                    type(self).text = text
 
-        stdout = io.StringIO()
-        with (
-            patch("transclip.cli_commands.read_history", return_value=events),
-            patch("transclip.cli_commands.SystemClipboard", Clipboard),
-            redirect_stdout(stdout),
-        ):
-            code = main(["history", "--copy", "1"])
+            stdout = io.StringIO()
+            with (
+                patch("transclip.cli_commands.read_history", return_value=events),
+                patch("transclip.cli_commands.SystemClipboard", Clipboard),
+                redirect_stdout(stdout),
+            ):
+                code = main(["--settings", str(settings_path), "history", "--copy", "1"])
 
-        self.assertEqual(code, 0)
-        self.assertEqual(Clipboard.text, "latest")
+            self.assertEqual(code, 0)
+            self.assertEqual(Clipboard.text, "latest")
 
     def test_config_get_set_uses_settings_file(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -196,12 +198,14 @@ class CliTests(unittest.TestCase):
             self.assertEqual(stdout.getvalue().strip(), "250")
 
     def test_models_list_uses_local_catalog(self):
-        stdout = io.StringIO()
-        with redirect_stdout(stdout):
-            code = main(["models", "list"])
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_path = write_test_settings(Path(tmp), "127.0.0.1", unused_local_port())
+            stdout = io.StringIO()
+            with patch_linux_gpu_runtime(), redirect_stdout(stdout):
+                code = main(["--settings", str(settings_path), "models", "list"])
 
-        self.assertEqual(code, 0)
-        self.assertIn("ibm-granite/granite-speech-4.1-2b-nar", stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertIn("ibm-granite/granite-speech-4.1-2b-nar", stdout.getvalue())
 
     def test_install_gnome_shortcut_uses_configured_hotkey(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -229,17 +233,18 @@ class CliTests(unittest.TestCase):
         self.assertIn("Binding: <Control><Alt>space", stdout.getvalue())
 
     def test_tray_command_runs_python_tray(self):
-        with patch("transclip.tray.run_python_tray", return_value=7):
-            code = main(["tray"])
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_path = write_test_settings(Path(tmp), "127.0.0.1", unused_local_port())
+            with patch("transclip.tray.run_tray", return_value=7):
+                code = main(["--settings", str(settings_path), "tray"])
 
-        self.assertEqual(code, 7)
+            self.assertEqual(code, 7)
 
 
 def write_test_settings(root: Path, host: str, port: int, **overrides) -> Path:
     settings = Settings(
         host=host,
         port=port,
-        cleanup_runtime="test_rule",
         min_recording_ms=0,
         toggle_cooldown_ms=0,
         clipboard_restore_delay_ms=0,
@@ -251,7 +256,7 @@ def write_test_settings(root: Path, host: str, port: int, **overrides) -> Path:
 
 
 def read_last_toggle_log(root: Path) -> dict:
-    log_path = root / ".cache" / "transclip" / "toggle-record.log"
+    log_path = toggle_log_path(FakeRuntime(system="Linux", home=root))
     lines = [line for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     return json.loads(lines[-1])
 

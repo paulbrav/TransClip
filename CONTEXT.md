@@ -28,7 +28,16 @@ injection tools, and any desktop permissions those tools require.
 
 **Shortcut readiness**: Whether the native desktop shortcut used to trigger
 interactive dictation is installed, points at the expected command, uses the
-expected binding, and is available on the current desktop environment.
+expected binding, and is available on the current desktop environment. On Linux
+this is the GNOME custom shortcut installed by `transclip install`. On macOS
+global shortcuts are configured manually in System Settings or Shortcuts.app;
+`hotkey_macos` stores the suggested binding while the tray can copy the toggle
+command wrapper.
+
+**Runtime profile**: Platform-aware defaults for ASR backend, model, device,
+and supported runtime kinds. Linux x86_64 defaults to Granite NAR; Linux CPU
+defaults to Granite AR; macOS Apple Silicon defaults to MLX Whisper via
+`mlx-audio`.
 
 **ASR runtime**: The local speech-to-text execution path for a WAV file. It
 includes audio preparation, backend selection, local model loading, transcript
@@ -57,7 +66,13 @@ list files`.
 **Model cleanup**: The Qwen-backed cleanup path used for explicit cleanup
 triggers and for normal dictation when `voice_model_cleanup_always_on` is
 enabled. It is separate from the conservative rule cleanup that remains the
-default for normal dictation.
+default for normal dictation. Rule cleanup is heuristic punctuation and
+capitalization; it does not use a separate cleanup model setting.
+
+**Direct cleanup API**: The `POST /cleanup` route and CLI `cleanup` command clean
+already-written text through the dictation cleanup policy only. They do not
+parse voice-mode triggers; they apply rule cleanup by default and use the Qwen
+`text_model` when `voice_model_cleanup_always_on` is enabled.
 
 **Shell command generation**: The voice mode that turns a spoken task into Bash
 text using the shared Qwen text model. It validates syntax without execution and

@@ -5,8 +5,9 @@ from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 from typing import Any, get_type_hints
 
-from .platform_runtime import default_platform_runtime, user_config_dir
+from .platform_runtime import PlatformRuntime, get_runtime, user_config_dir
 from .product import CONFIG_DIR_NAME
+from .runtime_profile import detect_runtime_profile
 
 DEFAULT_HOTKEY_LINUX = "<Super><Shift>XF86TouchpadOff"
 
@@ -17,9 +18,7 @@ class Settings:
     hotkey_macos: str = "Option+Space"
     language: str = "en"
     asr_model: str = "ibm-granite/granite-speech-4.1-2b-nar"
-    cleanup_model: str = "google/gemma-4-E2B-it"
     cleanup_enabled: bool = True
-    cleanup_runtime: str = "rule"
     voice_mode_routing_enabled: bool = True
     voice_model_cleanup_always_on: bool = False
     voice_mode_shell_enabled: bool = True
@@ -42,13 +41,24 @@ class Settings:
     host: str = "127.0.0.1"
     port: int = 8765
 
-    @property
-    def active_hotkey(self) -> str:
-        return self.hotkey_macos if default_platform_runtime.system() == "Darwin" else self.hotkey_linux
 
-    @property
-    def paste_shortcut(self) -> str:
-        return "Command+V" if default_platform_runtime.system() == "Darwin" else "Ctrl+Shift+V"
+def active_hotkey(settings: Settings, runtime: PlatformRuntime | None = None) -> str:
+    platform_runtime = get_runtime(runtime)
+    return settings.hotkey_macos if platform_runtime.system() == "Darwin" else settings.hotkey_linux
+
+
+def paste_shortcut(settings: Settings, runtime: PlatformRuntime | None = None) -> str:
+    platform_runtime = get_runtime(runtime)
+    return "Command+V" if platform_runtime.system() == "Darwin" else "Ctrl+Shift+V"
+
+
+def default_settings(runtime: PlatformRuntime | None = None) -> Settings:
+    profile = detect_runtime_profile(runtime)
+    return Settings(
+        asr_backend=profile.default_asr_backend,
+        asr_model=profile.default_asr_model,
+        asr_device=profile.default_asr_device,
+    )
 
 
 def default_config_dir() -> Path:
@@ -59,17 +69,17 @@ def settings_path(config_dir: Path | None = None) -> Path:
     return (config_dir or default_config_dir()) / "settings.toml"
 
 
-def load_settings(path: Path | None = None) -> Settings:
+def load_settings(path: Path | None = None, runtime: PlatformRuntime | None = None) -> Settings:
     path = path or settings_path()
     if not path.exists():
-        return Settings()
+        return default_settings(runtime)
     data = tomllib.loads(path.read_text(encoding="utf-8"))
-    data.pop("cleanup_model_path", None)
     allowed = {field.name for field in fields(Settings)}
     unknown = sorted(set(data) - allowed)
     if unknown:
         raise ValueError(f"Unknown settings field(s): {', '.join(unknown)}")
-    return Settings(**data)
+    settings = Settings(**data)
+    return settings
 
 
 def settings_field_names() -> list[str]:
@@ -82,9 +92,7 @@ def settings_to_toml(settings: Settings) -> str:
         ("hotkey_linux", "hotkey_macos", "language"),
         (
             "asr_model",
-            "cleanup_model",
             "cleanup_enabled",
-            "cleanup_runtime",
             "voice_mode_routing_enabled",
             "voice_model_cleanup_always_on",
             "voice_mode_shell_enabled",
@@ -117,12 +125,22 @@ def get_setting(settings: Settings, field_name: str) -> Any:
 
 
 def set_setting(path: Path | None, field_name: str, raw_value: str) -> Settings:
+    """Update one settings field from a CLI string value and persist canonical TOML."""
     current = load_settings(path)
     allowed = settings_field_names()
     if field_name not in allowed:
         raise ValueError(f"Unknown settings field(s): {field_name}")
     value = coerce_setting_value(field_name, raw_value)
     updated = replace(current, **{field_name: value})
+    write_settings(updated, path)
+    return updated
+
+
+def patch_settings(path: Path | None, **changes) -> Settings:
+    """Merge typed settings changes into the on-disk config and return the updated object."""
+    resolved = path or settings_path()
+    current = load_settings(resolved) if resolved.exists() else Settings()
+    updated = replace(current, **changes)
     write_settings(updated, path)
     return updated
 
@@ -153,12 +171,12 @@ def coerce_setting_value(field_name: str, raw_value: str) -> Any:
     raise ValueError(f"{field_name} has unsupported type {expected}")
 
 
-def write_default_settings(path: Path | None = None) -> Path:
+def write_default_settings(path: Path | None = None, runtime: PlatformRuntime | None = None) -> Path:
     path = path or settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         return path
-    write_settings(Settings(), path)
+    write_settings(default_settings(runtime), path)
     return path
 
 

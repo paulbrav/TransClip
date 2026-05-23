@@ -3,11 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import tempfile
-import time
 from pathlib import Path
 
-from .audio import AudioRecorder, recording_debug
+from .audio import recording_debug
 from .daemon import (
     collect_status,
     logs_dir,
@@ -27,9 +25,10 @@ from .doctor import (
 from .eval_harness import run_eval
 from .gnome_shortcut import install_shortcut
 from .history import read_history
-from .models import model_rows, prefetch_model
+from .models import ModelRow, model_rows, prefetch_model
 from .notify import notify
-from .paste import SystemClipboard, paste_transcript
+from .paste import SystemClipboard
+from .platform_runtime import get_runtime
 from .product import CLI_COMMAND, DISPLAY_NAME
 from .recording_ops import toggle_recording
 from .service import InferenceEngine, run_server
@@ -58,9 +57,9 @@ def handle_command(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
     if args.command in {"install", "uninstall", "start", "stop", "restart", "status", "logs", "smoke-test"}:
         return handle_daemon_command(args, settings)
     if args.command == "tray":
-        from .tray import run_python_tray
+        from .tray import run_tray
 
-        return run_python_tray(settings, explicit_settings_path=args.settings)
+        return run_tray(settings, explicit_settings_path=args.settings)
     if args.command == "history":
         return handle_history(args)
     if args.command == "models":
@@ -82,8 +81,6 @@ def handle_command(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         text = " ".join(args.text) if args.text else sys.stdin.read()
         print(engine.cleanup_text(text)["text"])
         return 0
-    if args.command == "record-once":
-        return handle_record_once(args, settings, engine)
     if args.command == "eval":
         result = run_eval(args.manifest, engine)
         encoded = json.dumps(result, indent=2)
@@ -100,7 +97,7 @@ def handle_command(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
 def handle_doctor(args: argparse.Namespace, settings, config_dir: Path | None) -> int:
     if args.fix:
         logs_dir().mkdir(parents=True, exist_ok=True)
-        if sys.platform.startswith("linux"):
+        if get_runtime().system() == "Linux":
             try:
                 install_shortcut(settings_path=args.settings, binding=settings.hotkey_linux)
             except Exception as exc:
@@ -230,26 +227,6 @@ def handle_toggle_record(args: argparse.Namespace, settings) -> int:
     return 0
 
 
-def handle_record_once(args: argparse.Namespace, settings, engine: InferenceEngine) -> int:
-    recorder = AudioRecorder(settings)
-    with tempfile.TemporaryDirectory() as tmp:
-        wav = Path(tmp) / "recording.wav"
-        recorder.start()
-        time.sleep(min(args.seconds, settings.max_recording_seconds))
-        recorder.stop_to_wav(wav)
-        result = engine.transcribe(wav)
-        print(result["text"])
-        if args.paste:
-            paste_result = paste_transcript(result["text"], settings)
-            if not paste_result.pasted:
-                detail = f" {paste_result.error_detail}" if paste_result.error_detail else ""
-                notify(
-                    DISPLAY_NAME,
-                    "Paste failed. The transcript is still on the clipboard." + detail,
-                )
-    return 0
-
-
 def _print_command_results(results) -> None:
     for result in results:
         status = "ok" if result.ok else "failed"
@@ -302,8 +279,8 @@ def _copy_history(events: list[dict], index: int) -> int:
     return 0
 
 
-def _format_model_rows(rows: list[dict]) -> str:
+def _format_model_rows(rows: list[ModelRow]) -> str:
     lines = ["model_id\tbackend\tmarker\tcached\tcache_path"]
     for row in rows:
-        lines.append(f"{row['model_id']}\t{row['backend']}\t{row['marker']}\t{row['cached']}\t{row['cache_path']}")
+        lines.append(f"{row.model_id}\t{row.backend}\t{row.marker}\t{row.cached}\t{row.cache_path}")
     return "\n".join(lines)

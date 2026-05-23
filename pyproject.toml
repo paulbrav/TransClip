@@ -15,6 +15,8 @@ build-backend = "hatchling.build"
 [project.optional-dependencies]
 audio = ["sounddevice>=0.5", "numpy>=1.26"]
 models = ["transformers>=4.52.1", "torch>=2.5", "torchaudio>=2.5", "torchcodec>=0.5", "torchvision>=0.20", "accelerate>=1.0", "soundfile>=0.12", "pillow>=10"]
+mlx = ["mlx-audio[stt]>=0.4.3", "huggingface_hub>=0.27", "soundfile>=0.12"]
+macos-ui = ["pyobjc-framework-Cocoa>=10; sys_platform == 'darwin'"]
 dev = [
     "coverage[toml]>=7.10",
     "pytest>=8.4",

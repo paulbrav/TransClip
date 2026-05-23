@@ -12,24 +12,8 @@ from transclip.shell_command import (
     shell_generation_failure_reason,
     validate_shell_command,
 )
-from transclip.text_generation import TextGenerationResult
 
-from tests.service_helpers import FakeRuntime
-
-
-class FakeTextBackend:
-    name = "fake"
-    model_name = "fake-model"
-
-    def __init__(self, response: str):
-        self.response = response
-        self.messages = []
-        self.max_new_tokens = []
-
-    def generate(self, messages, *, max_new_tokens):
-        self.messages.append(messages)
-        self.max_new_tokens.append(max_new_tokens)
-        return TextGenerationResult(self.response, {"text_generation": 1.0}, self.name, self.model_name)
+from tests.service_helpers import FakeRuntime, FakeTextBackend
 
 
 class FailingTextBackend:

@@ -1,5 +1,6 @@
 import subprocess
 import unittest
+from pathlib import Path
 
 from transclip.gnome_shortcut import (
     GNOME_CUSTOM_KEYBINDINGS_KEY,
@@ -7,10 +8,14 @@ from transclip.gnome_shortcut import (
     TRANSCLIP_SHORTCUT_BINDING,
     TRANSCLIP_SHORTCUT_NAME,
     TRANSCLIP_SHORTCUT_PATH,
-    build_toggle_command,
     command_exists,
     install_gnome_shortcut,
     shortcut_readiness,
+)
+from transclip.hotkey_setup import (
+    build_toggle_command,
+    macos_hotkey_setup_message,
+    toggle_log_shell_path,
 )
 from transclip.product import (
     FALLBACK_HOTKEY_LINUX,
@@ -109,6 +114,24 @@ class GnomeShortcutTests(unittest.TestCase):
         self.assertIn("toggle-record --paste", command)
         self.assertIn("toggle-record.log", command)
         self.assertTrue(command_exists(command))
+
+    def test_build_toggle_command_uses_darwin_log_dir(self):
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"))
+        command = build_toggle_command(runtime=runtime)
+
+        self.assertIn("/Users/test/Library/Logs/transclip/toggle-record.log", command)
+        self.assertEqual(
+            toggle_log_shell_path(runtime),
+            "/Users/test/Library/Logs/transclip/toggle-record.log",
+        )
+
+    def test_macos_hotkey_setup_message_uses_hotkey_macos_not_linux_copilot(self):
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"))
+        message = macos_hotkey_setup_message(runtime=runtime)
+
+        self.assertIn("Option+Space", message)
+        self.assertNotIn("XF86TouchpadOff", message)
+        self.assertIn("toggle-record --paste", message)
 
     def test_shortcut_readiness_owns_policy(self):
         status = shortcut_readiness(

@@ -53,7 +53,9 @@ class DefaultPlatformRuntime:
         return cast(subprocess.CompletedProcess[str], subprocess.run(command, **kwargs))
 
     def check_output(self, command: list[str], **kwargs: Any) -> str:
-        return cast(str, subprocess.check_output(command, **kwargs))
+        kwargs.setdefault("text", True)
+        output = subprocess.check_output(command, **kwargs)
+        return output.decode() if isinstance(output, bytes) else output
 
 
 default_platform_runtime = DefaultPlatformRuntime()
@@ -71,7 +73,10 @@ def user_config_dir(app_name: str, runtime: PlatformRuntime | None = None) -> Pa
 
 
 def user_cache_dir(app_name: str, runtime: PlatformRuntime | None = None) -> Path:
-    return get_runtime(runtime).home_dir() / ".cache" / app_name
+    platform_runtime = get_runtime(runtime)
+    if platform_runtime.system() == "Darwin":
+        return platform_runtime.home_dir() / "Library" / "Caches" / app_name
+    return platform_runtime.home_dir() / ".cache" / app_name
 
 
 def user_log_dir(app_name: str, runtime: PlatformRuntime | None = None) -> Path:
@@ -79,3 +84,13 @@ def user_log_dir(app_name: str, runtime: PlatformRuntime | None = None) -> Path:
     if platform_runtime.system() == "Darwin":
         return platform_runtime.home_dir() / "Library" / "Logs" / app_name
     return user_cache_dir(app_name, platform_runtime)
+
+
+def open_path(path: Path, runtime: PlatformRuntime | None = None) -> None:
+    platform_runtime = get_runtime(runtime)
+    opener = "open" if platform_runtime.system() == "Darwin" else "xdg-open"
+    subprocess.Popen(
+        [opener, str(path)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )

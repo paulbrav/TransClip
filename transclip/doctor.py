@@ -1,28 +1,46 @@
 from __future__ import annotations
 
 import json
-import subprocess
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from pathlib import Path
 from urllib.error import URLError
 
 from .audio import recording_debug
 from .client import InferenceClient
-from .daemon import last_toggle_log_event, service_state, toggle_log_path
-from .device import torch_cuda_usable, torch_mps_available
-from .gnome_shortcut import shortcut_readiness
-from .models import model_cache_path, model_cache_root, required_model_cache_paths
+from .daemon import last_toggle_log_event, service_state
+from .daemon_lifecycle import toggle_log_path
+from .doctor_asr import (
+    build_backend_checks,
+    check_asr_runtime,
+    check_model_cache,
+    check_torch_runtime,
+)
+from .doctor_platform import (
+    check_hotkey_readiness,
+    check_microphone_devices,
+    check_tcc_permissions,
+)
+from .doctor_types import Check
 from .paste import clipboard_capability, paste_capability
 from .platform_capabilities import session_info
 from .platform_runtime import PlatformRuntime, get_runtime
 from .settings import Settings, default_config_dir, settings_path
 
-
-@dataclass(slots=True)
-class Check:
-    name: str
-    ok: bool
-    detail: str
+__all__ = [
+    "Check",
+    "build_backend_checks",
+    "check_asr_runtime",
+    "check_audio_debug",
+    "check_config_files",
+    "check_hotkey_readiness",
+    "check_microphone_devices",
+    "check_model_cache",
+    "check_paste_tools",
+    "check_torch_runtime",
+    "checks_as_json",
+    "checks_as_text",
+    "run_checks",
+]
 
 
 def run_checks(
@@ -41,12 +59,11 @@ def run_checks(
         check_session_type(platform_runtime),
         check_clipboard_tools(platform_runtime),
         check_paste_tools(platform_runtime),
+        *build_backend_checks(settings, platform_runtime),
         check_hotkey_readiness(settings, platform_runtime),
-        check_microphone_devices(platform_runtime),
-        check_model_cache(settings),
-        check_torch_runtime(settings),
-        check_asr_runtime(settings),
-        check_last_shortcut_log_event(),
+        check_microphone_devices(settings, platform_runtime),
+        check_tcc_permissions(platform_runtime),
+        check_last_shortcut_log_event(platform_runtime),
     ]
     if include_audio_debug:
         checks.append(check_audio_debug(settings))
@@ -66,9 +83,7 @@ def check_clipboard_tools(runtime: PlatformRuntime | None = None) -> Check:
 
 
 def check_paste_tools(runtime: PlatformRuntime | None = None) -> Check:
-    capability = paste_capability(
-        runtime=runtime,
-    )
+    capability = paste_capability(runtime=runtime)
     return Check("paste_tools", capability.ok, capability.detail)
 
 
@@ -129,101 +144,22 @@ def check_session_type(runtime: PlatformRuntime | None = None) -> Check:
     return Check("session_type", info.session != "unknown", f"session={info.session}; desktop={info.desktop}")
 
 
-def check_last_shortcut_log_event() -> Check:
-    event = last_toggle_log_event()
+def check_last_shortcut_log_event(runtime: PlatformRuntime | None = None) -> Check:
+    event = last_toggle_log_event(toggle_log_path(runtime))
     if event is None:
-        return Check("last_shortcut_log_event", False, f"no toggle log at {toggle_log_path()}")
-    action = event.get("action") or event.get("unparsed", "unknown")
-    return Check("last_shortcut_log_event", "unparsed" not in event, f"last action={action}; log={toggle_log_path()}")
-
-
-def check_hotkey_readiness(
-    settings: Settings | None = None,
-    runtime: PlatformRuntime | None = None,
-) -> Check:
-    readiness = shortcut_readiness(
-        expected_binding=(settings or Settings()).hotkey_linux,
-        runtime=runtime,
-    )
-    return Check("hotkey_readiness", readiness.ok, readiness.detail)
-
-
-def check_microphone_devices(runtime: PlatformRuntime | None = None) -> Check:
-    platform_runtime = get_runtime(runtime)
-    system = platform_runtime.system()
-    if system == "Darwin":
         return Check(
-            "microphone_devices",
-            True,
-            "macOS microphone visibility is checked by the operating system permission prompt",
-        )
-    if system != "Linux":
-        return Check("microphone_devices", True, f"not checked on {system}")
-
-    arecord = platform_runtime.which("arecord")
-    if arecord:
-        result = platform_runtime.run(
-            [arecord, "-l"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            check=False,
-        )
-        output = result.stdout.strip()
-        if result.returncode == 0 and "card " in output and "device " in output:
-            devices = [line.strip() for line in output.splitlines() if line.strip().startswith("card ")]
-            return Check("microphone_devices", True, "found: " + "; ".join(devices))
-        return Check(
-            "microphone_devices",
+            "last_shortcut_log_event",
             False,
-            "arecord did not list capture devices" + (f": {output}" if output else ""),
+            f"no toggle log at {toggle_log_path(runtime)}",
+            required=False,
         )
-
-    if platform_runtime.which("wpctl"):
-        result = platform_runtime.run(
-            ["wpctl", "status"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            check=False,
-        )
-        if result.returncode == 0 and "Sources:" in result.stdout:
-            return Check("microphone_devices", True, "wpctl reports audio sources")
-    return Check("microphone_devices", False, "requires arecord or wpctl to inspect microphone devices")
-
-
-def check_model_cache(settings: Settings) -> Check:
-    cache_root = model_cache_root(settings)
-    required_paths = required_model_cache_paths(settings)
-    missing = [str(path) for path in required_paths if not path.exists()]
-    if not missing:
-        return Check("model_cache", True, f"found model artifacts under {cache_root}")
-    commands = _prefetch_commands_for_missing_cache(settings)
-    remediation = "; run: " + "; ".join(commands) if commands else ""
+    action = event.get("action") or event.get("unparsed", "unknown")
     return Check(
-        "model_cache",
-        False,
-        "missing local model artifacts: " + ", ".join(missing) + remediation,
+        "last_shortcut_log_event",
+        "unparsed" not in event,
+        f"last action={action}; log={toggle_log_path(runtime)}",
+        required=False,
     )
-
-
-def _prefetch_commands_for_missing_cache(settings: Settings) -> list[str]:
-    model_ids = [settings.asr_model]
-    if settings.cleanup_runtime == "transformers":
-        model_ids.append(settings.cleanup_model)
-    if settings.text_model_runtime == "transformers" and (
-        settings.voice_mode_routing_enabled or settings.voice_model_cleanup_always_on
-    ):
-        model_ids.append(settings.text_model)
-
-    commands = []
-    seen = set()
-    for model_id in model_ids:
-        if model_id in seen or model_cache_path(model_id, settings).exists():
-            continue
-        seen.add(model_id)
-        commands.append(f"transclip models prefetch --model {model_id}")
-    return commands
 
 
 def check_audio_debug(settings: Settings) -> Check:
@@ -240,49 +176,6 @@ def check_audio_debug(settings: Settings) -> Check:
     return Check("audio_debug", not measurement["silent"], detail)
 
 
-def check_torch_runtime(settings: Settings) -> Check:
-    try:
-        import torch
-    except ImportError:
-        return Check("torch_runtime", False, "torch is not installed; install transclip[models]")
-    requested = settings.asr_device.lower()
-    cuda_usable = torch_cuda_usable()
-    mps_usable = torch_mps_available()
-    version = getattr(torch, "__version__", "unknown")
-    hip = getattr(getattr(torch, "version", None), "hip", None)
-    if requested in {"cuda", "rocm"} and not cuda_usable:
-        return Check(
-            "torch_runtime",
-            False,
-            f"torch {version} hip={hip}; requested {settings.asr_device}, but GPU tensor smoke failed",
-        )
-    if requested == "mps" and not mps_usable:
-        return Check("torch_runtime", False, f"torch {version}; requested MPS, but MPS is unavailable")
-    if cuda_usable:
-        return Check("torch_runtime", True, f"torch {version} hip={hip}; GPU tensor smoke passed")
-    if mps_usable:
-        return Check("torch_runtime", True, f"torch {version}; MPS available")
-    return Check("torch_runtime", True, f"torch {version} hip={hip}; auto will use CPU")
-
-
-def check_asr_runtime(settings: Settings) -> Check:
-    if settings.asr_backend not in {"granite_nar", "granite-nar", "nar"}:
-        return Check("asr_runtime", True, f"{settings.asr_backend} has no extra runtime checks")
-    try:
-        import os
-
-        import torch
-    except ImportError:
-        return Check("asr_runtime", False, "torch is not installed")
-    if getattr(torch.version, "hip", None):
-        os.environ.setdefault("FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE")
-    try:
-        import flash_attn  # noqa: F401
-    except ImportError as exc:
-        return Check("asr_runtime", False, f"Granite NAR requires flash-attn; import failed: {exc}")
-    return Check("asr_runtime", True, "Granite NAR flash-attn runtime import passed")
-
-
 def checks_as_json(checks: list[Check]) -> str:
     return json.dumps([asdict(check) for check in checks], indent=2)
 
@@ -291,5 +184,6 @@ def checks_as_text(checks: list[Check]) -> str:
     lines = []
     for check in checks:
         status = "ok" if check.ok else "missing"
-        lines.append(f"{status}\t{check.name}\t{check.detail}")
+        prefix = "" if check.required else "info\t"
+        lines.append(f"{prefix}{status}\t{check.name}\t{check.detail}")
     return "\n".join(lines)

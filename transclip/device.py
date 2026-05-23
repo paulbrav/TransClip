@@ -36,7 +36,16 @@ def torch_mps_available() -> bool:
         import torch
     except ImportError:
         return False
-    return bool(hasattr(torch.backends, "mps") and torch.backends.mps.is_available())
+    backends = getattr(torch, "backends", None)
+    if backends is None:
+        return False
+    mps = getattr(backends, "mps", None)
+    if mps is None:
+        return False
+    is_available = getattr(mps, "is_available", None)
+    if not callable(is_available):
+        return False
+    return bool(is_available())
 
 
 @lru_cache(maxsize=1)

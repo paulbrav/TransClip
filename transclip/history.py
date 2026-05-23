@@ -48,7 +48,7 @@ def append_transcript_history(
         "source": source,
         "asr_backend": result.get("asr_backend") or settings.asr_backend,
         "asr_model": result.get("asr_model") or settings.asr_model,
-        "cleanup_backend": result.get("cleanup_backend") or settings.cleanup_runtime,
+        "cleanup_backend": result.get("cleanup_backend") or "rule-based",
         "cleanup_enabled": bool(result.get("cleanup_enabled", settings.cleanup_enabled)),
     }
     if result.get("voice_mode"):

@@ -10,16 +10,23 @@ from urllib.parse import urlparse
 
 from .asr import ASRBackend, build_asr_backend
 from .audio import AudioRecorder
-from .cleanup import CleanupBackend, ModelCleanupProcessor, build_cleanup_backend
+from .cleanup import (
+    CleanupBackend,
+    FaithfulRuleCleanupBackend,
+    ModelCleanupProcessor,
+)
 from .debug_capture import DebugCapture
 from .dictation_session import DictationSession
 from .history import append_transcript_history
 from .keyword_restore import restore_keywords
 from .mode_routing import route_voice_mode
+from .platform_runtime import get_runtime
+from .service_health import build_health_status, cleanup_labels
 from .service_routes import dispatch_get, dispatch_post
 from .settings import Settings, load_settings
-from .shell_command import ShellCommandProcessor, ShellCommandResult
+from .shell_command import ShellCommandProcessor
 from .text_generation import TextGenerationBackend, build_text_generation_backend
+from .transcript_pipeline import TranscriptProcessor, shell_metadata
 
 
 class InferenceEngine:
@@ -32,10 +39,14 @@ class InferenceEngine:
     ):
         self.settings = settings
         self.asr_backend = asr_backend or build_asr_backend(settings)
-        self.cleanup_backend = cleanup_backend or build_cleanup_backend(settings)
+        self.cleanup_backend = cleanup_backend or FaithfulRuleCleanupBackend()
         self.text_backend = text_backend or build_text_generation_backend(settings)
-        self.model_cleanup = ModelCleanupProcessor(self.text_backend)
-        self.shell_command = ShellCommandProcessor(settings, self.text_backend)
+        self.transcript_processor = TranscriptProcessor(
+            settings,
+            rule_cleanup=self.cleanup_backend,
+            model_cleanup=ModelCleanupProcessor(self.text_backend),
+            shell_command=ShellCommandProcessor(settings, self.text_backend),
+        )
         self.debug_capture = DebugCapture(settings)
         self.dictation_session = DictationSession(
             settings,
@@ -45,27 +56,21 @@ class InferenceEngine:
 
     def health(self) -> dict[str, Any]:
         status = self.dictation_session.status()
-        return {
-            "status": status,
-            "asr_backend": self.asr_backend.name,
-            "asr_model": self.asr_backend.model,
-            "cleanup_backend": self.cleanup_backend.name,
-            "cleanup_model": self.settings.cleanup_model,
-            "cleanup_enabled": self.settings.cleanup_enabled,
-            "voice_mode_routing_enabled": self.settings.voice_mode_routing_enabled,
-            "voice_model_cleanup_always_on": self.settings.voice_model_cleanup_always_on,
-            "voice_mode_shell_enabled": self.settings.voice_mode_shell_enabled,
-            "text_model_runtime": self.settings.text_model_runtime,
-            "text_model": self.settings.text_model,
-            "language": self.settings.language,
-            "max_recording_seconds": self.settings.max_recording_seconds,
-            "min_recording_ms": self.settings.min_recording_ms,
-            "toggle_cooldown_ms": self.settings.toggle_cooldown_ms,
-            "hotkey": self.settings.active_hotkey,
-            "paste_shortcut": self.settings.paste_shortcut,
-            "clipboard_restore_delay_ms": self.settings.clipboard_restore_delay_ms,
-            "restore_clipboard_after_paste": self.settings.restore_clipboard_after_paste,
-        }
+        cleanup_backend, dictation_cleanup = cleanup_labels(
+            self.settings,
+            rule_name=self.cleanup_backend.name,
+            text_backend=self.text_backend.name,
+            text_model=self.text_backend.model_name,
+        )
+        return build_health_status(
+            status=status,
+            settings=self.settings,
+            asr_backend_name=self.asr_backend.name,
+            asr_model=self.asr_backend.model,
+            cleanup_backend=cleanup_backend,
+            dictation_cleanup=dictation_cleanup,
+            runtime=get_runtime(),
+        ).to_dict()
 
     def start_recording(self) -> dict[str, Any]:
         return self.dictation_session.start_recording()
@@ -83,7 +88,14 @@ class InferenceEngine:
             source=source,
         )
         if record_history:
-            _append_transcript_history(result, self.settings, source=source, duration_ms=result.get("duration_ms"))
+            history_error = _append_transcript_history(
+                result,
+                self.settings,
+                source=source,
+                duration_ms=result.get("duration_ms"),
+            )
+            if history_error:
+                result["history_error"] = history_error
         return result
 
     def toggle_recording(
@@ -93,16 +105,18 @@ class InferenceEngine:
     ) -> dict[str, Any]:
         result = self.dictation_session.toggle_recording(cleanup=cleanup)
         if record_history:
-            _append_transcript_history(
+            history_error = _append_transcript_history(
                 result,
                 self.settings,
                 source="/record/toggle",
                 duration_ms=result.get("duration_ms"),
             )
+            if history_error:
+                result["history_error"] = history_error
         return result
 
     def cleanup_text(self, text: str) -> dict[str, Any]:
-        result = self.cleanup_backend.cleanup(text)
+        result = self.transcript_processor.cleanup_dictation(text)
         return asdict(result)
 
     def transcribe(
@@ -115,72 +129,48 @@ class InferenceEngine:
     ) -> dict[str, Any]:
         start = perf_counter()
         asr_result = self.asr_backend.transcribe(wav_path, keywords=keywords)
-        should_cleanup = self.settings.cleanup_enabled if cleanup is None else cleanup
         raw_asr = restore_keywords(asr_result.text, keywords or [])
         route = route_voice_mode(
             raw_asr,
             routing_enabled=self.settings.voice_mode_routing_enabled,
             shell_enabled=self.settings.voice_mode_shell_enabled,
         )
-        cleaned = route.payload if route.literal else raw_asr
-        cleanup_result = None
-        shell_result = None
-        timings = dict(asr_result.timings_ms)
-        if route.mode == "cleanup":
-            cleanup_result = self.model_cleanup.cleanup(route.payload)
-            cleaned = cleanup_result.text
-            timings.update(cleanup_result.timings_ms)
-        elif route.mode == "shell":
-            shell_result = self.shell_command.generate(route.payload)
-            cleaned = shell_result.text
-            timings.update(shell_result.timings_ms)
-        elif should_cleanup and not route.literal:
-            if self.settings.voice_model_cleanup_always_on:
-                cleanup_result = self.model_cleanup.cleanup(raw_asr)
-            else:
-                cleanup_result = self.cleanup_backend.cleanup(raw_asr)
-            cleaned = cleanup_result.text
-            timings.update(cleanup_result.timings_ms)
-        timings["end_to_end"] = round((perf_counter() - start) * 1000, 3)
-        shell_metadata = _shell_metadata(shell_result)
+        outcome = self.transcript_processor.process(
+            raw_asr,
+            route,
+            cleanup=cleanup,
+            asr_backend=asr_result.backend,
+            asr_model=asr_result.model,
+            timings_ms=dict(asr_result.timings_ms),
+        )
+        end_to_end_ms = round((perf_counter() - start) * 1000, 3)
+        timings_ms = {**outcome.timings_ms, "end_to_end": end_to_end_ms}
         capture_dir = self.debug_capture.write(
             wav_path=wav_path,
             raw_asr=asr_result.text,
-            cleaned=cleaned,
-            timings=timings,
+            cleaned=outcome.text,
+            timings=timings_ms,
             model_versions={
                 "asr_backend": asr_result.backend,
                 "asr_model": asr_result.model,
-                "cleanup_backend": self.cleanup_backend.name,
-                "cleanup_model": self.settings.cleanup_model,
+                "cleanup_backend": outcome.cleanup_backend,
                 "text_model_runtime": self.settings.text_model_runtime,
                 "text_model": self.settings.text_model,
             },
             metadata={
-                "voice_mode": route.mode,
-                "voice_trigger": route.trigger,
-                "voice_literal": route.literal,
-                "shell": shell_metadata,
+                "voice_mode": outcome.voice_mode,
+                "voice_trigger": outcome.voice_trigger,
+                "voice_literal": outcome.voice_literal,
+                "shell": shell_metadata(outcome.shell),
             },
         )
-        result = {
-            "text": cleaned,
-            "raw_asr": raw_asr,
-            "cleanup": asdict(cleanup_result) if cleanup_result else None,
-            "voice_mode": route.mode,
-            "voice_trigger": route.trigger,
-            "voice_literal": route.literal,
-            "shell": shell_metadata,
-            "submit": False if route.mode == "shell" else None,
-            "timings_ms": timings,
-            "debug_capture_dir": str(capture_dir) if capture_dir else None,
-            "asr_backend": asr_result.backend,
-            "asr_model": asr_result.model,
-            "cleanup_backend": self.cleanup_backend.name,
-            "cleanup_enabled": should_cleanup,
-        }
+        result = outcome.to_dict()
+        result["timings_ms"] = timings_ms
+        result["debug_capture_dir"] = str(capture_dir) if capture_dir else None
         if record_history:
-            _append_transcript_history(result, self.settings, source=source)
+            history_error = _append_transcript_history(result, self.settings, source=source)
+            if history_error:
+                result["history_error"] = history_error
         return result
 
     def _transcribe_for_session(
@@ -268,21 +258,9 @@ def _append_transcript_history(
     settings: Settings,
     source: str,
     duration_ms: float | None = None,
-) -> None:
+) -> str | None:
     try:
         append_transcript_history(result, settings, source=source, duration_ms=duration_ms)
     except Exception as exc:
-        result["history_error"] = str(exc)
-
-
-def _shell_metadata(shell_result: ShellCommandResult | None) -> dict[str, Any] | None:
-    if shell_result is None:
-        return None
-    return {
-        "command": shell_result.command,
-        "valid": shell_result.valid,
-        "diagnostics": shell_result.diagnostics,
-        "backend": shell_result.backend,
-        "model": shell_result.model,
-        "validation": shell_result.validation,
-    }
+        return str(exc)
+    return None

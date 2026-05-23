@@ -9,6 +9,7 @@ from transclip.asr import (
     FileTranscriptASRBackend,
     GraniteSpeechNarTransformersBackend,
     GraniteSpeechTransformersBackend,
+    MlxAudioASRBackend,
     _configure_rocm_nar_attention_env,
     _granite_nar_dtype,
     build_asr_backend,
@@ -16,8 +17,13 @@ from transclip.asr import (
 )
 from transclip.settings import Settings
 
+from tests.service_helpers import FakeRuntime
+
 
 class ASRTests(unittest.TestCase):
+    @staticmethod
+    def _linux_runtime() -> FakeRuntime:
+        return FakeRuntime(system="Linux", home=Path("/home/user"))
     def test_granite_prompt_requests_punctuation(self):
         self.assertEqual(
             granite_user_prompt(),
@@ -31,7 +37,8 @@ class ASRTests(unittest.TestCase):
         )
 
     def test_backend_selection(self):
-        backend = build_asr_backend(Settings(model_cache_dir="/models"))
+        runtime = self._linux_runtime()
+        backend = build_asr_backend(Settings(model_cache_dir="/models"), runtime=runtime)
         self.assertIsInstance(backend, GraniteSpeechNarTransformersBackend)
         self.assertTrue(backend.local_files_only)
         self.assertEqual(backend.cache_dir, "/models")
@@ -39,11 +46,12 @@ class ASRTests(unittest.TestCase):
             Settings(
                 asr_backend="granite",
                 asr_model="ibm-granite/granite-speech-4.1-2b",
-            )
+            ),
+            runtime=runtime,
         )
         self.assertIsInstance(ar_backend, GraniteSpeechTransformersBackend)
         self.assertIsInstance(
-            build_asr_backend(Settings(asr_backend="file:/tmp/transcript.txt")),
+            build_asr_backend(Settings(asr_backend="file:/tmp/transcript.txt"), runtime=runtime),
             FileTranscriptASRBackend,
         )
         nar_backend = build_asr_backend(
@@ -51,11 +59,24 @@ class ASRTests(unittest.TestCase):
                 asr_backend="granite_nar",
                 asr_model="ibm-granite/granite-speech-4.1-2b-nar",
                 model_cache_dir="/models",
-            )
+            ),
+            runtime=runtime,
         )
         self.assertIsInstance(nar_backend, GraniteSpeechNarTransformersBackend)
         self.assertTrue(nar_backend.local_files_only)
         self.assertEqual(nar_backend.cache_dir, "/models")
+
+    def test_darwin_arm_selects_mlx_backend(self):
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"), check_output_text="arm64")
+        backend = build_asr_backend(
+            Settings(
+                asr_backend="mlx_audio_whisper",
+                asr_model="mlx-community/whisper-large-v3-turbo-asr-fp16",
+                models_local_files_only=False,
+            ),
+            runtime=runtime,
+        )
+        self.assertIsInstance(backend, MlxAudioASRBackend)
 
     def test_non_granite_model_is_rejected(self):
         with self.assertRaises(ValueError):

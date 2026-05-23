@@ -33,13 +33,16 @@ class AudioRecorder:
                 return
             self._frames.append(indata.copy())
 
-        self._stream = sd.InputStream(
-            samplerate=self.settings.sample_rate,
-            channels=1,
-            dtype="int16",
-            callback=callback,
-        )
-        self._stream.start()
+        try:
+            self._stream = sd.InputStream(
+                samplerate=self.settings.sample_rate,
+                channels=1,
+                dtype="int16",
+                callback=callback,
+            )
+            self._stream.start()
+        except Exception as exc:
+            raise _recording_start_error(exc) from exc
 
     def stop_to_wav(self, output_path: Path) -> Path:
         audio = self.stop_samples()
@@ -54,6 +57,20 @@ class AudioRecorder:
         audio = self._np.concatenate(self._frames) if self._frames else self._np.zeros((0, 1), dtype="int16")
         self._stream = None
         return audio
+
+
+def _recording_start_error(exc: Exception) -> RuntimeError:
+    detail = str(exc)
+    lowered = detail.lower()
+    if "permission" in lowered or "denied" in lowered or "not authorized" in lowered:
+        return RuntimeError(
+            "Microphone permission denied. On macOS, grant Microphone access in "
+            "System Settings > Privacy & Security > Microphone for Terminal, your IDE, "
+            "or the LaunchAgent Python process."
+        )
+    if "no input" in lowered or "device" in lowered:
+        return RuntimeError(f"No usable microphone input device: {detail}")
+    return RuntimeError(f"Could not start microphone capture: {detail}")
 
 
 def recording_debug(
@@ -96,7 +113,7 @@ def recording_debug(
 def sounddevice_summary() -> str:
     try:
         import sounddevice as sd
-    except ImportError:
+    except (ImportError, OSError):
         return "sounddevice unavailable"
     try:
         default = getattr(sd.default, "device", None)

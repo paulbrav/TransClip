@@ -1,18 +1,16 @@
 import unittest
 
 from transclip.cleanup import (
-    FaithfulCleanupPolicy,
+    MODEL_CLEANUP_POLICY,
+    CleanupPlan,
     FaithfulRuleCleanupBackend,
-    GemmaTransformersCleanupBackend,
-    ModelCleanupPolicy,
     ModelCleanupProcessor,
-    build_cleanup_backend,
+    apply_dictation_cleanup,
     conservative_cleanup,
-    faithful_cleanup_messages,
-    model_cleanup_messages,
 )
 from transclip.settings import Settings
-from transclip.text_generation import TextGenerationResult
+
+from tests.service_helpers import FakeTextBackend
 
 
 class CleanupTests(unittest.TestCase):
@@ -28,39 +26,42 @@ class CleanupTests(unittest.TestCase):
         self.assertIn("cleanup", result.timings_ms)
         self.assertEqual(result.backend, "rule-based")
 
-    def test_cleanup_backend_selection_is_explicit(self):
-        backend = build_cleanup_backend(Settings(model_cache_dir="/models"))
-        self.assertIsInstance(backend, FaithfulRuleCleanupBackend)
-        gemma = build_cleanup_backend(Settings(cleanup_runtime="transformers", model_cache_dir="/models"))
-        self.assertIsInstance(gemma, GemmaTransformersCleanupBackend)
-        self.assertTrue(gemma.local_files_only)
-        self.assertEqual(gemma.cache_dir, "/models")
-        self.assertIsInstance(
-            build_cleanup_backend(Settings(cleanup_runtime="test_rule")),
-            FaithfulRuleCleanupBackend,
+    def test_cleanup_plan_defaults_to_rule_dictation(self):
+        plan = CleanupPlan.from_settings(Settings())
+
+        self.assertEqual(plan.dictation_mode, "rule")
+        self.assertTrue(plan.requires_text_model)
+        self.assertEqual(
+            plan.backend_label(rule_name="rule-based", text_backend="transformers", text_model="Qwen/Qwen3.5-4B"),
+            "rule-based",
         )
-        with self.assertRaises(ValueError):
-            build_cleanup_backend(Settings(cleanup_runtime="unknown"))
-        with self.assertRaisesRegex(ValueError, "Unsupported cleanup runtime: llama_cpp"):
-            build_cleanup_backend(Settings(cleanup_runtime="llama_cpp"))
 
-    def test_faithful_cleanup_messages_are_conservative(self):
-        messages = faithful_cleanup_messages("hello pytorch")
-        self.assertEqual(messages[0]["role"], "system")
-        self.assertIn("Do not add facts", messages[0]["content"])
-        self.assertEqual(messages[1]["content"], "Transcript:\nhello pytorch")
+    def test_cleanup_plan_uses_model_dictation_when_always_on(self):
+        plan = CleanupPlan.from_settings(Settings(voice_model_cleanup_always_on=True))
 
-    def test_faithful_cleanup_policy_is_provider_independent(self):
-        policy = FaithfulCleanupPolicy()
+        self.assertEqual(plan.dictation_mode, "model")
+        self.assertTrue(plan.requires_text_model)
+        self.assertEqual(
+            plan.backend_label(rule_name="rule-based", text_backend="transformers", text_model="Qwen/Qwen3.5-4B"),
+            "transformers:Qwen/Qwen3.5-4B",
+        )
 
-        self.assertEqual(policy.token_budget("one two"), 64)
-        self.assertEqual(policy.token_budget("word " * 300), 512)
-        self.assertEqual(policy.validate_output(" cleaned ", "provider"), "cleaned")
-        with self.assertRaisesRegex(RuntimeError, "provider cleanup produced an empty response"):
-            policy.validate_output("   ", "provider")
+    def test_cleanup_plan_skips_text_model_when_routing_disabled_and_always_on_off(self):
+        plan = CleanupPlan.from_settings(
+            Settings(voice_mode_routing_enabled=False, voice_model_cleanup_always_on=False)
+        )
+
+        self.assertEqual(plan.dictation_mode, "rule")
+        self.assertFalse(plan.requires_text_model)
+
+    def test_cleanup_plan_requires_transformers_text_runtime(self):
+        plan = CleanupPlan.from_settings(Settings(voice_model_cleanup_always_on=True, text_model_runtime="disabled"))
+
+        self.assertEqual(plan.dictation_mode, "rule")
+        self.assertFalse(plan.requires_text_model)
 
     def test_model_cleanup_prompt_contract_and_output_parsing(self):
-        messages = model_cleanup_messages("um hello --flag /tmp/file")
+        messages = MODEL_CLEANUP_POLICY.messages("um hello --flag /tmp/file")
 
         self.assertIn("Preserve meaning", messages[0]["content"])
         self.assertIn("Remove filler only", messages[0]["content"])
@@ -73,25 +74,40 @@ class CleanupTests(unittest.TestCase):
         result = ModelCleanupProcessor(backend).cleanup("raw text")
 
         self.assertEqual(result.text, "Cleaned text")
-        self.assertEqual(result.backend, "fake:qwen")
+        self.assertEqual(result.backend, "fake-text:fake-model")
         self.assertEqual(backend.messages[0][1]["content"], "Transcript:\nraw text")
 
     def test_model_cleanup_policy_rejects_empty_output(self):
         with self.assertRaisesRegex(RuntimeError, "fake cleanup produced an empty response"):
-            ModelCleanupPolicy().validate_output(" ", "fake")
+            MODEL_CLEANUP_POLICY.validate_output(" ", "fake")
 
+    def test_apply_dictation_cleanup_uses_model_path_when_configured(self):
+        text_backend = FakeTextBackend("Model cleaned")
+        rule = FaithfulRuleCleanupBackend()
+        model = ModelCleanupProcessor(text_backend)
+        settings = Settings(voice_model_cleanup_always_on=True)
+        plan = CleanupPlan.from_settings(settings)
 
-class FakeTextBackend:
-    name = "fake"
-    model_name = "qwen"
+        result = apply_dictation_cleanup("hello ,world", plan, rule_cleanup=rule, model_cleanup=model)
 
-    def __init__(self, response: str):
-        self.response = response
-        self.messages = []
+        self.assertEqual(result.text, "Model cleaned")
+        self.assertEqual(result.backend, "fake-text:fake-model")
 
-    def generate(self, messages, *, max_new_tokens):
-        self.messages.append(messages)
-        return TextGenerationResult(self.response, {"text_generation": 1.0}, self.name, self.model_name)
+    def test_apply_dictation_cleanup_uses_rule_path_by_default(self):
+        text_backend = FakeTextBackend("should not run")
+        rule = FaithfulRuleCleanupBackend()
+        model = ModelCleanupProcessor(text_backend)
+
+        result = apply_dictation_cleanup(
+            "hello ,world",
+            CleanupPlan.from_settings(Settings()),
+            rule_cleanup=rule,
+            model_cleanup=model,
+        )
+
+        self.assertEqual(result.text, "Hello, world.")
+        self.assertEqual(result.backend, "rule-based")
+        self.assertEqual(text_backend.messages, [])
 
 
 if __name__ == "__main__":

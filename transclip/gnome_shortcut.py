@@ -4,18 +4,16 @@ import ast
 import os
 import shlex
 import subprocess
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .hotkey_setup import build_toggle_command
 from .platform_capabilities import session_info
 from .platform_runtime import PlatformRuntime, get_runtime
 from .product import (
-    CACHE_DIR_NAME,
     CLI_COMMAND,
     FALLBACK_HOTKEY_LINUX,
-    IMPORT_PACKAGE,
     LEGACY_SHORTCUT_NAME,
     LEGACY_SHORTCUT_PATH,
     SHORTCUT_ALT_NAME,
@@ -58,24 +56,6 @@ class ShortcutReadiness:
     ok: bool
     detail: str
     status: GnomeShortcutStatus | None = None
-
-
-def build_toggle_command(settings_path: Path | None = None) -> str:
-    command = build_toggle_invocation(settings_path)
-    script = (
-        f'mkdir -p "$HOME/.cache/{CACHE_DIR_NAME}"; '
-        + shlex.join(command)
-        + f' >> "$HOME/.cache/{CACHE_DIR_NAME}/toggle-record.log" 2>&1'
-    )
-    return shlex.join(["/bin/sh", "-lc", script])
-
-
-def build_toggle_invocation(settings_path: Path | None = None) -> list[str]:
-    command = [sys.executable, "-m", f"{IMPORT_PACKAGE}.cli"]
-    if settings_path:
-        command.extend(["--settings", str(settings_path.expanduser().resolve())])
-    command.extend(["toggle-record", "--paste"])
-    return command
 
 
 def install_gnome_shortcut(

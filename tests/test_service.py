@@ -47,11 +47,61 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(engine.asr_backend.keywords, ["PyTorch", "ROCm"])
             self.assertIn("end_to_end", result["timings_ms"])
 
+    def test_cleanup_text_uses_model_cleanup_when_always_on(self):
+        text_backend = FakeTextBackend(["Model cleaned via /cleanup"])
+        engine = InferenceEngine(
+            Settings(voice_model_cleanup_always_on=True),
+            asr_backend=FakeASR(),
+            cleanup_backend=FaithfulRuleCleanupBackend(),
+            text_backend=text_backend,
+        )
+
+        result = engine.cleanup_text("hello ,world")
+
+        self.assertEqual(result["text"], "Model cleaned via /cleanup")
+        self.assertEqual(result["backend"], "fake-text:fake-model")
+
+    def test_health_reports_dictation_cleanup_mode(self):
+        rule_engine = InferenceEngine(
+            Settings(),
+            asr_backend=FakeASR(),
+            cleanup_backend=FaithfulRuleCleanupBackend(),
+        )
+        model_engine = InferenceEngine(
+            Settings(voice_model_cleanup_always_on=True),
+            asr_backend=FakeASR(),
+            cleanup_backend=FaithfulRuleCleanupBackend(),
+            text_backend=FakeTextBackend(["unused"]),
+        )
+
+        self.assertEqual(rule_engine.health()["dictation_cleanup"], "rule")
+        self.assertEqual(rule_engine.health()["cleanup_backend"], "rule-based")
+        self.assertEqual(model_engine.health()["dictation_cleanup"], "model")
+        self.assertEqual(model_engine.health()["cleanup_backend"], "fake-text:fake-model")
+
+    def test_health_and_transcribe_agree_on_cleanup_backend(self):
+        text_backend = FakeTextBackend(["Model cleaned"])
+        engine = InferenceEngine(
+            Settings(voice_model_cleanup_always_on=True),
+            asr_backend=FakeASR("hello ,world"),
+            cleanup_backend=FaithfulRuleCleanupBackend(),
+            text_backend=text_backend,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            wav = Path(tmp) / "audio.wav"
+            wav.write_bytes(b"not really wav")
+            transcribed = engine.transcribe(wav)
+
+        self.assertEqual(
+            engine.health()["cleanup_backend"],
+            transcribed["cleanup_backend"],
+        )
+
     def test_http_endpoints(self):
         with tempfile.TemporaryDirectory() as tmp:
             wav = Path(tmp) / "audio.wav"
             wav.write_bytes(b"not really wav")
-            settings = Settings(host="127.0.0.1", port=0, cleanup_runtime="test_rule")
+            settings = Settings(host="127.0.0.1", port=0)
             engine = InferenceEngine(
                 settings,
                 asr_backend=FakeASR(),
@@ -87,7 +137,7 @@ class ServiceTests(unittest.TestCase):
             wav.write_bytes(b"not really wav")
             asr = FakeASR()
             engine = InferenceEngine(
-                Settings(host="127.0.0.1", port=0, cleanup_runtime="test_rule"),
+                Settings(host="127.0.0.1", port=0),
                 asr_backend=asr,
                 cleanup_backend=FaithfulRuleCleanupBackend(),
             )
@@ -109,7 +159,7 @@ class ServiceTests(unittest.TestCase):
             wav = Path(tmp) / "audio.wav"
             wav.write_bytes(b"not really wav")
             engine = InferenceEngine(
-                Settings(cleanup_runtime="test_rule"),
+                Settings(),
                 asr_backend=FakeASR(),
                 cleanup_backend=FaithfulRuleCleanupBackend(),
             )
@@ -120,7 +170,7 @@ class ServiceTests(unittest.TestCase):
             self.assertIn("history full", result["history_error"])
 
     def test_http_record_start_and_stop_transcribes_service_audio(self):
-        settings = Settings(host="127.0.0.1", port=0, cleanup_runtime="test_rule")
+        settings = Settings(host="127.0.0.1", port=0)
         asr = FakeASR()
         engine = InferenceEngine(
             settings,
@@ -144,7 +194,7 @@ class ServiceTests(unittest.TestCase):
             stop_server(server, thread)
 
     def test_http_record_stop_can_discard_short_recording(self):
-        settings = Settings(host="127.0.0.1", port=0, cleanup_runtime="test_rule")
+        settings = Settings(host="127.0.0.1", port=0)
         engine = InferenceEngine(
             settings,
             asr_backend=FakeASR(),
@@ -166,7 +216,6 @@ class ServiceTests(unittest.TestCase):
         settings = Settings(
             host="127.0.0.1",
             port=0,
-            cleanup_runtime="test_rule",
             min_recording_ms=0,
             toggle_cooldown_ms=0,
         )
@@ -195,7 +244,6 @@ class ServiceTests(unittest.TestCase):
         settings = Settings(
             host="127.0.0.1",
             port=0,
-            cleanup_runtime="test_rule",
             min_recording_ms=10_000,
             toggle_cooldown_ms=0,
         )
@@ -223,7 +271,6 @@ class ServiceTests(unittest.TestCase):
             settings = Settings(
                 host="127.0.0.1",
                 port=0,
-                cleanup_runtime="test_rule",
                 debug_capture=True,
                 debug_capture_dir=str(Path(tmp) / "captures"),
             )
@@ -248,7 +295,6 @@ class ServiceTests(unittest.TestCase):
         settings = Settings(
             host="127.0.0.1",
             port=0,
-            cleanup_runtime="test_rule",
             min_recording_ms=0,
             toggle_cooldown_ms=500,
         )
@@ -273,7 +319,7 @@ class ServiceTests(unittest.TestCase):
             wav.write_bytes(b"not really wav")
             text_backend = FakeTextBackend(["model cleanup"])
             engine = InferenceEngine(
-                Settings(cleanup_runtime="test_rule", voice_model_cleanup_always_on=False),
+                Settings(voice_model_cleanup_always_on=False),
                 asr_backend=FakeASR("hello ,world"),
                 cleanup_backend=FaithfulRuleCleanupBackend(),
                 text_backend=text_backend,
@@ -297,7 +343,7 @@ class ServiceTests(unittest.TestCase):
             wav = Path(tmp) / "audio.wav"
             wav.write_bytes(b"not really wav")
             engine = InferenceEngine(
-                Settings(cleanup_runtime="test_rule", voice_model_cleanup_always_on=False),
+                Settings(voice_model_cleanup_always_on=False),
                 asr_backend=FakeASR("hello ,world"),
                 cleanup_backend=FaithfulRuleCleanupBackend(),
                 text_backend=ExplodingTextBackend(),
@@ -309,33 +355,13 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(result["voice_mode"], "dictation")
             self.assertIsNone(result["shell"])
 
-    def test_explicit_cleanup_trigger_uses_model_cleanup_not_heuristic(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            wav = Path(tmp) / "audio.wav"
-            wav.write_bytes(b"not really wav")
-            text_backend = FakeTextBackend(["Model-cleaned text"])
-            engine = InferenceEngine(
-                Settings(cleanup_runtime="test_rule"),
-                asr_backend=FakeASR("clean up hello ,world"),
-                cleanup_backend=FaithfulRuleCleanupBackend(),
-                text_backend=text_backend,
-            )
-
-            result = engine.transcribe(wav)
-
-            self.assertEqual(result["text"], "Model-cleaned text")
-            self.assertEqual(result["voice_mode"], "cleanup")
-            self.assertEqual(result["voice_trigger"], "clean up")
-            self.assertNotIn("clean up", text_backend.messages[0][1]["content"])
-            self.assertIn("hello ,world", text_backend.messages[0][1]["content"])
-
     def test_always_on_model_cleanup_applies_to_normal_dictation(self):
         with tempfile.TemporaryDirectory() as tmp:
             wav = Path(tmp) / "audio.wav"
             wav.write_bytes(b"not really wav")
             text_backend = FakeTextBackend(["Model cleaned normal dictation"])
             engine = InferenceEngine(
-                Settings(cleanup_runtime="test_rule", voice_model_cleanup_always_on=True),
+                Settings(voice_model_cleanup_always_on=True),
                 asr_backend=FakeASR("hello ,world"),
                 cleanup_backend=FaithfulRuleCleanupBackend(),
                 text_backend=text_backend,
@@ -344,45 +370,7 @@ class ServiceTests(unittest.TestCase):
             result = engine.transcribe(wav)
 
             self.assertEqual(result["text"], "Model cleaned normal dictation")
-            self.assertEqual(result["voice_mode"], "dictation")
-            self.assertEqual(len(text_backend.messages), 1)
-
-    def test_literal_escape_pastes_trigger_text_without_cleanup(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            wav = Path(tmp) / "audio.wav"
-            wav.write_bytes(b"not really wav")
-            engine = InferenceEngine(
-                Settings(cleanup_runtime="test_rule"),
-                asr_backend=FakeASR("literal shell command list files"),
-                cleanup_backend=FaithfulRuleCleanupBackend(),
-                text_backend=FakeTextBackend(["unused"]),
-            )
-
-            result = engine.transcribe(wav)
-
-            self.assertEqual(result["text"], "shell command list files")
-            self.assertTrue(result["voice_literal"])
-            self.assertIsNone(result["cleanup"])
-
-    def test_shell_trigger_returns_command_text_without_submit(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            wav = Path(tmp) / "audio.wav"
-            wav.write_bytes(b"not really wav")
-            engine = InferenceEngine(
-                Settings(cleanup_runtime="test_rule", shellcheck_enabled=False),
-                asr_backend=FakeASR("shell command list files"),
-                cleanup_backend=FaithfulRuleCleanupBackend(),
-                text_backend=FakeTextBackend(['{"command": "ls -la\\n"}']),
-            )
-
-            result = engine.transcribe(wav)
-
-            self.assertEqual(result["text"], "ls -la")
-            self.assertFalse(result["text"].endswith("\n"))
-            self.assertEqual(result["voice_mode"], "shell")
-            self.assertIs(result["submit"], False)
-            self.assertEqual(result["shell"]["command"], "ls -la")
-            self.assertTrue(result["shell"]["valid"])
+            self.assertEqual(result["cleanup_backend"], "fake-text:fake-model")
 
     def test_shell_trigger_returns_diagnostic_when_text_model_fails(self):
         class FailingTextBackend:
@@ -396,7 +384,7 @@ class ServiceTests(unittest.TestCase):
             wav = Path(tmp) / "audio.wav"
             wav.write_bytes(b"not really wav")
             engine = InferenceEngine(
-                Settings(cleanup_runtime="test_rule", shellcheck_enabled=False),
+                Settings(shellcheck_enabled=False),
                 asr_backend=FakeASR("shell command list files"),
                 cleanup_backend=FaithfulRuleCleanupBackend(),
                 text_backend=FailingTextBackend(),
@@ -417,7 +405,6 @@ class ServiceTests(unittest.TestCase):
             wav.write_bytes(b"not really wav")
             engine = InferenceEngine(
                 Settings(
-                    cleanup_runtime="test_rule",
                     shellcheck_enabled=False,
                     debug_capture=True,
                     debug_capture_dir=str(Path(tmp) / "captures"),

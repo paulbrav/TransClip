@@ -1,7 +1,6 @@
 import unittest
 from unittest.mock import patch
 
-from tests.service_helpers import FakeRuntime
 from transclip.paste import (
     SystemPasteInjector,
     clipboard_capability,
@@ -11,6 +10,8 @@ from transclip.paste import (
 )
 from transclip.platform_capabilities import session_info
 from transclip.settings import Settings
+
+from tests.service_helpers import FakeRuntime
 
 
 class FakeClipboard:

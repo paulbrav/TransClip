@@ -33,19 +33,17 @@ class DoctorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             settings = Settings(
                 asr_model="local/asr",
-                cleanup_model="local/cleanup",
-                cleanup_runtime="transformers",
+                voice_model_cleanup_always_on=True,
                 model_cache_dir=tmp,
             )
             self.assertFalse(check_model_cache(settings).ok)
             (Path(tmp) / "models--local--asr").mkdir()
-            (Path(tmp) / "models--local--cleanup").mkdir()
             (Path(tmp) / "models--Qwen--Qwen3.5-4B").mkdir()
             self.assertTrue(check_model_cache(settings).ok)
 
-    def test_model_cache_skips_rule_cleanup_model_but_checks_text_model(self):
+    def test_model_cache_checks_text_model_when_required(self):
         with tempfile.TemporaryDirectory() as tmp:
-            settings = Settings(asr_model="local/asr", cleanup_runtime="rule", model_cache_dir=tmp)
+            settings = Settings(asr_model="local/asr", model_cache_dir=tmp)
             (Path(tmp) / "models--local--asr").mkdir()
             check = check_model_cache(settings)
             self.assertFalse(check.ok)
@@ -55,8 +53,14 @@ class DoctorTests(unittest.TestCase):
             self.assertTrue(check_model_cache(settings).ok)
 
     def test_nar_asr_runtime_checks_flash_attn(self):
-        torch = SimpleNamespace(version=SimpleNamespace(hip=None))
-        with patch.dict("sys.modules", {"flash_attn": object(), "torch": torch}):
+        torch = SimpleNamespace(
+            version=SimpleNamespace(hip=None),
+            backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: False)),
+        )
+        with (
+            patch.dict("sys.modules", {"flash_attn": object(), "torch": torch}),
+            patch("transclip.doctor_asr.resolve_torch_device", return_value="cuda"),
+        ):
             self.assertTrue(check_asr_runtime(Settings()).ok)
 
     def test_formatters(self):
@@ -196,7 +200,7 @@ card 1: Generic_1 [HD-Audio Generic], device 0: ALC245 Analog [ALC245 Analog]
             available={"arecord": "/usr/bin/arecord"},
             run_func=lambda _command, **_kwargs: completed,
         )
-        check = check_microphone_devices(runtime)
+        check = check_microphone_devices(runtime=runtime)
 
         self.assertTrue(check.ok)
         self.assertIn("HD-Audio Generic", check.detail)
@@ -208,10 +212,28 @@ card 1: Generic_1 [HD-Audio Generic], device 0: ALC245 Analog [ALC245 Analog]
             available={"arecord": "/usr/bin/arecord"},
             run_func=lambda _command, **_kwargs: completed,
         )
-        check = check_microphone_devices(runtime)
+        check = check_microphone_devices(runtime=runtime)
 
         self.assertFalse(check.ok)
         self.assertIn("arecord did not list", check.detail)
+
+    def test_darwin_hotkey_check_mentions_keyboard_shortcut_and_active_binding(self):
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"))
+        check = check_hotkey_readiness(Settings(), runtime)
+
+        self.assertTrue(check.ok)
+        self.assertIn("Keyboard Shortcut", check.detail)
+        self.assertIn("Option+Space", check.detail)
+        self.assertNotIn("XF86TouchpadOff", check.detail)
+        self.assertIn("toggle-record --paste", check.detail)
+
+    def test_darwin_microphone_check_does_not_require_portaudio(self):
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"))
+        with patch.dict("sys.modules", {"sounddevice": None}):
+            check = check_microphone_devices(runtime=runtime)
+
+        self.assertFalse(check.ok)
+        self.assertIn("sounddevice is not installed", check.detail)
 
 
 if __name__ == "__main__":

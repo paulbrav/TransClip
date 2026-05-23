@@ -1,9 +1,10 @@
 import unittest
 from pathlib import Path
 
-from tests.service_helpers import FakeRecorder
 from transclip.dictation_session import DictationSession
 from transclip.settings import Settings
+
+from tests.service_helpers import FakeRecorder
 
 
 class StepClock:
