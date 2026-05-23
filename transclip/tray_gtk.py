@@ -22,7 +22,9 @@ from .tray_menu import (
     tray_submenu_is_history,
     tray_submenu_title,
 )
-from .tray_session import TraySession, latest_history_text, model_menu_label, preview_text
+from .tray_menu_update import HistoryMenuState, apply_tray_menu_update
+from .tray_menu_update import refresh_history_menu as refresh_shared_history
+from .tray_session import TraySession
 
 
 def run_python_tray(settings: Settings, explicit_settings_path: Path | None = None) -> int:
@@ -37,10 +39,7 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
     from gi.repository import GLib, Gtk
 
     session = TraySession(settings, explicit_settings_path)
-    state: dict[str, Any] = {
-        "history_signature": object(),
-        "history_refreshing": False,
-    }
+    history_state = HistoryMenuState(signature=object())
     menu_refs: dict[str, Any] = {}
 
     indicator = AppIndicator.Indicator.new(
@@ -51,9 +50,44 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
     indicator.set_title(DISPLAY_NAME)
     indicator.set_status(AppIndicator.IndicatorStatus.ACTIVE)
 
+    class GtkMenuView:
+        def __init__(self) -> None:
+            self._health_icon = session.health.icon
+
+        def set_label(self, ref: str, text: str) -> None:
+            _set_menu_item_label(menu_refs[ref], text)
+
+        def set_enabled(self, ref: str, enabled: bool) -> None:
+            menu_refs[ref].set_sensitive(enabled)
+
+        def set_model_labels(self, rows) -> None:
+            for item, label in rows:
+                _set_menu_item_label(item, label)
+
+        def rebuild_history(self, entries) -> None:
+            history_menu = menu_refs["history_menu"]
+            for child in history_menu.get_children():
+                history_menu.remove(child)
+            for preview, full_text in entries:
+                if not full_text:
+                    item = _append_label(history_menu, preview)
+                else:
+                    item = _append_item(
+                        history_menu,
+                        preview,
+                        lambda _item, value=full_text: session.copy_text(value),
+                    )
+                item.show_all()
+
+        def set_health_icon(self, icon: str) -> None:
+            self._health_icon = icon
+            themed = tray_icon_for_health(icon, system=session.runtime.system())
+            indicator.set_icon_full(themed, DISPLAY_NAME)
+
+    menu_view = GtkMenuView()
+
     def apply_health_icon() -> None:
-        icon = tray_icon_for_health(session.health.icon, system=session.runtime.system())
-        indicator.set_icon_full(icon, DISPLAY_NAME)
+        menu_view.set_health_icon(session.health.icon)
 
     def refresh_health() -> bool:
         session.refresh_health()
@@ -64,7 +98,7 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
     def toggle_record(_item=None) -> None:
         outcome = session.toggle_record()
         if outcome.latest_transcript:
-            state["history_signature"] = object()
+            history_state.signature = object()
             refresh_history_menu(force=True)
         apply_health_icon()
         update_menu()
@@ -176,53 +210,14 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
         indicator.set_menu(menu)
 
     def update_menu() -> None:
-        health = session.health
-        _set_menu_item_label(
-            menu_refs["status_item"],
-            tray_status_label(health.status, health.detail),
+        apply_tray_menu_update(
+            session,
+            menu_view,
+            model_items=menu_refs.get(MODEL_ITEMS_REF, []),
         )
-        _set_menu_item_label(
-            menu_refs["toggle_item"],
-            tray_action_label("toggle", recording=health.recording, settings=session.settings),
-        )
-        menu_refs["latest_item"].set_sensitive(bool(session.latest or latest_history_text()))
-        _set_menu_item_label(
-            menu_refs["model_cleanup_item"],
-            tray_action_label("model_cleanup", recording=health.recording, settings=session.settings),
-        )
-        for item, row in menu_refs[MODEL_ITEMS_REF]:
-            _set_menu_item_label(
-                item,
-                model_menu_label(row.model_id, row.backend, session.settings),
-            )
 
     def refresh_history_menu(force: bool = False) -> None:
-        if state["history_refreshing"]:
-            return
-        signature = history_file_signature()
-        if not force and signature == state["history_signature"]:
-            return
-        state["history_refreshing"] = True
-        try:
-            history_menu = menu_refs["history_menu"]
-            for child in history_menu.get_children():
-                history_menu.remove(child)
-            events = session.history_events()
-            if events:
-                for event in events:
-                    text = str(event.get("text") or "")
-                    item = _append_item(
-                        history_menu,
-                        preview_text(text),
-                        lambda _item, value=text: session.copy_text(value),
-                    )
-                    item.show_all()
-            else:
-                item = _append_label(history_menu, "No recent transcripts")
-                item.show_all()
-            state["history_signature"] = signature
-        finally:
-            state["history_refreshing"] = False
+        refresh_shared_history(session, history_state, menu_view, force=force)
 
     build_menu()
     GLib.timeout_add_seconds(3, refresh_health)

@@ -39,6 +39,29 @@ class EvalGatePolicy:
     max_cleanup_drift_failures: int = 0
     max_paste_failures: int = 0
 
+    @classmethod
+    def from_manifest(cls, path: Path) -> EvalGatePolicy:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict):
+            raise ValueError("manifest must be a JSON object")
+        thresholds = manifest.get("thresholds")
+        if not isinstance(thresholds, dict):
+            raise ValueError("manifest must include thresholds")
+        cases = manifest.get("cases")
+        if not isinstance(cases, list) or not cases:
+            raise ValueError("manifest must include at least one measured case")
+        case_count = len(cases)
+        release_p95_ms = float(thresholds["release_to_ready_p95_ms"])
+        return cls(
+            min_cases=case_count,
+            max_cases=case_count,
+            max_mean_latency_ms=release_p95_ms,
+            max_latency_ms=release_p95_ms,
+            min_under_700_ratio=0.0 if release_p95_ms > 700.0 else 0.8,
+            min_keyword_preservation=float(thresholds["keyword_preservation_min"]),
+            max_mean_wer=float(thresholds["wer_max"]),
+        )
+
     def check_results(self, payload: dict[str, Any]) -> dict[str, Any]:
         summary = payload.get("summary")
         results = payload.get("results")

@@ -215,7 +215,7 @@ class TrayTests(unittest.TestCase):
             patch.dict(sys.modules, self.modules),
             patch("transclip.tray_session.InferenceClient", FakeClient),
             patch("transclip.tray_session.read_history", return_value=history_events) as read_history,
-            patch("transclip.tray_gtk.history_file_signature", side_effect=[123, 123, 456]),
+            patch("transclip.tray_menu_update.history_file_signature", side_effect=[123, 123, 456]),
         ):
             code = run_python_tray(Settings())
             indicator = FakeIndicatorFactory.current
@@ -389,7 +389,7 @@ class TrayTests(unittest.TestCase):
         runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"))
         with (
             patch("transclip.tray.get_runtime", return_value=runtime),
-            patch("transclip.tray.run_macos_tray", return_value=0) as run_macos_tray,
+            patch("transclip.tray_macos.run_macos_tray", return_value=0) as run_macos_tray,
         ):
             code = run_tray(Settings())
 

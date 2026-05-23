@@ -6,9 +6,11 @@ from transclip.paste import (
     SystemPasteInjector,
     clipboard_capability,
     detect_clipboard_backend,
+    paste_capability,
     paste_commands,
     paste_transcript,
 )
+from transclip.paste_platform import paste_specs
 from transclip.platform_capabilities import session_info
 from transclip.settings import Settings
 
@@ -228,6 +230,30 @@ class PasteTests(unittest.TestCase):
 
         send_paste.assert_called_once()
         self.assertEqual(injector.backend_name, "sendinput")
+
+    def test_x11_paste_registry_prefers_xdotool_before_ydotool(self):
+        def which(name):
+            return f"/usr/bin/{name}"
+
+        info = session_info(environ={"XDG_SESSION_TYPE": "x11"}, system="Linux")
+        backends = [spec.backend for spec in paste_specs(info)]
+        self.assertEqual(backends, ["xdotool", "ydotool", "wtype"])
+
+        commands = paste_commands(which=which, info=info)
+        self.assertEqual(commands[0].backend, "xdotool")
+
+    def test_x11_paste_capability_skips_wtype_when_xdotool_available(self):
+        def which(name):
+            return f"/usr/bin/{name}"
+
+        def run(_command, **_kwargs):
+            return type("Completed", (), {"returncode": 0, "stdout": ""})()
+
+        info = session_info(environ={"XDG_SESSION_TYPE": "x11"}, system="Linux")
+        capability = paste_capability(which=which, info=info, runner=run)
+
+        self.assertTrue(capability.ok)
+        self.assertEqual(capability.backend, "xdotool")
 
 
 

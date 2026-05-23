@@ -5,7 +5,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from .history import history_file_signature
 from .hotkey_windows import start_windows_hotkey
 from .platform_runtime import PlatformRuntime, open_path
 from .product import DISPLAY_NAME
@@ -20,7 +19,9 @@ from .tray_menu import (
     tray_submenu_is_history,
     tray_submenu_title,
 )
-from .tray_session import TraySession, latest_history_text, model_menu_label, preview_text
+from .tray_menu_update import HistoryMenuState, apply_tray_menu_update
+from .tray_menu_update import refresh_history_menu as refresh_shared_history
+from .tray_session import TraySession
 
 
 def run_windows_tray(
@@ -43,10 +44,7 @@ def run_windows_tray(
     icon_holder: dict[str, object] = {"icon": None}
     hotkey_holder: dict[str, Callable[[], None] | None] = {"stop": None}
     menu_refs: dict[str, Any] = {}
-    state: dict[str, Any] = {
-        "history_signature": object(),
-        "history_refreshing": False,
-    }
+    history_state = HistoryMenuState(signature=object())
 
     def build_image(icon_name: str):
         color = {"recording": "red", "ready": "green", "offline": "orange"}[icon_name]
@@ -61,10 +59,46 @@ def run_windows_tray(
             stop()
         hotkey_holder["stop"] = start_windows_hotkey(on_hotkey, session.settings, session.runtime)
 
+    class PystrayMenuView:
+        def __init__(self) -> None:
+            self._health_icon = session.health.icon
+
+        def set_label(self, ref: str, text: str) -> None:
+            menu_refs[ref].text = text
+
+        def set_enabled(self, ref: str, enabled: bool) -> None:
+            menu_refs[ref].enabled = enabled
+
+        def set_model_labels(self, rows) -> None:
+            for item, label in rows:
+                item.text = label
+
+        def rebuild_history(self, entries) -> None:
+            submenu_items: list = []
+            for preview, full_text in entries:
+                if not full_text:
+                    submenu_items.append(pystray.MenuItem(preview, None, enabled=False))
+                    continue
+
+                def copy_history(_icon, _item, value=full_text):
+                    session.copy_text(value)
+                    update_menu()
+
+                submenu_items.append(pystray.MenuItem(preview, copy_history))
+            menu_refs["history_menu"].submenu = pystray.Menu(*submenu_items)
+
+        def set_health_icon(self, icon: str) -> None:
+            self._health_icon = icon
+            icon_obj = icon_holder["icon"]
+            if icon_obj is not None:
+                icon_obj.icon = build_image(icon)
+
+    menu_view = PystrayMenuView()
+
     def _after_action(action: Callable[[], object]) -> None:
         outcome = action()
         if getattr(outcome, "latest_transcript", None):
-            state["history_signature"] = object()
+            history_state.signature = object()
             refresh_history_menu(force=True)
         update_menu()
 
@@ -110,7 +144,7 @@ def run_windows_tray(
             if tray_submenu_is_history(node.action):
                 menu_item = pystray.MenuItem(tray_submenu_title(node.action), pystray.Menu(*submenu_items))
                 items.append(menu_item)
-                menu_refs["history_menu_item"] = menu_item
+                menu_refs["history_menu"] = menu_item
                 return
             menu_refs[MODEL_ITEMS_REF] = []
             for label, row in asr_model_choices(session.settings, session.runtime):
@@ -129,9 +163,7 @@ def run_windows_tray(
             recording=session.health.recording,
             settings=session.settings,
         )
-        enabled = True
-        if node.action == "copy_latest":
-            enabled = bool(session.latest or latest_history_text())
+        enabled = node.action != "copy_latest" or bool(session.latest)
         item = pystray.MenuItem(label, action_callbacks[node.action], enabled=enabled)
         items.append(item)
         if node.ref:
@@ -144,53 +176,19 @@ def run_windows_tray(
         return pystray.Menu(*items)
 
     def update_menu() -> None:
-        icon = icon_holder["icon"]
-        if icon is None:
+        if icon_holder["icon"] is None:
             return
         session.refresh_health()
-        health = session.health
-        menu_refs["status_item"].text = tray_status_label(health.status, health.detail)
-        menu_refs["toggle_item"].text = tray_action_label(
-            "toggle",
-            recording=health.recording,
-            settings=session.settings,
+        apply_tray_menu_update(
+            session,
+            menu_view,
+            model_items=menu_refs.get(MODEL_ITEMS_REF, []),
         )
-        menu_refs["latest_item"].enabled = bool(session.latest or latest_history_text())
-        menu_refs["model_cleanup_item"].text = tray_action_label(
-            "model_cleanup",
-            recording=health.recording,
-            settings=session.settings,
-        )
-        for item, row in menu_refs[MODEL_ITEMS_REF]:
-            item.text = model_menu_label(row.model_id, row.backend, session.settings)
         refresh_history_menu()
-        icon.icon = build_image(health.icon)
+        menu_view.set_health_icon(session.health.icon)
 
     def refresh_history_menu(force: bool = False) -> None:
-        if state["history_refreshing"]:
-            return
-        signature = history_file_signature()
-        if not force and signature == state["history_signature"]:
-            return
-        state["history_refreshing"] = True
-        try:
-            submenu_items: list = []
-            events = session.history_events()
-            if events:
-                for event in events:
-                    text = str(event.get("text") or "")
-
-                    def copy_history(_icon, _item, value=text):
-                        session.copy_text(value)
-                        update_menu()
-
-                    submenu_items.append(pystray.MenuItem(preview_text(text), copy_history))
-            else:
-                submenu_items.append(pystray.MenuItem("No recent transcripts", None, enabled=False))
-            menu_refs["history_menu_item"].submenu = pystray.Menu(*submenu_items)
-            state["history_signature"] = signature
-        finally:
-            state["history_refreshing"] = False
+        refresh_shared_history(session, history_state, menu_view, force=force)
 
     def on_hotkey() -> None:
         toggle_record()
