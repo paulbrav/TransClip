@@ -12,6 +12,7 @@ from transclip.product import DISPLAY_NAME, SERVICE_NAME
 from transclip.settings import Settings, load_settings
 
 from .common import CommandResult, ServiceState, repo_root, run_command, service_command
+from .protocol import PlatformDaemon
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -96,7 +97,9 @@ def uninstall_linux_daemon(
 def linux_service_action(
     action: str,
     runner: Runner = subprocess.run,
+    runtime: PlatformRuntime | None = None,
 ) -> CommandResult:
+    del runtime
     commands = {
         "start": ["systemctl", "--user", "start", SERVICE_NAME],
         "stop": ["systemctl", "--user", "stop", SERVICE_NAME],
@@ -129,3 +132,48 @@ def linux_service_state(
         active=result.returncode == 0 and state == "active",
         detail=state,
     )
+
+
+class LinuxPlatformDaemon:
+    def install(
+        self,
+        *,
+        settings_path: Path | None,
+        settings: Settings,
+        runner: Runner,
+        runtime: PlatformRuntime | None,
+    ) -> list[CommandResult]:
+        return install_linux_daemon(
+            settings_path=settings_path,
+            settings=settings,
+            runner=runner,
+            runtime=runtime,
+        )
+
+    def uninstall(
+        self,
+        *,
+        runner: Runner,
+        runtime: PlatformRuntime | None,
+    ) -> list[CommandResult]:
+        return uninstall_linux_daemon(runner=runner, runtime=runtime)
+
+    def service_action(
+        self,
+        action: str,
+        *,
+        runner: Runner,
+        runtime: PlatformRuntime | None,
+    ) -> CommandResult:
+        return linux_service_action(action, runner=runner, runtime=runtime)
+
+    def service_state(
+        self,
+        *,
+        runner: Runner,
+        runtime: PlatformRuntime | None,
+    ) -> ServiceState:
+        return linux_service_state(runner=runner, runtime=runtime)
+
+
+platform_daemon: PlatformDaemon = LinuxPlatformDaemon()

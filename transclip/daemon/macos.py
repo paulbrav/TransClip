@@ -10,6 +10,7 @@ from transclip.product import LAUNCHD_LABEL
 from transclip.settings import Settings, load_settings
 
 from .common import CommandResult, ServiceState, logs_dir, repo_root, run_command, service_command
+from .protocol import PlatformDaemon
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -146,3 +147,48 @@ def _launchd_print_reports_running(output: str) -> bool:
         if stripped.startswith("pid ="):
             return True
     return False
+
+
+class DarwinPlatformDaemon:
+    def install(
+        self,
+        *,
+        settings_path: Path | None,
+        settings: Settings,
+        runner: Runner,
+        runtime: PlatformRuntime | None,
+    ) -> list[CommandResult]:
+        return install_macos_daemon(
+            settings_path=settings_path,
+            settings=settings,
+            runner=runner,
+            runtime=runtime,
+        )
+
+    def uninstall(
+        self,
+        *,
+        runner: Runner,
+        runtime: PlatformRuntime | None,
+    ) -> list[CommandResult]:
+        return uninstall_macos_daemon(runner=runner, runtime=runtime)
+
+    def service_action(
+        self,
+        action: str,
+        *,
+        runner: Runner,
+        runtime: PlatformRuntime | None,
+    ) -> CommandResult:
+        return macos_service_action(action, runner=runner, runtime=runtime)
+
+    def service_state(
+        self,
+        *,
+        runner: Runner,
+        runtime: PlatformRuntime | None,
+    ) -> ServiceState:
+        return macos_service_state(runner=runner, runtime=runtime)
+
+
+platform_daemon: PlatformDaemon = DarwinPlatformDaemon()

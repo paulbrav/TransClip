@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from transclip.daemon.common import CommandResult, ServiceState, repo_root, run_command, service_command
+from transclip.daemon.protocol import PlatformDaemon
 from transclip.platform.runtime import PlatformRuntime, get_runtime, user_log_dir
 from transclip.product import DISPLAY_NAME, LOG_DIR_NAME, TASK_SCHEDULER_NAME
 from transclip.settings import Settings, load_settings
@@ -118,7 +119,12 @@ def uninstall_windows_daemon(
     return results
 
 
-def windows_service_action(action: str, runner: Runner = subprocess.run) -> CommandResult:
+def windows_service_action(
+    action: str,
+    runner: Runner = subprocess.run,
+    runtime: PlatformRuntime | None = None,
+) -> CommandResult:
+    del runtime
     commands = {
         "start": ["schtasks", "/Run", "/TN", TASK_SCHEDULER_NAME],
         "stop": ["schtasks", "/End", "/TN", TASK_SCHEDULER_NAME],
@@ -159,3 +165,51 @@ def _windows_task_reports_running(output: str) -> bool:
             status = stripped.split(":", 1)[1].strip().lower()
             return status == "running"
     return False
+
+
+class WindowsPlatformDaemon:
+    def install(
+        self,
+        *,
+        settings_path: Path | None,
+        settings: Settings,
+        runner: Runner,
+        runtime: PlatformRuntime | None,
+    ) -> list[CommandResult]:
+        from transclip.desktop.hotkey import windows_hotkey_setup_message
+
+        return install_windows_daemon(
+            settings_path=settings_path,
+            settings=settings,
+            runner=runner,
+            runtime=runtime,
+            hotkey_setup_message=windows_hotkey_setup_message,
+        )
+
+    def uninstall(
+        self,
+        *,
+        runner: Runner,
+        runtime: PlatformRuntime | None,
+    ) -> list[CommandResult]:
+        return uninstall_windows_daemon(runner=runner, runtime=runtime)
+
+    def service_action(
+        self,
+        action: str,
+        *,
+        runner: Runner,
+        runtime: PlatformRuntime | None,
+    ) -> CommandResult:
+        return windows_service_action(action, runner=runner, runtime=runtime)
+
+    def service_state(
+        self,
+        *,
+        runner: Runner,
+        runtime: PlatformRuntime | None,
+    ) -> ServiceState:
+        return windows_service_state(runner=runner, runtime=runtime)
+
+
+platform_daemon: PlatformDaemon = WindowsPlatformDaemon()
