@@ -109,3 +109,22 @@ use `transclip.desktop.hotkey` and `transclip.desktop.hotkey.common`.
 **Interactive dictation** tray UI is routed through `transclip.desktop.tray.run_tray`
 to GTK, Windows, or macOS adapters. Service install and status use
 `transclip.daemon`; readiness checks use `transclip.doctor`.
+
+## CLI execution models
+
+TransClip exposes two CLI paths to the dictation server:
+
+**HTTP client commands** talk to a running local service via `InferenceClient`.
+Examples: `toggle-record` (shortcut/tray workflow), and health probes from
+`doctor`, `status`, and the tray. These require `transclip serve` (or an
+installed daemon) to be active.
+
+**In-process engine commands** construct `InferenceEngine` inside the CLI
+process and load ASR/text backends directly. Examples: `transcribe`, `cleanup`,
+and `eval`. These do not require the HTTP service but pay full model startup
+cost per invocation.
+
+Do not unify these paths blindly: toggle must stay lightweight and work when
+only the daemon is running; batch transcribe/eval intentionally bypass HTTP.
+Caller-side health polling lives in `transclip.service.client_health`, separate
+from server-side health builders in `transclip.service.health`.

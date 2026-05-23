@@ -20,7 +20,7 @@ jobs:
       - name: Compile
         run: uv run python -m compileall transclip scripts tests
       - name: Unit tests
-        run: uv run python -m unittest discover -s tests -v
+        run: uv run python -m tests
 
   macos:
     runs-on: macos-15
@@ -36,7 +36,7 @@ jobs:
       - name: Compile
         run: uv run python -m compileall transclip scripts tests
       - name: Unit tests
-        run: uv run python -m unittest discover -s tests -v
+        run: uv run python -m tests
       - name: MLX import smoke
         run: uv run python -c "import platform, mlx; from mlx_audio.stt.generate import generate_transcription; print(platform.machine(), generate_transcription)"
 
@@ -56,6 +56,6 @@ jobs:
       - name: Compile
         run: uv run python -m compileall transclip scripts tests
       - name: Unit tests
-        run: uv run python -m unittest discover -s tests -v
+        run: uv run python -m tests
       - name: Windows integration smoke
         run: uv run python -c "import keyboard, pystray; from PIL import Image; import transclip.desktop.paste.win32; import transclip.desktop.hotkey.windows; import transclip.desktop.tray.win32; print('windows-integration ok')"

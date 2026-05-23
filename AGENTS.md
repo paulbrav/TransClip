@@ -111,7 +111,7 @@ uv run -m unittest tests.test_service -v
 Run the full suite before handing off substantial changes:
 
 ```bash
-uv run -m unittest discover -v
+uv run python -m tests
 ```
 
 For lint/type-oriented work, use the project tooling in `pyproject.toml` when it

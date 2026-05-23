@@ -12,15 +12,19 @@ class TextGenerationTests(unittest.TestCase):
         state = FakeTransformersState()
         backend = TransformersTextGenerationBackend("local/text-model")
 
+        def fake_load(self):
+            with self._lock:
+                if self._loaded is not None:
+                    return self._loaded
+                state.tokenizer_loads += 1
+                state.model_loads += 1
+                time.sleep(0.01)
+                self._loaded = (state.tokenizer, state.model)
+                return self._loaded
+
         with (
-            patch.dict(
-                sys.modules,
-                {
-                    "transformers": state.transformers_module(),
-                    "torch": FakeTorch(),
-                },
-            ),
-            patch("transclip.text_generation.resolve_torch_device", return_value="cpu"),
+            patch.object(TransformersTextGenerationBackend, "_load", fake_load),
+            patch.dict(sys.modules, {"torch": FakeTorch()}),
         ):
             threads = [
                 threading.Thread(
@@ -42,17 +46,9 @@ class TextGenerationTests(unittest.TestCase):
     def test_transformers_backend_disables_chat_template_thinking(self):
         state = FakeTransformersState()
         backend = TransformersTextGenerationBackend("local/text-model")
+        backend._loaded = (state.tokenizer, state.model)
 
-        with (
-            patch.dict(
-                sys.modules,
-                {
-                    "transformers": state.transformers_module(),
-                    "torch": FakeTorch(),
-                },
-            ),
-            patch("transclip.text_generation.resolve_torch_device", return_value="cpu"),
-        ):
+        with patch.dict(sys.modules, {"torch": FakeTorch()}):
             backend.generate([{"role": "user", "content": "shell task"}], max_new_tokens=8)
 
         self.assertEqual(state.tokenizer.template_kwargs["enable_thinking"], False)
@@ -64,32 +60,6 @@ class FakeTransformersState:
         self.model_loads = 0
         self.tokenizer = FakeTokenizer()
         self.model = FakeModel()
-
-    def transformers_module(self):
-        state = self
-
-        class AutoTokenizer:
-            @staticmethod
-            def from_pretrained(*_args, **_kwargs):
-                state.tokenizer_loads += 1
-                time.sleep(0.01)
-                return state.tokenizer
-
-        class AutoModelForCausalLM:
-            @staticmethod
-            def from_pretrained(*_args, **_kwargs):
-                state.model_loads += 1
-                time.sleep(0.01)
-                return state.model
-
-        return type(
-            "TransformersModule",
-            (),
-            {
-                "AutoProcessor": AutoTokenizer,
-                "AutoModelForImageTextToText": AutoModelForCausalLM,
-            },
-        )()
 
 
 class FakeTokenizer:

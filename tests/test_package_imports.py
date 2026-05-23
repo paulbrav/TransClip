@@ -3,6 +3,7 @@ import unittest
 
 class PackageImportTests(unittest.TestCase):
     def test_public_entry_points_import_cleanly(self):
+        from transclip.cli import handle_command, main
         from transclip.daemon import (
             CommandResult,
             ServiceState,
@@ -24,7 +25,15 @@ class PackageImportTests(unittest.TestCase):
         from transclip.desktop.tray import run_tray
         from transclip.doctor import Check, run_checks
         from transclip.platform.runtime import PlatformRuntime, get_runtime, open_path
+        from transclip.service import (
+            InferenceClient,
+            InferenceEngine,
+            create_server,
+        )
+        from transclip.service.client_health import fetch_service_health_result
 
+        self.assertTrue(callable(main))
+        self.assertTrue(callable(handle_command))
         self.assertTrue(callable(install_daemon))
         self.assertTrue(callable(install_shortcut))
         self.assertTrue(callable(get_gnome_shortcut_status))
@@ -46,6 +55,10 @@ class PackageImportTests(unittest.TestCase):
         self.assertIsNotNone(toggle_log_path)
         self.assertIsNotNone(build_toggle_invocation)
         self.assertIsNotNone(open_path)
+        self.assertIsNotNone(InferenceEngine)
+        self.assertIsNotNone(InferenceClient)
+        self.assertTrue(callable(create_server))
+        self.assertTrue(callable(fetch_service_health_result))
 
 
 if __name__ == "__main__":

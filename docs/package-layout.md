@@ -47,7 +47,35 @@ transclip/
     platform.py
     asr.py
     types.py
-  cli.py, service.py, …    # Core dictation pipeline (unchanged flat modules)
+  service/                 # Local HTTP dictation server
+    __init__.py            # InferenceEngine, InferenceClient, health helpers, …
+    client.py              # InferenceClient
+    session.py             # DictationSession
+    health.py              # build_health_status, cleanup_labels, settings_health_payload
+    client_health.py       # fetch_service_health_result, service_health_is_ready, … (caller-side HTTP)
+    types.py               # ServiceHealthResponse, RecordSessionResponse, …
+    routes.py              # dispatch_get/post, RouteResponse
+    engine.py              # InferenceEngine
+    server.py              # create_server, run_server
+  cli/                     # Console entry, argparse, command dispatch
+    __init__.py            # main(), handle_command re-export
+    __main__.py            # python -m transclip.cli
+    parser.py              # argparse tree
+    dispatch.py            # handle_command router
+    formatting.py          # status/history/models stdout helpers
+    init_config.py         # init-config
+    serve.py               # serve
+    doctor_cmd.py          # doctor
+    daemon_cmd.py          # install/start/stop/status/logs/smoke-test
+    tray_cmd.py            # tray
+    history_cmd.py         # history
+    models_cmd.py          # models list/doctor/prefetch
+    config_cmd.py          # config get/set
+    shortcut_cmd.py        # install-gnome-shortcut
+    toggle_cmd.py          # toggle-record
+    transcribe_cmd.py      # transcribe, cleanup
+    eval_cmd.py            # eval
+  asr.py, …                # Core dictation pipeline (root domain modules)
 ```
 
 ## Public import paths
@@ -62,6 +90,9 @@ Use these from CLI, scripts, tests, and cross-package code:
 | Tray | `transclip.desktop.tray` | `run_tray` |
 | Daemon | `transclip.daemon` | `install_daemon`, `service_state`, `collect_status`, `toggle_log_path`, … |
 | Doctor | `transclip.doctor` | `run_checks`, `Check` |
+| Service | `transclip.service` | `InferenceEngine`, `InferenceClient`, `create_server`, `run_server`, typed HTTP responses in `types` |
+| Service client health | `transclip.service.client_health` | `fetch_service_health_result`, `service_health_is_ready`, `service_health_check_detail` |
+| CLI | `transclip.cli` | `main`, `handle_command` |
 | Paths | `transclip.paths` | `service_settings_path` (shared by daemon units and hotkey commands) |
 
 `tests/test_package_imports.py` smoke-imports the main entry points and guards
@@ -98,6 +129,17 @@ Post-action behavior (refresh history after toggle, update labels) uses
 - `linux.py` / `macos.py` / `windows.py` — platform install units and service control.
 - `status.py` — HTTP-adjacent status, smoke-test, toggle log, log streaming.
 
+### Service package boundaries
+
+- **Server-side health** (`service/health.py`): built by `InferenceEngine.health()` for `/health` responses.
+- **Client-side health** (`service/client_health.py`): polls `/health` via `InferenceClient` from doctor, daemon status, and tray ports. Import this module directly; it is not re-exported from `transclip.service`.
+- **HTTP response shapes** (`service/types.py`): `ServiceHealthResponse`, `RecordSessionResponse`, etc., used by `InferenceClient` return types.
+
+### CLI execution models
+
+- **HTTP client commands** (`toggle-record`, daemon health probes): use `InferenceClient` against a running service.
+- **In-process commands** (`transcribe`, `cleanup`, `eval`): construct `InferenceEngine` in the CLI process. See `CONTEXT.md` for rationale.
+
 ### Import migration (historical)
 
 | Old module | New path |
@@ -113,5 +155,12 @@ Post-action behavior (refresh history after toggle, update labels) uses
 | `transclip.daemon` (monolith) | `transclip.daemon` (package) |
 | `transclip.daemon_lifecycle` | `transclip.daemon.lifecycle` + platform modules |
 | `transclip.doctor` (monolith) | `transclip.doctor` (package) |
+| `transclip.service` (flat module) | `transclip.service` (package) |
+| `transclip.client` | `transclip.service` or `transclip.service.client` |
+| `transclip.dictation_session` | `transclip.service` or `transclip.service.session` |
+| `transclip.service_health` | `transclip.service.health` (server) or `transclip.service.client_health` (caller) |
+| `transclip.service_routes` | `transclip.service.routes` (internal) |
+| `transclip.cli` (flat module) | `transclip.cli` (package) |
+| `transclip.cli_commands` | `transclip.cli.dispatch` + command submodules |
 
 There are no compatibility shims for old flat module paths.
