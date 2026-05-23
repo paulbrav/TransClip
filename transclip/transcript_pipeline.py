@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any
 
 from .cleanup import (
@@ -30,24 +30,6 @@ class TranscriptOutcome:
     asr_model: str
     cleanup_backend: str
     cleanup_enabled: bool
-
-    def to_dict(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "text": self.text,
-            "raw_asr": self.raw_asr,
-            "voice_mode": self.voice_mode,
-            "voice_trigger": self.voice_trigger,
-            "voice_literal": self.voice_literal,
-            "cleanup": asdict(self.cleanup) if self.cleanup else None,
-            "shell": shell_metadata(self.shell),
-            "submit": self.submit,
-            "timings_ms": dict(self.timings_ms),
-            "asr_backend": self.asr_backend,
-            "asr_model": self.asr_model,
-            "cleanup_backend": self.cleanup_backend,
-            "cleanup_enabled": self.cleanup_enabled,
-        }
-        return payload
 
 
 class TranscriptProcessor:
