@@ -1,13 +1,16 @@
+import io
 import sys
 import tempfile
 import types
 import unittest
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import patch
 
 from tests.service_helpers import FakeRuntime
+from transclip.recording_ops import ToggleOutcome
 from transclip.settings import DEFAULT_HOTKEY_LINUX, Settings, load_settings, write_settings
-from transclip.tray import run_python_tray, run_tray
+from transclip.tray import run_macos_tray, run_python_tray, run_tray
 
 
 class FakeLabel:
@@ -151,8 +154,186 @@ class FakeClient:
         return {"status": "ready"}
 
 
+class FakeNSObject:
+    @classmethod
+    def alloc(cls):
+        return cls.__new__(cls)
+
+    def init(self):
+        return self
+
+
+class FakeNSMenuItem:
+    def __init__(self):
+        self.title = ""
+        self.action = None
+        self.target = None
+        self.enabled = True
+        self.submenu = None
+        self.represented = None
+
+    @classmethod
+    def alloc(cls):
+        return cls()
+
+    @classmethod
+    def separatorItem(cls):
+        item = cls()
+        item.title = "---"
+        return item
+
+    def initWithTitle_action_keyEquivalent_(self, title, action, _key):
+        self.title = title
+        self.action = action
+        return self
+
+    def setTarget_(self, target) -> None:
+        self.target = target
+
+    def setTitle_(self, title) -> None:
+        self.title = title
+
+    def setEnabled_(self, enabled) -> None:
+        self.enabled = enabled
+
+    def setSubmenu_(self, menu) -> None:
+        self.submenu = menu
+
+    def setRepresentedObject_(self, value) -> None:
+        self.represented = value
+
+    def representedObject(self):
+        return self.represented
+
+    def activate(self) -> None:
+        method_name = self.action.replace(":", "_")
+        getattr(self.target, method_name)(self)
+
+
+class FakeNSMenu:
+    def __init__(self):
+        self.items = []
+        self.delegate = None
+
+    @classmethod
+    def alloc(cls):
+        return cls()
+
+    def init(self):
+        return self
+
+    def setDelegate_(self, delegate) -> None:
+        self.delegate = delegate
+
+    def addItem_(self, item) -> None:
+        self.items.append(item)
+
+    def itemArray(self):
+        return list(self.items)
+
+    def removeItem_(self, item) -> None:
+        self.items.remove(item)
+
+
+class FakeStatusButton:
+    def __init__(self):
+        self.title = ""
+        self.tooltip = ""
+
+    def setTitle_(self, title) -> None:
+        self.title = title
+
+    def setToolTip_(self, tooltip) -> None:
+        self.tooltip = tooltip
+
+
+class FakeStatusItem:
+    current = None
+
+    def __init__(self):
+        self.button_instance = FakeStatusButton()
+        self.menu = None
+        type(self).current = self
+
+    def button(self):
+        return self.button_instance
+
+    def setMenu_(self, menu) -> None:
+        self.menu = menu
+
+
+class FakeStatusBar:
+    @classmethod
+    def systemStatusBar(cls):
+        return cls()
+
+    def statusItemWithLength_(self, _length):
+        return FakeStatusItem()
+
+
+class FakeNSApplication:
+    current = None
+
+    def __init__(self):
+        self.delegate = None
+        self.ran = False
+        type(self).current = self
+
+    @classmethod
+    def sharedApplication(cls):
+        return cls.current or cls()
+
+    def setActivationPolicy_(self, policy) -> None:
+        self.policy = policy
+
+    def setDelegate_(self, delegate) -> None:
+        self.delegate = delegate
+
+    def run(self) -> None:
+        self.ran = True
+
+    def terminate_(self, _sender) -> None:
+        self.terminated = True
+
+
+class FakeNSApp:
+    terminated = False
+
+    @classmethod
+    def terminate_(cls, _sender) -> None:
+        cls.terminated = True
+
+
+class FakeNSTimer:
+    scheduled: ClassVar[list[tuple]] = []
+
+    @classmethod
+    def scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(cls, *args):
+        cls.scheduled.append(args)
+        return object()
+
+
+def fake_macos_modules():
+    appkit = types.ModuleType("AppKit")
+    appkit.NSApp = FakeNSApp
+    appkit.NSApplication = FakeNSApplication
+    appkit.NSApplicationActivationPolicyAccessory = "accessory"
+    appkit.NSMenu = FakeNSMenu
+    appkit.NSMenuItem = FakeNSMenuItem
+    appkit.NSStatusBar = FakeStatusBar
+    appkit.NSVariableStatusItemLength = -1
+    foundation = types.ModuleType("Foundation")
+    foundation.NSObject = FakeNSObject
+    foundation.NSTimer = FakeNSTimer
+    return {"AppKit": appkit, "Foundation": foundation}
+
+
 class TrayTests(unittest.TestCase):
     def setUp(self):
+        FakeStatusItem.current = None
+        FakeNSApplication.current = None
+        FakeNSTimer.scheduled = []
+        FakeNSApp.terminated = False
         self.runtime_patch = patch("transclip.runtime_profile.get_runtime", return_value=FakeRuntime(system="Linux"))
         self.runtime_patch.start()
         gi = types.ModuleType("gi")
@@ -321,11 +502,171 @@ class TrayTests(unittest.TestCase):
         install_shortcut.assert_not_called()
         self.assertIn("not a valid", indicator.menus[0].children[0].child.text)
 
-    def test_darwin_tray_fails_clearly_without_gtk(self):
-        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"))
-        with patch("transclip.tray.get_runtime", return_value=runtime):
-            code = run_tray(Settings())
+    def test_darwin_tray_runs_native_menubar(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = FakeRuntime(system="Darwin", home=Path(tmp))
+            with (
+                patch.dict(sys.modules, fake_macos_modules()),
+                patch("transclip.tray.get_runtime", return_value=runtime),
+                patch("transclip.tray.InferenceClient", FakeClient),
+                patch("transclip.tray.read_history", return_value=[]),
+                patch("transclip.runtime_profile.get_runtime", side_effect=lambda value=None: value or runtime),
+                patch("transclip.runtime_profile.machine_architecture", return_value="arm64"),
+            ):
+                code = run_tray(Settings())
+
+        self.assertEqual(code, 0)
+        self.assertTrue(FakeNSApplication.current.ran)
+        menu = FakeStatusItem.current.menu
+        self.assertEqual(status_title(menu), "Service: ready")
+        self.assertEqual(menu_item_by_title(FakeStatusItem.current, "Record").title, "Record")
+        self.assertFalse(menu_item_by_title(FakeStatusItem.current, "Copy latest transcript").enabled)
+
+    def test_macos_tray_reports_missing_pyobjc(self):
+        stderr = io.StringIO()
+        with (
+            patch.dict(sys.modules, {"AppKit": None, "Foundation": None}),
+            patch("sys.stderr", stderr),
+        ):
+            code = run_macos_tray(Settings(), runtime=FakeRuntime(system="Darwin"))
+
         self.assertEqual(code, 1)
+        self.assertIn("PyObjC", stderr.getvalue())
+        self.assertIn("macos-ui", stderr.getvalue())
+
+    def test_macos_record_click_updates_menu_to_stop(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = FakeRuntime(system="Darwin", home=Path(tmp))
+            outcome = ToggleOutcome(True, {"action": "started"}, "http://127.0.0.1:8765")
+            with (
+                patch.dict(sys.modules, fake_macos_modules()),
+                patch("transclip.tray.InferenceClient", FakeClient),
+                patch("transclip.tray.read_history", return_value=[]),
+                patch("transclip.tray.toggle_recording", return_value=outcome),
+                patch("transclip.runtime_profile.get_runtime", side_effect=lambda value=None: value or runtime),
+                patch("transclip.runtime_profile.machine_architecture", return_value="arm64"),
+            ):
+                run_macos_tray(Settings(), runtime=runtime)
+                toggle_item = menu_item_by_title(FakeStatusItem.current, "Record")
+                toggle_item.activate()
+
+        self.assertEqual(toggle_item.title, "Stop + paste")
+        self.assertEqual(FakeStatusItem.current.button().title, "●")
+        self.assertEqual(status_title(FakeStatusItem.current.menu), "Service: recording")
+
+    def test_macos_record_stop_surfaces_paste_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = FakeRuntime(system="Darwin", home=Path(tmp))
+            outcome = ToggleOutcome(
+                True,
+                {"action": "stopped", "text": "hello world"},
+                "http://127.0.0.1:8765",
+                paste_failed_message="Paste failed. The transcript is still on the clipboard. denied",
+            )
+            with (
+                patch.dict(sys.modules, fake_macos_modules()),
+                patch("transclip.tray.InferenceClient", FakeClient),
+                patch("transclip.tray.read_history", return_value=[]),
+                patch("transclip.tray.toggle_recording", return_value=outcome) as toggle,
+                patch("transclip.runtime_profile.get_runtime", side_effect=lambda value=None: value or runtime),
+                patch("transclip.runtime_profile.machine_architecture", return_value="arm64"),
+            ):
+                run_macos_tray(Settings(), runtime=runtime)
+                toggle_item = menu_item_by_title(FakeStatusItem.current, "Record")
+                toggle_item.activate()
+
+        toggle.assert_called_once()
+        self.assertTrue(toggle.call_args.kwargs["paste"])
+        self.assertEqual(toggle_item.target.state["latest"], "hello world")
+        self.assertIn("Paste failed", status_title(FakeStatusItem.current.menu))
+        self.assertIn("denied", status_title(FakeStatusItem.current.menu))
+
+    def test_macos_tray_action_selectors_are_bound_to_controller_methods(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = FakeRuntime(system="Darwin", home=Path(tmp))
+            with (
+                patch.dict(sys.modules, fake_macos_modules()),
+                patch("transclip.tray.InferenceClient", FakeClient),
+                patch("transclip.tray.read_history", return_value=[]),
+                patch("transclip.runtime_profile.get_runtime", side_effect=lambda value=None: value or runtime),
+                patch("transclip.runtime_profile.machine_architecture", return_value="arm64"),
+            ):
+                code = run_macos_tray(Settings(), runtime=runtime)
+
+        self.assertEqual(code, 0)
+        for item in actionable_menu_items(FakeStatusItem.current.menu):
+            method_name = item.action.replace(":", "_")
+            self.assertTrue(hasattr(item.target, method_name), f"missing selector method for {item.action}")
+        timer = FakeNSTimer.scheduled[-1]
+        self.assertTrue(hasattr(timer[1], timer[2].replace(":", "_")))
+
+    def test_macos_asr_model_menu_saves_settings_and_restarts_service(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = FakeRuntime(system="Darwin", home=Path(tmp))
+            settings_file = Path(tmp) / "settings.toml"
+            settings = Settings()
+            write_settings(settings, settings_file)
+            with (
+                patch.dict(sys.modules, fake_macos_modules()),
+                patch("transclip.tray.InferenceClient", FakeClient),
+                patch("transclip.tray.read_history", return_value=[]),
+                patch("transclip.runtime_profile.get_runtime", side_effect=lambda value=None: value or runtime),
+                patch("transclip.runtime_profile.machine_architecture", return_value="arm64"),
+                patch("transclip.tray.service_action") as service_action,
+            ):
+                service_action.return_value = types.SimpleNamespace(detail="restarted")
+                code = run_macos_tray(settings, explicit_settings_path=settings_file, runtime=runtime)
+                model_item = menu_item_by_title(FakeStatusItem.current, "ASR model")
+                mlx_item = submenu_item_by_title(model_item, "mlx-community/whisper-large-v3-turbo-asr-fp16")
+                mlx_item.activate()
+
+                self.assertEqual(code, 0)
+                self.assertEqual(settings.asr_backend, "mlx_audio_whisper")
+                self.assertEqual(settings.asr_model, "mlx-community/whisper-large-v3-turbo-asr-fp16")
+                saved = load_settings(settings_file)
+                self.assertEqual(saved.asr_backend, "mlx_audio_whisper")
+                self.assertEqual(saved.asr_model, "mlx-community/whisper-large-v3-turbo-asr-fp16")
+                service_action.assert_called_once_with("restart")
+                self.assertIn("ASR model set", status_title(FakeStatusItem.current.menu))
+
+    def test_macos_quit_terminates_current_application(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = FakeRuntime(system="Darwin", home=Path(tmp))
+            with (
+                patch.dict(sys.modules, fake_macos_modules()),
+                patch("transclip.tray.InferenceClient", FakeClient),
+                patch("transclip.tray.read_history", return_value=[]),
+                patch("transclip.runtime_profile.get_runtime", side_effect=lambda value=None: value or runtime),
+                patch("transclip.runtime_profile.machine_architecture", return_value="arm64"),
+            ):
+                run_macos_tray(Settings(), runtime=runtime)
+                quit_item = menu_item_by_title(FakeStatusItem.current, "Quit tray")
+                quit_item.activate()
+
+        self.assertTrue(FakeNSApplication.current.terminated)
+
+    def test_macos_copy_latest_uses_history_when_no_recording_in_memory(self):
+        copied = []
+
+        class Clipboard:
+            def write(self, text):
+                copied.append(text)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = FakeRuntime(system="Darwin", home=Path(tmp))
+            with (
+                patch.dict(sys.modules, fake_macos_modules()),
+                patch("transclip.tray.InferenceClient", FakeClient),
+                patch("transclip.tray.read_history", return_value=[{"text": "hello history"}]),
+                patch("transclip.tray.SystemClipboard", return_value=Clipboard()),
+                patch("transclip.runtime_profile.get_runtime", side_effect=lambda value=None: value or runtime),
+                patch("transclip.runtime_profile.machine_architecture", return_value="arm64"),
+            ):
+                run_macos_tray(Settings(), runtime=runtime)
+                menu_item_by_title(FakeStatusItem.current, "Copy latest transcript").activate()
+
+        self.assertEqual(copied, ["hello history"])
+        self.assertEqual(status_title(FakeStatusItem.current.menu), "Copied latest transcript")
 
     def test_linux_tray_filters_macos_only_models(self):
         with (
@@ -353,6 +694,35 @@ def submenu_item_by_label(item, label: str):
         if getattr(child, "label", "") == label or getattr(child.child, "text", "") == label:
             return child
     raise AssertionError(f"missing submenu item: {label}")
+
+
+def status_title(menu):
+    return menu.items[0].title
+
+
+def actionable_menu_items(menu):
+    items = []
+    for item in menu.items:
+        if getattr(item, "action", None):
+            items.append(item)
+        if getattr(item, "submenu", None):
+            items.extend(actionable_menu_items(item.submenu))
+    return items
+
+
+def menu_item_by_title(status_item, title: str):
+    for item in status_item.menu.items:
+        if getattr(item, "title", "") == title:
+            return item
+    raise AssertionError(f"missing menu item: {title}")
+
+
+def submenu_item_by_title(item, title: str):
+    for child in item.submenu.items:
+        child_title = getattr(child, "title", "")
+        if child_title == title or child_title.endswith(title):
+            return child
+    raise AssertionError(f"missing submenu item: {title}")
 
 
 if __name__ == "__main__":

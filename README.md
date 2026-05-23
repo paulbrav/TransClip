@@ -46,14 +46,22 @@ uv run -m transclip.cli smoke-test
 uv run -m transclip.cli logs
 ```
 
-Run the Python tray (Linux only):
+Run the tray/menu bar UI:
 
 ```bash
 transclip tray
 ```
 
-On macOS, `transclip tray` exits with guidance to use a Keyboard Shortcut or
-Shortcuts.app action until a native menu bar UI exists.
+On macOS this uses native AppKit through PyObjC. The UI extra only installs the
+menu bar dependencies; recording also needs the audio backend extras. For Apple
+Silicon installs, use:
+
+```bash
+uv sync --extra audio --extra mlx --extra macos-ui
+```
+
+If you install only `--extra macos-ui`, the tray can launch but recording fails
+with `Install transclip[audio] for microphone capture.`
 
 On Linux this uses PyGObject/Ayatana AppIndicator. When running through `uv`,
 the command hands off to system Python if the project virtual environment does
@@ -86,7 +94,7 @@ uv run -m transclip.cli serve
 Requirements: Apple Silicon, native ARM Python 3.12+, macOS 14+.
 
 ```bash
-uv sync --extra audio --extra mlx
+uv sync --extra audio --extra mlx --extra macos-ui
 uv run -m transclip.cli init-config
 uv run -m transclip.cli models prefetch --model mlx-community/whisper-large-v3-turbo-asr-fp16
 uv run -m transclip.cli install
