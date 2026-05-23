@@ -2,7 +2,12 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from transclip.gnome_shortcut import (
+from transclip.desktop.hotkey import (
+    build_toggle_command,
+    macos_hotkey_setup_message,
+    toggle_log_shell_path,
+)
+from transclip.desktop.hotkey.linux_gnome import (
     GNOME_CUSTOM_KEYBINDINGS_KEY,
     GNOME_MEDIA_KEYS_SCHEMA,
     TRANSCLIP_SHORTCUT_BINDING,
@@ -11,11 +16,6 @@ from transclip.gnome_shortcut import (
     command_exists,
     install_gnome_shortcut,
     shortcut_readiness,
-)
-from transclip.hotkey_setup import (
-    build_toggle_command,
-    macos_hotkey_setup_message,
-    toggle_log_shell_path,
 )
 from transclip.product import (
     FALLBACK_HOTKEY_LINUX,

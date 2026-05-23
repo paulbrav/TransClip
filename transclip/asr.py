@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from transclip.platform.runtime import PlatformRuntime
+
 from .device import resolve_torch_device
 from .mlx_audio_compat import generate_transcription
 from .models import (
@@ -14,7 +16,6 @@ from .models import (
     resolve_catalog_entry,
     validate_asr_model_backend,
 )
-from .platform_runtime import PlatformRuntime
 from .settings import Settings
 from .timing import timed_ms
 

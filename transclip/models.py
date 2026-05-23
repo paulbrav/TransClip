@@ -5,9 +5,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from . import platform_runtime
-from .platform_runtime import PlatformRuntime, user_cache_dir
-from .runtime_profile import detect_runtime_profile, is_apple_silicon, machine_architecture
+from transclip.platform.profiles import detect_runtime_profile, is_apple_silicon, machine_architecture
+from transclip.platform.runtime import PlatformRuntime, get_runtime, user_cache_dir
+
 from .settings import Settings, default_settings
 
 GIB = 1024**3
@@ -157,7 +157,7 @@ def validate_platform_support(
     entry: ModelCatalogEntry,
     runtime: PlatformRuntime | None = None,
 ) -> None:
-    platform_runtime_instance = platform_runtime.get_runtime(runtime)
+    platform_runtime_instance = get_runtime(runtime)
     system = platform_runtime_instance.system()
     if system not in entry.supported_platforms:
         raise ValueError(

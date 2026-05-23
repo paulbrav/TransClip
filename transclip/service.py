@@ -8,6 +8,8 @@ from time import perf_counter
 from typing import Any
 from urllib.parse import urlparse
 
+from transclip.platform.runtime import get_runtime
+
 from .asr import ASRBackend, build_asr_backend
 from .audio import AudioRecorder
 from .cleanup import (
@@ -20,7 +22,6 @@ from .dictation_session import DictationSession
 from .history import append_transcript_history
 from .keyword_restore import restore_keywords
 from .mode_routing import route_voice_mode
-from .platform_runtime import get_runtime
 from .service_health import build_health_status, cleanup_labels
 from .service_routes import dispatch_get, dispatch_post
 from .settings import Settings, load_settings

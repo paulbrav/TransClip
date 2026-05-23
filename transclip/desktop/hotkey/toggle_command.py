@@ -5,10 +5,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .daemon_common import service_settings_path
-from .platform_runtime import PlatformRuntime, get_runtime, user_log_dir
-from .product import IMPORT_PACKAGE, LOG_DIR_NAME
-from .settings import Settings, active_hotkey
+from transclip.paths import service_settings_path
+from transclip.platform.runtime import PlatformRuntime, get_runtime, user_log_dir
+from transclip.product import IMPORT_PACKAGE, LOG_DIR_NAME
 
 
 def build_toggle_invocation(settings_path: Path | None = None) -> list[str]:
@@ -42,31 +41,3 @@ def build_toggle_command(
     quoted_log_path = shlex.quote(log_path)
     script = f'mkdir -p "$(dirname {quoted_log_path})"; ' + shlex.join(command) + f" >> {quoted_log_path} 2>&1"
     return shlex.join(["/bin/sh", "-lc", script])
-
-
-def macos_hotkey_setup_message(
-    settings: Settings | None = None,
-    settings_path: Path | None = None,
-    runtime: PlatformRuntime | None = None,
-) -> str:
-    current = settings or Settings()
-    binding = current.hotkey_macos
-    command = build_toggle_command(settings_path, runtime=runtime)
-    return (
-        f"Configure a macOS Keyboard Shortcut or Shortcuts.app action for binding {binding!r}:\n"
-        f"{command}"
-    )
-
-
-def windows_hotkey_setup_message(
-    settings: Settings | None = None,
-    settings_path: Path | None = None,
-    runtime: PlatformRuntime | None = None,
-) -> str:
-    del settings_path
-    current = settings or Settings()
-    binding = active_hotkey(current, runtime)
-    return (
-        f"Task Scheduler service installed. Global hotkey {binding!r} is registered when "
-        f"transclip tray is running; change it from the tray Set hotkey menu or hotkey_windows."
-    )

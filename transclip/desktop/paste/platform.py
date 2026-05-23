@@ -5,10 +5,10 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from .platform_capabilities import SessionInfo
+from transclip.platform.capabilities import SessionInfo
 
 if TYPE_CHECKING:
-    from .paste import ClipboardCapability, PasteCapability, PasteCommand
+    from transclip.desktop.paste import ClipboardCapability, PasteCapability, PasteCommand
 
 Which = Callable[[str], str | None]
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -19,19 +19,19 @@ SENDINPUT_PASTE_BACKEND = "sendinput"
 
 
 def _win32_read_clipboard() -> str:
-    from .win32_clipboard import read_clipboard_text
+    from .win32 import read_clipboard_text
 
     return read_clipboard_text()
 
 
 def _win32_write_clipboard(text: str) -> None:
-    from .win32_clipboard import write_clipboard_text
+    from .win32 import write_clipboard_text
 
     write_clipboard_text(text)
 
 
 def _win32_sendinput_paste() -> None:
-    from .win32_clipboard import send_ctrl_v_paste
+    from .win32 import send_ctrl_v_paste
 
     send_ctrl_v_paste()
 
@@ -125,7 +125,7 @@ def _darwin_paste_specs() -> Sequence[PasteSpec]:
         return [["osascript", "-e", script]] if which("osascript") else []
 
     def capability(which: Which, _info: SessionInfo, _runner: Runner):
-        from .paste import PasteCapability
+        from transclip.desktop.paste import PasteCapability
 
         ok = bool(which("osascript"))
         return PasteCapability(
@@ -144,7 +144,7 @@ def _darwin_paste_specs() -> Sequence[PasteSpec]:
 
 def _windows_paste_specs() -> Sequence[PasteSpec]:
     def capability(_which: Which, _info: SessionInfo, _runner: Runner):
-        from .paste import PasteCapability
+        from transclip.desktop.paste import PasteCapability
 
         return PasteCapability(True, "Win32 SendInput Ctrl+V paste available", SENDINPUT_PASTE_BACKEND)
 
@@ -169,7 +169,7 @@ def _wayland_paste_specs() -> Sequence[PasteSpec]:
         return [["ydotool", "key", TERMINAL_PASTE_SHORTCUT]] if which("ydotool") else []
 
     def wtype_capability(which: Which, _info: SessionInfo, runner: Runner):
-        from .paste import PasteCapability
+        from transclip.desktop.paste import PasteCapability
 
         if not which("wtype"):
             return None
@@ -186,7 +186,7 @@ def _wayland_paste_specs() -> Sequence[PasteSpec]:
         return PasteCapability(False, f"wtype unusable: {detail}")
 
     def ydotool_capability(which: Which, _info: SessionInfo, _runner: Runner):
-        from .paste import PasteCapability
+        from transclip.desktop.paste import PasteCapability
 
         if which("ydotool"):
             return PasteCapability(
@@ -218,21 +218,21 @@ def _x11_paste_specs() -> Sequence[PasteSpec]:
         return [list(WTYPE_TERMINAL_PASTE_COMMAND)] if which("wtype") else []
 
     def xdotool_capability(which: Which, _info: SessionInfo, _runner: Runner):
-        from .paste import PasteCapability
+        from transclip.desktop.paste import PasteCapability
 
         if which("xdotool"):
             return PasteCapability(True, "found: xdotool", "xdotool")
         return None
 
     def ydotool_capability(which: Which, _info: SessionInfo, _runner: Runner):
-        from .paste import PasteCapability
+        from transclip.desktop.paste import PasteCapability
 
         if which("ydotool"):
             return PasteCapability(True, "found: ydotool", "ydotool")
         return None
 
     def wtype_capability(which: Which, _info: SessionInfo, _runner: Runner):
-        from .paste import PasteCapability
+        from transclip.desktop.paste import PasteCapability
 
         if which("wtype"):
             return PasteCapability(
@@ -275,7 +275,7 @@ def resolve_clipboard_capability(
     which: Which,
     info: SessionInfo,
 ) -> ClipboardCapability:
-    from .paste import ClipboardCapability
+    from transclip.desktop.paste import ClipboardCapability
 
     specs = clipboard_specs(info)
     failures: list[str] = []
@@ -299,7 +299,7 @@ def resolve_clipboard_capability(
 
 
 def resolve_paste_commands(which: Which, info: SessionInfo) -> list[PasteCommand]:
-    from .paste import PasteCommand
+    from transclip.desktop.paste import PasteCommand
 
     commands: list[PasteCommand] = []
     for spec in paste_specs(info):
@@ -318,7 +318,7 @@ def resolve_paste_capability(
     info: SessionInfo,
     runner: Runner,
 ) -> PasteCapability:
-    from .paste import PasteCapability
+    from transclip.desktop.paste import PasteCapability
 
     specs = paste_specs(info)
     details: list[str] = []

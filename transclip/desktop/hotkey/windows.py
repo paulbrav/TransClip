@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from .platform_runtime import PlatformRuntime, get_runtime
-from .settings import Settings, active_hotkey
+from transclip.platform.runtime import PlatformRuntime, get_runtime
+from transclip.settings import Settings, active_hotkey
 
 
 def start_windows_hotkey(

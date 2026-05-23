@@ -3,11 +3,9 @@ from __future__ import annotations
 import os
 import platform as py_platform
 
-from .cleanup import CleanupPlan
-from .device import resolve_torch_device, torch_cuda_usable, torch_mps_available
-from .doctor_platform import check_macos_version
-from .doctor_types import Check
-from .models import (
+from transclip.cleanup import CleanupPlan
+from transclip.device import resolve_torch_device, torch_cuda_usable, torch_mps_available
+from transclip.models import (
     cache_artifacts_present,
     model_cache_path,
     model_cache_root,
@@ -15,9 +13,12 @@ from .models import (
     required_model_cache_paths,
     resolve_catalog_entry,
 )
-from .platform_runtime import PlatformRuntime, get_runtime
-from .runtime_profile import detect_runtime_profile, is_apple_silicon, is_native_arm_python
-from .settings import Settings
+from transclip.platform.profiles import detect_runtime_profile, is_apple_silicon, is_native_arm_python
+from transclip.platform.runtime import PlatformRuntime, get_runtime
+from transclip.settings import Settings
+
+from .platform import check_macos_version
+from .types import Check
 
 
 def build_backend_checks(settings: Settings, runtime: PlatformRuntime | None = None) -> list[Check]:

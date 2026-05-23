@@ -5,28 +5,29 @@ from dataclasses import asdict
 from pathlib import Path
 from urllib.error import URLError
 
-from .audio import recording_debug
-from .client import InferenceClient
-from .daemon import last_toggle_log_event, service_state
-from .daemon_common import ServiceState
-from .daemon_lifecycle import toggle_log_path
-from .doctor_asr import (
+from transclip.audio import recording_debug
+from transclip.client import InferenceClient
+from transclip.daemon import last_toggle_log_event, service_state
+from transclip.daemon.common import ServiceState
+from transclip.daemon.lifecycle import toggle_log_path
+from transclip.desktop.paste import clipboard_capability, paste_capability
+from transclip.platform.capabilities import session_info
+from transclip.platform.runtime import PlatformRuntime, get_runtime
+from transclip.settings import Settings, default_config_dir, settings_path
+
+from .asr import (
     build_backend_checks,
     check_asr_runtime,
     check_model_cache,
     check_torch_runtime,
 )
-from .doctor_platform import (
+from .platform import (
     check_hotkey_readiness,
     check_microphone_devices,
     check_tcc_permissions,
     check_windows_version,
 )
-from .doctor_types import Check
-from .paste import clipboard_capability, paste_capability
-from .platform_capabilities import session_info
-from .platform_runtime import PlatformRuntime, get_runtime
-from .settings import Settings, default_config_dir, settings_path
+from .types import Check
 
 __all__ = [
     "Check",

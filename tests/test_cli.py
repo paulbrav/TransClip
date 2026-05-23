@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from transclip.cli import main
-from transclip.daemon_lifecycle import toggle_log_path
+from transclip.daemon.lifecycle import toggle_log_path
 from transclip.settings import Settings, write_settings
 
 from tests.service_helpers import FakeRecorder, FakeRuntime, patch_linux_gpu_runtime, serve_test_engine, stop_server
@@ -50,10 +50,10 @@ class CliTests(unittest.TestCase):
 
     def _enter_toggle_patches(self, stack: ExitStack, root: Path, **extra) -> None:
         stack.enter_context(patch("transclip.service.AudioRecorder", FakeRecorder))
-        stack.enter_context(patch("transclip.paste.SystemClipboard", InMemoryClipboard))
-        stack.enter_context(patch("transclip.paste.SystemPasteInjector", FakePasteInjector))
+        stack.enter_context(patch("transclip.desktop.paste.SystemClipboard", InMemoryClipboard))
+        stack.enter_context(patch("transclip.desktop.paste.SystemPasteInjector", FakePasteInjector))
         stack.enter_context(patch("transclip.cli_commands.notify"))
-        stack.enter_context(patch("transclip.daemon.toggle_log_path", return_value=self._toggle_log_path(root)))
+        stack.enter_context(patch("transclip.daemon.status.toggle_log_path", return_value=self._toggle_log_path(root)))
         for key, value in extra.items():
             stack.enter_context(patch(key, value))
 
@@ -138,7 +138,7 @@ class CliTests(unittest.TestCase):
                 with ExitStack() as stack:
                     stack.enter_context(patch("transclip.service.AudioRecorder", FakeRecorder))
                     stack.enter_context(
-                        patch("transclip.daemon.toggle_log_path", return_value=self._toggle_log_path(root))
+                        patch("transclip.daemon.status.toggle_log_path", return_value=self._toggle_log_path(root))
                     )
                     stack.enter_context(redirect_stdout(stdout))
                     code = main(["--settings", str(settings_path), "toggle-record"])
@@ -235,7 +235,7 @@ class CliTests(unittest.TestCase):
     def test_tray_command_runs_python_tray(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings_path = write_test_settings(Path(tmp), "127.0.0.1", unused_local_port())
-            with patch("transclip.tray.run_tray", return_value=7):
+            with patch("transclip.desktop.tray.run_tray", return_value=7):
                 code = main(["--settings", str(settings_path), "tray"])
 
             self.assertEqual(code, 7)

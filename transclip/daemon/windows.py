@@ -5,10 +5,10 @@ import xml.sax.saxutils as saxutils
 from collections.abc import Callable
 from pathlib import Path
 
-from .daemon_common import CommandResult, ServiceState, repo_root, run_command, service_command
-from .platform_runtime import PlatformRuntime, get_runtime, user_log_dir
-from .product import DISPLAY_NAME, LOG_DIR_NAME, TASK_SCHEDULER_NAME
-from .settings import Settings, load_settings
+from transclip.daemon.common import CommandResult, ServiceState, repo_root, run_command, service_command
+from transclip.platform.runtime import PlatformRuntime, get_runtime, user_log_dir
+from transclip.product import DISPLAY_NAME, LOG_DIR_NAME, TASK_SCHEDULER_NAME
+from transclip.settings import Settings, load_settings
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 

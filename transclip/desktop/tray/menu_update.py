@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from .history import history_file_signature
-from .tray_menu import tray_action_label, tray_status_label
-from .tray_session import TraySession, latest_history_text, preview_text
+from transclip.history import history_file_signature
+
+from .menu import tray_action_label, tray_status_label
+from .session import TraySession, latest_history_text, preview_text
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,13 +81,35 @@ def apply_menu_snapshot(
     view.set_health_icon(snapshot.health_icon)
 
 
+def after_tray_action(
+    action: Callable[[], object],
+    *,
+    update_menu: Callable[[], None],
+    history_state: HistoryMenuState | None = None,
+    refresh_history: Callable[[], None] | None = None,
+    before_update: Callable[[], None] | None = None,
+) -> object:
+    outcome = action()
+    if (
+        history_state is not None
+        and refresh_history is not None
+        and getattr(outcome, "latest_transcript", None)
+    ):
+        history_state.signature = object()
+        refresh_history()
+    if before_update is not None:
+        before_update()
+    update_menu()
+    return outcome
+
+
 def apply_tray_menu_update(
     session: TraySession,
     view: TrayMenuView,
     *,
     model_items: Sequence[tuple[Any, Any]],
 ) -> TrayMenuSnapshot:
-    from .tray_session import model_menu_label
+    from .session import model_menu_label
 
     snapshot = compute_tray_menu_snapshot(session)
     label_pairs = [

@@ -3,11 +3,11 @@ from __future__ import annotations
 import platform as py_platform
 import subprocess
 
-from .doctor_types import Check
-from .gnome_shortcut import shortcut_readiness
-from .hotkey_setup import macos_hotkey_setup_message
-from .platform_runtime import PlatformRuntime, get_runtime
-from .settings import Settings, active_hotkey
+from transclip.desktop.hotkey import macos_hotkey_setup_message, shortcut_readiness
+from transclip.platform.runtime import PlatformRuntime, get_runtime
+from transclip.settings import Settings, active_hotkey
+
+from .types import Check
 
 
 def _check_sounddevice_input(*, permission_hint: str, denied_hint: str) -> Check:

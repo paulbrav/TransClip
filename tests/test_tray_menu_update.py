@@ -2,8 +2,7 @@ import unittest
 from typing import Any
 from unittest.mock import patch
 
-from transclip.settings import Settings
-from transclip.tray_menu_update import (
+from transclip.desktop.tray.menu_update import (
     HistoryMenuState,
     apply_menu_snapshot,
     compute_tray_menu_snapshot,
@@ -11,7 +10,8 @@ from transclip.tray_menu_update import (
     refresh_history_menu,
     should_refresh_history,
 )
-from transclip.tray_session import TrayHealth, TraySession
+from transclip.desktop.tray.session import TrayHealth, TraySession
+from transclip.settings import Settings
 
 from tests.service_helpers import FakeRuntime, patch_linux_gpu_runtime
 
@@ -61,7 +61,10 @@ class TrayMenuUpdateTests(unittest.TestCase):
         self.assertEqual(active.toggle_label, "Stop + paste")
 
     def test_snapshot_latest_enabled_reflects_latest_or_history(self):
-        with patch_linux_gpu_runtime(), patch("transclip.tray_menu_update.latest_history_text", return_value=""):
+        with (
+            patch_linux_gpu_runtime(),
+            patch("transclip.desktop.tray.menu_update.latest_history_text", return_value=""),
+        ):
             session = self._session()
             session.latest = ""
             empty = compute_tray_menu_snapshot(session)

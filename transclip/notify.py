@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import subprocess
 
-from .platform_runtime import PlatformRuntime, get_runtime
+from transclip.platform.runtime import PlatformRuntime, get_runtime
 
 
 def notify(title: str, message: str, runtime: PlatformRuntime | None = None) -> bool:

@@ -8,10 +8,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from .hotkey_setup import build_toggle_command
-from .platform_capabilities import session_info
-from .platform_runtime import PlatformRuntime, get_runtime
-from .product import (
+from transclip.platform.capabilities import session_info
+from transclip.platform.runtime import PlatformRuntime, get_runtime
+from transclip.product import (
     CLI_COMMAND,
     FALLBACK_HOTKEY_LINUX,
     LEGACY_SHORTCUT_NAME,
@@ -21,7 +20,9 @@ from .product import (
     SHORTCUT_NAME,
     SHORTCUT_PATH,
 )
-from .settings import DEFAULT_HOTKEY_LINUX
+from transclip.settings import DEFAULT_HOTKEY_LINUX
+
+from .toggle_command import build_toggle_command
 
 GNOME_MEDIA_KEYS_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys"
 GNOME_CUSTOM_KEYBINDINGS_KEY = "custom-keybindings"

@@ -3,27 +3,25 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from .gnome_shortcut import install_shortcut
-from .platform_runtime import open_path
-from .product import APP_ID, DISPLAY_NAME, IMPORT_PACKAGE
-from .settings import Settings, patch_settings, settings_path
-from .tray_menu import (
-    MODEL_ITEMS_REF,
-    TrayMenuNode,
-    asr_model_choices,
-    tray_action_label,
-    tray_icon_for_health,
-    tray_menu_nodes,
-    tray_status_label,
-    tray_submenu_is_history,
-    tray_submenu_title,
+from transclip.desktop.hotkey import install_shortcut
+from transclip.platform.runtime import open_path
+from transclip.product import APP_ID, DISPLAY_NAME, IMPORT_PACKAGE
+from transclip.settings import Settings, patch_settings, settings_path
+
+from .materialize import materialize_tray_menu
+from .menu import MODEL_ITEMS_REF, tray_icon_for_health, tray_menu_nodes
+from .menu_update import (
+    HistoryMenuState,
+    after_tray_action,
+    apply_tray_menu_update,
 )
-from .tray_menu_update import HistoryMenuState, apply_tray_menu_update
-from .tray_menu_update import refresh_history_menu as refresh_shared_history
-from .tray_session import TraySession
+from .menu_update import refresh_history_menu as refresh_shared_history
+from .session import TraySession
+from .sinks.gtk import GtkMenuSink
 
 
 def run_python_tray(settings: Settings, explicit_settings_path: Path | None = None) -> int:
@@ -95,20 +93,25 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
         return True
 
     def toggle_record(_item=None) -> None:
-        outcome = session.toggle_record()
-        if outcome.latest_transcript:
-            history_state.signature = object()
-            refresh_history_menu(force=True)
-        apply_health_icon()
-        update_menu()
+        after_tray_action(
+            session.toggle_record,
+            history_state=history_state,
+            refresh_history=lambda: refresh_history_menu(force=True),
+            update_menu=update_menu,
+            before_update=apply_health_icon,
+        )
 
     def copy_latest(_item=None) -> None:
         session.copy_latest()
         update_menu()
 
-    def _after_action(action) -> None:
-        action()
-        update_menu()
+    def run_tray_action(action: Callable[[], object]) -> None:
+        after_tray_action(
+            action,
+            history_state=history_state,
+            refresh_history=lambda: refresh_history_menu(force=True),
+            update_menu=update_menu,
+        )
 
     def set_hotkey(_item=None) -> None:
         current = session.settings.hotkey_linux
@@ -149,60 +152,31 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
     action_callbacks = {
         "toggle": toggle_record,
         "copy_latest": copy_latest,
-        "start_service": lambda *_: _after_action(session.start_service),
-        "restart_service": lambda *_: _after_action(session.restart_service),
-        "model_cleanup": lambda *_: _after_action(session.toggle_model_cleanup),
+        "start_service": lambda *_: run_tray_action(session.start_service),
+        "restart_service": lambda *_: run_tray_action(session.restart_service),
+        "model_cleanup": lambda *_: run_tray_action(session.toggle_model_cleanup),
         "set_hotkey": set_hotkey,
         "open_settings": lambda *_: open_path(session.open_settings(), session.runtime),
         "quit": Gtk.main_quit,
     }
 
-    def append_menu_node(node: TrayMenuNode, menu) -> None:
-        if node.kind == "separator":
-            _append_separator(menu)
-            return
-        if node.kind == "label":
-            health = session.health
-            menu_refs[node.ref] = _append_label(
-                menu,
-                tray_status_label(health.status, health.detail),
-            )
-            return
-        if node.kind == "submenu":
-            assert node.action is not None
-            submenu = Gtk.Menu()
-            menu_item = Gtk.MenuItem(label=tray_submenu_title(node.action))
-            menu_item.set_submenu(submenu)
-            menu.append(menu_item)
-            menu_refs[node.ref] = submenu
-            if tray_submenu_is_history(node.action):
-                submenu.connect("map", lambda *_args: refresh_history_menu())
-                return
-            menu_refs[MODEL_ITEMS_REF] = []
-            for label, row in asr_model_choices(session.settings, session.runtime):
-                item = _append_item(
-                    submenu,
-                    label,
-                    lambda _item, model_id=row.model_id, backend=row.backend: _after_action(
-                        lambda: session.set_asr_model(model_id, backend)
-                    ),
-                )
-                menu_refs[MODEL_ITEMS_REF].append((item, row))
-            return
-        assert node.action is not None
-        label = tray_action_label(
-            node.action,
-            recording=session.health.recording,
-            settings=session.settings,
-        )
-        item = _append_item(menu, label, action_callbacks[node.action])
-        if node.ref:
-            menu_refs[node.ref] = item
-
     def build_menu() -> None:
         menu = Gtk.Menu()
-        for node in tray_menu_nodes("Linux"):
-            append_menu_node(node, menu)
+        materialize_tray_menu(
+            tray_menu_nodes("Linux"),
+            session,
+            GtkMenuSink(
+                menu,
+                menu_refs,
+                append_separator=_append_separator,
+                append_label=_append_label,
+                append_item=_append_item,
+                after_action=run_tray_action,
+                set_model=session.set_asr_model,
+            ),
+            action_callbacks=action_callbacks,
+            on_history_open=refresh_history_menu,
+        )
         refresh_history_menu()
         update_menu()
         menu.show_all()
@@ -276,11 +250,13 @@ def _reexec_with_system_python(explicit_settings_path: Path | None) -> int:
             file=sys.stderr,
         )
         return 1
-    repo_root = Path(__file__).resolve().parents[1]
+    from transclip.daemon.common import repo_root
+
+    root = repo_root()
     env = dict(os.environ)
     env["PYTHONPATH"] = str(repo_root) + os.pathsep + env.get("PYTHONPATH", "")
     command = [python, "-m", f"{IMPORT_PACKAGE}.cli"]
     if explicit_settings_path:
         command.extend(["--settings", str(explicit_settings_path)])
     command.extend(["tray", "--no-system-python-fallback"])
-    return subprocess.call(command, cwd=str(repo_root), env=env)
+    return subprocess.call(command, cwd=str(root), env=env)

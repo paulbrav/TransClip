@@ -58,4 +58,4 @@ jobs:
       - name: Unit tests
         run: uv run python -m unittest discover -s tests -v
       - name: Windows integration smoke
-        run: uv run python -c "import keyboard, pystray; from PIL import Image; import transclip.win32_clipboard; import transclip.hotkey_windows; import transclip.tray_win32; print('windows-integration ok')"
+        run: uv run python -c "import keyboard, pystray; from PIL import Image; import transclip.desktop.paste.win32; import transclip.desktop.hotkey.windows; import transclip.desktop.tray.win32; print('windows-integration ok')"

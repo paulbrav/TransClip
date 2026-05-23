@@ -7,7 +7,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from .product import IMPORT_PACKAGE
+from transclip.paths import service_settings_path
+from transclip.platform.runtime import PlatformRuntime, user_log_dir
+from transclip.product import IMPORT_PACKAGE, LOG_DIR_NAME
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -26,15 +28,15 @@ class ServiceState:
 
 
 def repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
+    return Path(__file__).resolve().parents[2]
 
 
-def service_settings_path(settings_path: Path) -> str:
-    expanded = settings_path.expanduser()
-    text = str(expanded)
-    if expanded.is_absolute() or (len(text) > 1 and text[1] == ":"):
-        return text
-    return str(expanded.resolve())
+def logs_dir(runtime: PlatformRuntime | None = None) -> Path:
+    return user_log_dir(LOG_DIR_NAME, runtime)
+
+
+def toggle_log_path(runtime: PlatformRuntime | None = None) -> Path:
+    return logs_dir(runtime) / "toggle-record.log"
 
 
 def service_command(settings_path: Path | None = None) -> list[str]:

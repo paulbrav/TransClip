@@ -6,14 +6,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from .paste_platform import (
+from transclip.platform.capabilities import SessionInfo, session_info
+from transclip.platform.runtime import PlatformRuntime, get_runtime
+from transclip.settings import Settings
+
+from .platform import (
     resolve_clipboard_capability,
     resolve_paste_capability,
     resolve_paste_commands,
 )
-from .platform_capabilities import SessionInfo, session_info
-from .platform_runtime import PlatformRuntime, get_runtime
-from .settings import Settings
 
 Which = Callable[[str], str | None]
 

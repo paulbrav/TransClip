@@ -5,7 +5,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .platform_runtime import user_log_dir
+from transclip.platform.runtime import user_log_dir
+
 from .product import LOG_DIR_NAME
 from .settings import Settings
 

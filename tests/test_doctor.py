@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from transclip.desktop.hotkey.linux_gnome import GnomeShortcutStatus
 from transclip.doctor import (
     Check,
     check_asr_runtime,
@@ -15,7 +16,6 @@ from transclip.doctor import (
     checks_as_json,
     checks_as_text,
 )
-from transclip.gnome_shortcut import GnomeShortcutStatus
 from transclip.models import hf_cache_dir
 from transclip.settings import Settings
 
@@ -59,7 +59,7 @@ class DoctorTests(unittest.TestCase):
         )
         with (
             patch.dict("sys.modules", {"flash_attn": object(), "torch": torch}),
-            patch("transclip.doctor_asr.resolve_torch_device", return_value="cuda"),
+            patch("transclip.doctor.asr.resolve_torch_device", return_value="cuda"),
         ):
             self.assertTrue(check_asr_runtime(Settings()).ok)
 
@@ -143,7 +143,7 @@ class DoctorTests(unittest.TestCase):
             available={"gsettings"},
         )
         with (
-            patch("transclip.gnome_shortcut.get_gnome_shortcut_status", return_value=status),
+            patch("transclip.desktop.hotkey.linux_gnome.get_gnome_shortcut_status", return_value=status),
         ):
             check = check_hotkey_readiness(Settings(), runtime)
 
@@ -167,7 +167,7 @@ class DoctorTests(unittest.TestCase):
             available={"gsettings"},
         )
         with (
-            patch("transclip.gnome_shortcut.get_gnome_shortcut_status", return_value=status),
+            patch("transclip.desktop.hotkey.linux_gnome.get_gnome_shortcut_status", return_value=status),
         ):
             check = check_hotkey_readiness(Settings(hotkey_linux="<Control><Alt>space"), runtime)
 
@@ -182,7 +182,7 @@ class DoctorTests(unittest.TestCase):
             available={"gsettings"},
         )
         with (
-            patch("transclip.gnome_shortcut.get_gnome_shortcut_status", return_value=status),
+            patch("transclip.desktop.hotkey.linux_gnome.get_gnome_shortcut_status", return_value=status),
         ):
             check = check_hotkey_readiness(Settings(), runtime)
 
@@ -261,7 +261,7 @@ card 1: Generic_1 [HD-Audio Generic], device 0: ALC245 Analog [ALC245 Analog]
         self.assertIn("Microphone", check.detail)
 
     def test_windows_service_manager_check_mentions_task_scheduler(self):
-        from transclip.daemon_common import ServiceState
+        from transclip.daemon.common import ServiceState
         from transclip.doctor import check_service_manager
 
         runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))

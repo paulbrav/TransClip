@@ -4,10 +4,11 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Literal
 
-from .models import ModelRow, asr_model_rows
-from .platform_runtime import PlatformRuntime
-from .settings import Settings
-from .tray_session import model_cleanup_label, model_menu_label
+from transclip.models import ModelRow, asr_model_rows
+from transclip.platform.runtime import PlatformRuntime
+from transclip.settings import Settings
+
+from .session import model_cleanup_label, model_menu_label
 
 TrayAction = Literal[
     "status",

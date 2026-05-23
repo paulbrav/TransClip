@@ -4,14 +4,14 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
-from .client import InferenceClient
-from .daemon_lifecycle import service_action
-from .history import read_history
-from .hotkey_setup import macos_hotkey_setup_message
-from .paste import SystemClipboard
-from .platform_runtime import PlatformRuntime, get_runtime
-from .recording_ops import ToggleOutcome, toggle_recording
-from .settings import Settings, patch_settings, settings_path, write_default_settings
+from transclip.client import InferenceClient
+from transclip.daemon.lifecycle import service_action
+from transclip.desktop.hotkey.common import macos_hotkey_setup_message
+from transclip.desktop.paste import SystemClipboard
+from transclip.history import read_history
+from transclip.platform.runtime import PlatformRuntime, get_runtime
+from transclip.recording_ops import ToggleOutcome, toggle_recording
+from transclip.settings import Settings, patch_settings, settings_path, write_default_settings
 
 TrayIcon = Literal["recording", "ready", "offline"]
 

@@ -9,7 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .platform_runtime import PlatformRuntime, get_runtime
+from transclip.platform.runtime import PlatformRuntime, get_runtime
+
 from .settings import Settings
 from .text_generation import TextGenerationBackend
 

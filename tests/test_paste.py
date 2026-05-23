@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from transclip.paste import (
+from transclip.desktop.paste import (
     SystemPasteInjector,
     clipboard_capability,
     detect_clipboard_backend,
@@ -10,8 +10,8 @@ from transclip.paste import (
     paste_commands,
     paste_transcript,
 )
-from transclip.paste_platform import paste_specs
-from transclip.platform_capabilities import session_info
+from transclip.desktop.paste.platform import paste_specs
+from transclip.platform.capabilities import session_info
 from transclip.settings import Settings
 
 from tests.service_helpers import FakeRuntime
@@ -62,7 +62,7 @@ class PasteTests(unittest.TestCase):
         self.assertEqual(clipboard.value, "transcript")
 
     def test_missing_system_clipboard_is_structured_failure(self):
-        with patch("transclip.paste.SystemClipboard", side_effect=RuntimeError("missing clipboard")):
+        with patch("transclip.desktop.paste.SystemClipboard", side_effect=RuntimeError("missing clipboard")):
             result = paste_transcript("transcript", Settings())
 
         self.assertFalse(result.copied)
@@ -224,7 +224,7 @@ class PasteTests(unittest.TestCase):
 
     def test_windows_paste_uses_sendinput_backend(self):
         runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
-        with patch("transclip.win32_clipboard.send_ctrl_v_paste") as send_paste:
+        with patch("transclip.desktop.paste.win32.send_ctrl_v_paste") as send_paste:
             injector = SystemPasteInjector(runtime)
             self.assertTrue(injector.paste())
 

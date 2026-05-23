@@ -4,25 +4,25 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .models import ModelRow
-from .platform_runtime import PlatformRuntime, open_path
-from .product import DISPLAY_NAME
-from .settings import Settings
-from .tray_menu import (
-    MACOS_SELECTORS,
+from transclip.models import ModelRow
+from transclip.platform.runtime import PlatformRuntime, open_path
+from transclip.product import DISPLAY_NAME
+from transclip.settings import Settings
+
+from .materialize import materialize_tray_menu
+from .menu import (
     MODEL_ITEMS_REF,
-    TrayMenuNode,
-    asr_model_choices,
-    tray_action_label,
     tray_icon_for_health,
     tray_menu_nodes,
-    tray_status_label,
-    tray_submenu_is_history,
-    tray_submenu_title,
 )
-from .tray_menu_update import HistoryMenuState, apply_tray_menu_update
-from .tray_menu_update import refresh_history_menu as refresh_shared_history
-from .tray_session import TraySession
+from .menu_update import (
+    HistoryMenuState,
+    after_tray_action,
+    apply_tray_menu_update,
+)
+from .menu_update import refresh_history_menu as refresh_shared_history
+from .session import TraySession
+from .sinks.macos import MacOSMenuSink
 
 _MACOS_TRAY_REFS: list[Any] = []
 
@@ -98,54 +98,27 @@ def run_macos_tray(
             self.buildMenu()
             return self
 
+        def runTrayAction_(self, action):
+            after_tray_action(
+                action,
+                history_state=history_state,
+                refresh_history=lambda: self.refreshHistoryMenu(force=True),
+                update_menu=self.updateMenu,
+            )
+
         def buildMenu(self):
             menu = NSMenu.alloc().init()
             menu.setDelegate_(self)
-            for node in tray_menu_nodes(self.session.runtime.system()):
-                self._append_menu_node(node, menu)
+            materialize_tray_menu(
+                tray_menu_nodes(self.session.runtime.system()),
+                self.session,
+                MacOSMenuSink(self, menu),
+                action_callbacks={},
+                initial_status_label=True,
+            )
             self.refreshHistoryMenu(force=True)
             self.updateMenu()
             self.status_item.setMenu_(menu)
-
-        def _append_menu_node(self, node: TrayMenuNode, menu) -> None:
-            if node.kind == "separator":
-                menu.addItem_(NSMenuItem.separatorItem())
-                return
-            if node.kind == "label":
-                health = self.session.health
-                self.menu_refs[node.ref] = self.appendLabel_toMenu_(
-                    tray_status_label(health.status, health.detail, initial=True),
-                    menu,
-                )
-                return
-            if node.kind == "submenu":
-                assert node.action is not None
-                submenu = NSMenu.alloc().init()
-                item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-                    tray_submenu_title(node.action),
-                    None,
-                    "",
-                )
-                item.setSubmenu_(submenu)
-                menu.addItem_(item)
-                self.menu_refs[node.ref] = submenu
-                if tray_submenu_is_history(node.action):
-                    return
-                self.menu_refs[MODEL_ITEMS_REF] = []
-                for label, row in asr_model_choices(self.session.settings, self.session.runtime):
-                    model_item = self.appendItem_action_toMenu_(label, "setASRModel:", submenu)
-                    model_item.setRepresentedObject_(row)
-                    self.menu_refs[MODEL_ITEMS_REF].append(model_item)
-                return
-            assert node.action is not None
-            label = tray_action_label(
-                node.action,
-                recording=self.session.health.recording,
-                settings=self.session.settings,
-            )
-            item = self.appendItem_action_toMenu_(label, MACOS_SELECTORS[node.action], menu)
-            if node.ref:
-                self.menu_refs[node.ref] = item
 
         def appendItem_action_toMenu_(self, title, action, menu):
             item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, action, "")
@@ -168,11 +141,11 @@ def run_macos_tray(
             return self.refreshHealth()
 
         def updateMenu(self):
-            model_items = [
-                (item, item.representedObject())
-                for item in self.menu_refs.get(MODEL_ITEMS_REF, [])
-            ]
-            apply_tray_menu_update(self.session, self.menu_view, model_items=model_items)
+            apply_tray_menu_update(
+                self.session,
+                self.menu_view,
+                model_items=self.menu_refs.get(MODEL_ITEMS_REF, []),
+            )
 
         def refreshHistoryMenu(self, force: bool = False):
             refresh_shared_history(self.session, history_state, self.menu_view, force=force)
@@ -182,11 +155,7 @@ def run_macos_tray(
             self.refreshHealth()
 
         def toggleRecord_(self, _item):
-            outcome = self.session.toggle_record()
-            if outcome.latest_transcript:
-                history_state.signature = object()
-                self.refreshHistoryMenu(force=True)
-            self.updateMenu()
+            self.runTrayAction_(self.session.toggle_record)
 
         def copyLatest_(self, _item):
             self.session.copy_latest()
@@ -201,21 +170,17 @@ def run_macos_tray(
             self.updateMenu()
 
         def startService_(self, _item):
-            self.session.start_service()
-            self.updateMenu()
+            self.runTrayAction_(self.session.start_service)
 
         def restartService_(self, _item):
-            self.session.restart_service()
-            self.updateMenu()
+            self.runTrayAction_(self.session.restart_service)
 
         def toggleModelCleanup_(self, _item):
-            self.session.toggle_model_cleanup()
-            self.updateMenu()
+            self.runTrayAction_(self.session.toggle_model_cleanup)
 
         def setASRModel_(self, item):
             row: ModelRow = item.representedObject()
-            self.session.set_asr_model(row.model_id, row.backend)
-            self.updateMenu()
+            self.runTrayAction_(lambda: self.session.set_asr_model(row.model_id, row.backend))
 
         def openSettings_(self, _item):
             open_path(self.session.open_settings(), self.session.runtime)

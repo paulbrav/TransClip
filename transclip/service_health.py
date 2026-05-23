@@ -3,8 +3,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from transclip.platform.runtime import PlatformRuntime, get_runtime
+
 from .cleanup import CleanupPlan
-from .platform_runtime import PlatformRuntime, get_runtime
 from .settings import Settings, active_hotkey, paste_shortcut
 
 

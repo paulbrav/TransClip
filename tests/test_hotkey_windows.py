@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from transclip.hotkey_windows import start_windows_hotkey
+from transclip.desktop.hotkey.windows import start_windows_hotkey
 from transclip.settings import Settings
 
 from tests.service_helpers import FakeRuntime

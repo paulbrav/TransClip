@@ -126,8 +126,8 @@ def patch_linux_gpu_runtime(home: Path | None = None):
     @contextmanager
     def _patch():
         with (
-            patch("transclip.platform_runtime.get_runtime", side_effect=_runtime),
-            patch("transclip.runtime_profile.machine_architecture", return_value="x86_64"),
+            patch("transclip.platform.runtime.get_runtime", side_effect=_runtime),
+            patch("transclip.platform.profiles.machine_architecture", return_value="x86_64"),
         ):
             yield runtime
 

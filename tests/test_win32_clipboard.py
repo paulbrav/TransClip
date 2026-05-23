@@ -2,7 +2,7 @@ import ctypes
 import unittest
 from unittest.mock import MagicMock, patch
 
-from transclip.win32_clipboard import (
+from transclip.desktop.paste.win32 import (
     read_clipboard_text,
     send_ctrl_v_paste,
     write_clipboard_text,
@@ -22,8 +22,8 @@ class Win32ClipboardTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "only available on Windows"):
             send_ctrl_v_paste()
 
-    @patch("transclip.win32_clipboard.platform.system", return_value="Windows")
-    @patch("transclip.win32_clipboard.time.sleep")
+    @patch("transclip.desktop.paste.win32.platform.system", return_value="Windows")
+    @patch("transclip.desktop.paste.win32.time.sleep")
     def test_read_clipboard_text_returns_unicode_payload(self, _sleep, _system):
         user32 = MagicMock()
         kernel32 = MagicMock()
@@ -37,7 +37,7 @@ class Win32ClipboardTests(unittest.TestCase):
         self.assertEqual(text, "hello clipboard")
         user32.CloseClipboard.assert_called_once()
 
-    @patch("transclip.win32_clipboard.platform.system", return_value="Windows")
+    @patch("transclip.desktop.paste.win32.platform.system", return_value="Windows")
     def test_write_clipboard_text_sets_unicode_payload(self, _system):
         user32 = MagicMock()
         kernel32 = MagicMock()
@@ -53,8 +53,8 @@ class Win32ClipboardTests(unittest.TestCase):
         user32.SetClipboardData.assert_called_once()
         user32.CloseClipboard.assert_called_once()
 
-    @patch("transclip.win32_clipboard.platform.system", return_value="Windows")
-    @patch("transclip.win32_clipboard.time.sleep")
+    @patch("transclip.desktop.paste.win32.platform.system", return_value="Windows")
+    @patch("transclip.desktop.paste.win32.time.sleep")
     def test_send_ctrl_v_paste_uses_sendinput(self, _sleep, _system):
         user32 = MagicMock()
         user32.SendInput.return_value = 4

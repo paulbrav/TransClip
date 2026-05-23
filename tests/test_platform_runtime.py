@@ -10,8 +10,8 @@ from transclip.models import (
     supported_catalog_entries,
     validate_asr_model_backend,
 )
-from transclip.platform_runtime import user_cache_dir, user_config_dir, user_log_dir
-from transclip.runtime_profile import detect_runtime_profile
+from transclip.platform.profiles import detect_runtime_profile
+from transclip.platform.runtime import user_cache_dir, user_config_dir, user_log_dir
 from transclip.settings import Settings, default_settings
 
 from tests.service_helpers import FakeRuntime
@@ -50,7 +50,7 @@ class PlatformRuntimeTests(unittest.TestCase):
 
     def test_linux_profile_defaults(self):
         runtime = FakeRuntime(system="Linux", home=Path("/home/user"))
-        with patch("transclip.runtime_profile.machine_architecture", return_value="x86_64"):
+        with patch("transclip.platform.profiles.machine_architecture", return_value="x86_64"):
             profile = detect_runtime_profile(runtime)
             settings = default_settings(runtime)
 
@@ -60,7 +60,7 @@ class PlatformRuntimeTests(unittest.TestCase):
 
     def test_linux_cpu_profile_defaults_to_autoregressive_granite(self):
         runtime = FakeRuntime(system="Linux", home=Path("/home/user"))
-        with patch("transclip.runtime_profile.machine_architecture", return_value="armv7l"):
+        with patch("transclip.platform.profiles.machine_architecture", return_value="armv7l"):
             profile = detect_runtime_profile(runtime)
             settings = default_settings(runtime)
 
@@ -117,8 +117,8 @@ class PlatformRuntimeTests(unittest.TestCase):
 
     def test_open_path_uses_platform_opener(self):
         runtime = FakeRuntime(system="Linux", home=Path("/home/user"))
-        with patch("transclip.platform_runtime.subprocess.Popen") as popen:
-            from transclip.platform_runtime import open_path
+        with patch("transclip.platform.runtime.subprocess.Popen") as popen:
+            from transclip.platform.runtime import open_path
 
             open_path(Path("/tmp/settings.toml"), runtime=runtime)
 
@@ -128,7 +128,7 @@ class PlatformRuntimeTests(unittest.TestCase):
     def test_open_path_uses_startfile_on_windows(self):
         runtime = FakeRuntime(system="Windows", home=Path("C:/Users/tester"))
         with patch.object(os, "startfile", create=True) as startfile:
-            from transclip.platform_runtime import open_path
+            from transclip.platform.runtime import open_path
 
             open_path(Path("C:/Users/tester/settings.toml"), runtime=runtime)
 

@@ -8,18 +8,16 @@ from transclip.daemon import (
     append_toggle_log,
     build_systemd_unit,
     collect_status,
-    last_toggle_log_event,
-    toggle_log_path,
-)
-from transclip.daemon_common import service_settings_path
-from transclip.daemon_lifecycle import (
     install_linux_daemon,
     install_macos_daemon,
+    last_toggle_log_event,
     service_action,
     service_state,
+    toggle_log_path,
 )
-from transclip.daemon_windows import build_task_scheduler_xml, install_windows_daemon
-from transclip.hotkey_setup import build_toggle_invocation, windows_hotkey_setup_message
+from transclip.daemon.windows import build_task_scheduler_xml, install_windows_daemon
+from transclip.desktop.hotkey import build_toggle_invocation, windows_hotkey_setup_message
+from transclip.paths import service_settings_path
 from transclip.product import TASK_SCHEDULER_NAME
 from transclip.settings import Settings
 
@@ -58,7 +56,7 @@ class DaemonTests(unittest.TestCase):
             home = Path(tmp)
             with (
                 patch(
-                    "transclip.daemon_lifecycle.install_shortcut",
+                    "transclip.daemon.linux.install_shortcut",
                     return_value=shortcut,
                 ) as install_shortcut,
             ):
@@ -219,8 +217,8 @@ class DaemonTests(unittest.TestCase):
             {"ok": False, "backend": None, "detail": "No supported clipboard reader/writer found"},
         )()
         with (
-            patch("transclip.daemon.paste_capability", return_value=capability),
-            patch("transclip.daemon.clipboard_capability", return_value=clipboard_capability),
+            patch("transclip.daemon.status.paste_capability", return_value=capability),
+            patch("transclip.daemon.status.clipboard_capability", return_value=clipboard_capability),
         ):
             status = collect_status(Settings(port=0), runtime=FakeRuntime(system="Other"))
 
@@ -241,7 +239,7 @@ class DaemonTests(unittest.TestCase):
                 home=home,
                 env={"LOCALAPPDATA": str(home / "AppData/Local")},
             )
-            with patch("transclip.daemon_lifecycle.install_shortcut") as install_shortcut:
+            with patch("transclip.daemon.linux.install_shortcut") as install_shortcut:
                 results = install_windows_daemon(
                     runner=runner,
                     runtime=runtime,
@@ -307,7 +305,7 @@ class DaemonTests(unittest.TestCase):
         self.assertIn("C:/Users/test user/AppData/Roaming/transclip/settings.toml", command)
 
     def test_windows_service_state_ignores_running_substring_without_status_line(self):
-        from transclip.daemon_windows import _windows_task_reports_running
+        from transclip.daemon.windows import _windows_task_reports_running
 
         self.assertFalse(_windows_task_reports_running("Last Result: Running tasks only"))
         self.assertTrue(_windows_task_reports_running("Status: Running"))

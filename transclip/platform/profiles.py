@@ -4,8 +4,8 @@ import platform
 from dataclasses import dataclass
 from typing import Literal
 
-from . import platform_runtime
-from .product import CONFIG_DIR_NAME, LOG_DIR_NAME
+from transclip.platform.runtime import PlatformRuntime, get_runtime
+from transclip.product import CONFIG_DIR_NAME, LOG_DIR_NAME
 
 ProfileRuntimeKind = Literal["torch_cuda", "torch_rocm", "torch_mps", "torch_cpu", "mlx", "file"]
 ProfileId = Literal[
@@ -44,8 +44,8 @@ GRANITE_NAR_UNSUPPORTED_WINDOWS = (
 )
 
 
-def machine_architecture(runtime: platform_runtime.PlatformRuntime | None = None) -> str:
-    platform_runtime_instance = platform_runtime.get_runtime(runtime)
+def machine_architecture(runtime: PlatformRuntime | None = None) -> str:
+    platform_runtime_instance = get_runtime(runtime)
     if platform_runtime_instance.system() == "Darwin":
         try:
             output = platform_runtime_instance.check_output(["uname", "-m"])
@@ -57,7 +57,7 @@ def machine_architecture(runtime: platform_runtime.PlatformRuntime | None = None
     return platform.machine().lower()
 
 
-def is_apple_silicon(runtime: platform_runtime.PlatformRuntime | None = None) -> bool:
+def is_apple_silicon(runtime: PlatformRuntime | None = None) -> bool:
     return machine_architecture(runtime) in {"arm64", "aarch64"}
 
 
@@ -65,10 +65,10 @@ def is_native_arm_python() -> bool:
     return platform.machine().lower() in {"arm64", "aarch64"}
 
 
-def detect_runtime_profile(runtime: platform_runtime.PlatformRuntime | None = None) -> RuntimeProfile:
-    from .device import torch_cuda_usable
+def detect_runtime_profile(runtime: PlatformRuntime | None = None) -> RuntimeProfile:
+    from transclip.device import torch_cuda_usable
 
-    platform_runtime_instance = platform_runtime.get_runtime(runtime)
+    platform_runtime_instance = get_runtime(runtime)
     system = platform_runtime_instance.system()
     arch = machine_architecture(platform_runtime_instance)
 

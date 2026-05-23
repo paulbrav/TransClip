@@ -5,9 +5,10 @@ from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 from typing import Any, get_type_hints
 
-from .platform_runtime import PlatformRuntime, get_runtime, user_config_dir
+from transclip.platform.profiles import detect_runtime_profile
+from transclip.platform.runtime import PlatformRuntime, get_runtime, user_config_dir
+
 from .product import CONFIG_DIR_NAME
-from .runtime_profile import detect_runtime_profile
 
 DEFAULT_HOTKEY_LINUX = "<Super><Shift>XF86TouchpadOff"
 DEFAULT_HOTKEY_WINDOWS = "ctrl+shift+space"
