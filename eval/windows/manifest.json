@@ -1,0 +1,154 @@
+{
+  "name": "transclip-windows-eval",
+  "description": "Windows Granite autoregressive dictation eval gate (relaxed vs Linux NAR thresholds)",
+  "platform": "windows-x86_64",
+  "candidates": [
+    {
+      "label": "granite-ar-2b",
+      "asr_backend": "granite",
+      "asr_model": "ibm-granite/granite-speech-4.1-2b"
+    },
+    {
+      "label": "granite-ar-2b-plus",
+      "asr_backend": "granite",
+      "asr_model": "ibm-granite/granite-speech-4.1-2b-plus"
+    }
+  ],
+  "thresholds": {
+    "warm_transcribe_p95_ms": 4500,
+    "release_to_ready_p95_ms": 6000,
+    "wer_max": 0.18,
+    "keyword_preservation_min": 0.95
+  },
+  "warmup_cases": [
+    {
+      "audio_path": "../v1-synthetic/audio/warmup.wav",
+      "reference": "PyTorch on ROCm with gfx1151 is ready for the Granite speech benchmark.",
+      "keywords": ["PyTorch", "ROCm", "gfx1151", "Granite"],
+      "cleanup": true
+    }
+  ],
+  "cases": [
+    {
+      "audio_path": "../v1-synthetic/audio/case_01.wav",
+      "reference": "Please check the Python tray icon after the service reports ready.",
+      "keywords": ["Python tray"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_02.wav",
+      "reference": "Set the cleanup runtime to rule for the latency profile.",
+      "keywords": ["cleanup"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_03.wav",
+      "reference": "Granite NAR should stay under seven hundred milliseconds after warm up.",
+      "keywords": ["Granite", "NAR"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_04.wav",
+      "reference": "Add PyTorch, ROCm, and gfx1151 to the technical note.",
+      "keywords": ["PyTorch", "ROCm", "gfx1151"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_05.wav",
+      "reference": "The localhost Python inference service is listening on port eight seven six five.",
+      "keywords": ["Python"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_06.wav",
+      "reference": "Use wtype on Wayland and xdotool on X eleven when paste injection is needed.",
+      "keywords": ["wtype", "Wayland", "xdotool"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_07.wav",
+      "reference": "The macOS menu bar item may need accessibility permission for command V.",
+      "keywords": ["macOS"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_08.wav",
+      "reference": "Do not add cloud fallback or transcript telemetry in version one.",
+      "keywords": ["telemetry"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_09.wav",
+      "reference": "Keep the Gemma cleanup backend available for quality comparisons.",
+      "keywords": ["Gemma"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_10.wav",
+      "reference": "Open the settings file and verify Hugging Face is preserved exactly.",
+      "keywords": ["Hugging Face"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_11.wav",
+      "reference": "Run the unit tests after changing the Python tray.",
+      "keywords": ["Python tray"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_12.wav",
+      "reference": "The recent transcripts submenu should keep the last five snippets.",
+      "keywords": ["recent transcripts"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_13.wav",
+      "reference": "Clipboard restoration should wait five hundred milliseconds before replacing text.",
+      "keywords": ["Clipboard"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_14.wav",
+      "reference": "The app should hide the secondary status window instead of quitting.",
+      "keywords": ["status window"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_15.wav",
+      "reference": "Use the TheRock nightly index for the Radeon eight zero six zero S.",
+      "keywords": ["TheRock", "Radeon"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_16.wav",
+      "reference": "FlashAttention Triton AMD is required for the Granite NAR backend.",
+      "keywords": ["FlashAttention", "Triton", "AMD", "Granite", "NAR"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_17.wav",
+      "reference": "The debug capture folder should include audio dot wav and timings dot json.",
+      "keywords": ["debug capture"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_18.wav",
+      "reference": "Avoid rewriting llama.cpp as llama.cpp during cleanup.",
+      "keywords": ["llama.cpp"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_19.wav",
+      "reference": "The service health endpoint should include the active hotkey and paste shortcut.",
+      "keywords": ["health endpoint"],
+      "cleanup": true
+    },
+    {
+      "audio_path": "../v1-synthetic/audio/case_20.wav",
+      "reference": "Do not treat the Dock as the primary home for this app.",
+      "keywords": ["Dock"],
+      "cleanup": true
+    }
+  ],
+  "output_dir": "eval/windows/results"
+}

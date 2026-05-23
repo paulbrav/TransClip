@@ -1,8 +1,9 @@
 # TransClip
 
-Local-only toggle-to-talk dictation for Linux and macOS, with local ASR and
-faithful cleanup for technical notes. Granite NAR is the default backend, but
-TransClip is the product surface.
+Local-only toggle-to-talk dictation for Linux, macOS, and Windows, with local ASR and
+faithful cleanup for technical notes. Granite NAR is the default backend on Linux GPU,
+Granite autoregressive on Windows, and MLX on macOS Apple Silicon. TransClip is the
+product surface.
 
 The default path is now the pure-Python dictation daemon:
 
@@ -50,6 +51,19 @@ installing the optional UI extra:
 uv sync --extra audio --extra mlx --extra macos-ui
 transclip tray
 ```
+
+On Windows, `install` registers a Task Scheduler logon task. Global hotkey
+`ctrl+shift+space` is registered when `transclip tray` is running. Sync optional
+UI dependencies for the system tray and in-process hotkey:
+
+```bash
+uv sync --extra audio --extra models --extra windows-ui
+transclip tray
+```
+
+Install a CUDA-enabled PyTorch wheel before prefetching Granite AR models, then
+run `transclip models prefetch --model ibm-granite/granite-speech-4.1-2b`.
+Granite NAR is not supported on Windows.
 
 Check readiness and logs:
 
@@ -148,6 +162,36 @@ models require `uv sync --extra audio --extra models`.
 | --- | --- | --- |
 | Recording | Microphone | Grant to Terminal, IDE, LaunchAgent Python, or Shortcuts |
 | Paste | Accessibility / Automation | Required for `osascript` paste injection |
+
+## Windows Quick Start
+
+Requirements: Windows 10+, Python 3.12+, NVIDIA CUDA PyTorch for GPU inference.
+
+```bash
+uv sync --extra audio --extra models --extra windows-ui
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+uv run -m transclip.cli init-config
+uv run -m transclip.cli models prefetch --model ibm-granite/granite-speech-4.1-2b
+uv run -m transclip.cli install
+uv run -m transclip.cli status
+uv run -m transclip.cli doctor
+transclip tray
+```
+
+Supported ASR on Windows:
+
+- `ibm-granite/granite-speech-4.1-2b` (default Granite autoregressive)
+- `ibm-granite/granite-speech-4.1-2b-plus` (speaker/timestamp features)
+
+Granite Speech 4.1 NAR and ROCm are not supported on Windows. Eval thresholds
+for Windows Granite AR are in `eval/windows/manifest.json` (relaxed vs Linux NAR).
+
+### Permissions (Windows)
+
+| Action | Permission | Notes |
+| --- | --- | --- |
+| Recording | Microphone | Settings > Privacy & security > Microphone |
+| Paste | Focused app | SendInput Ctrl+V; elevated apps may block injection (UIPI) |
 
 ## Linux CUDA / ROCm Quick Start
 

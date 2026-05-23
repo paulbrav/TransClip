@@ -39,3 +39,23 @@ jobs:
         run: uv run python -m unittest discover -s tests -v
       - name: MLX import smoke
         run: uv run python -c "import platform, mlx; from mlx_audio.stt.generate import generate_transcription; print(platform.machine(), generate_transcription)"
+
+  windows:
+    runs-on: windows-latest
+    env:
+      UV_LINK_MODE: copy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync dependencies
+        run: uv sync --extra dev --extra audio --extra windows-ui
+      - name: Ruff
+        run: uv run ruff check .
+      - name: Compile
+        run: uv run python -m compileall transclip scripts tests
+      - name: Unit tests
+        run: uv run python -m unittest discover -s tests -v
+      - name: Windows integration smoke
+        run: uv run python -c "import keyboard, pystray; from PIL import Image; import transclip.win32_clipboard; import transclip.hotkey_windows; import transclip.tray_win32; print('windows-integration ok')"

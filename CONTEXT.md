@@ -17,9 +17,9 @@ session, then may copy and paste the transcript and report the outcome to the
 caller.
 
 **Platform runtime**: The operating-system and desktop-session facts TransClip
-relies on, including macOS versus Linux behavior, Wayland versus X11,
-environment variables, user paths, executable discovery, and subprocess command
-execution.
+relies on, including macOS versus Linux versus Windows behavior, Wayland versus
+X11, environment variables, user paths, executable discovery, and subprocess
+command execution.
 
 **Paste capability**: The current ability to place transcript text on the
 clipboard and inject a paste action into the focused application. Capability is
@@ -32,12 +32,15 @@ expected binding, and is available on the current desktop environment. On Linux
 this is the GNOME custom shortcut installed by `transclip install`. On macOS
 global shortcuts are configured manually in System Settings or Shortcuts.app;
 `hotkey_macos` stores the suggested binding while the tray can copy the toggle
-command wrapper.
+command wrapper. On Windows the in-process `keyboard` hook in `transclip tray`
+registers `hotkey_windows` (default `ctrl+shift+space`).
 
 **Runtime profile**: Platform-aware defaults for ASR backend, model, device,
-and supported runtime kinds. Linux x86_64 defaults to Granite NAR; Linux CPU
-defaults to Granite AR; macOS Apple Silicon defaults to MLX Whisper via
-`mlx-audio`.
+service manager, and supported runtime kinds. Linux x86_64 defaults to Granite
+NAR with systemd; Linux CPU defaults to Granite AR. macOS Apple Silicon defaults
+to MLX Whisper via `mlx-audio` with launchd. Windows defaults to Granite AR
+(`ibm-granite/granite-speech-4.1-2b`) with CUDA when available and Task
+Scheduler for the background service. Granite NAR is not supported on Windows.
 
 **ASR runtime**: The local speech-to-text execution path for a WAV file. It
 includes audio preparation, backend selection, local model loading, transcript
