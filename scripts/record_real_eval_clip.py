@@ -59,7 +59,7 @@ def arecord_command(wav_path: Path, device: str, duration: int) -> list[str]:
         "1",
         "-d",
         str(duration),
-        str(wav_path),
+        wav_path.as_posix(),
     ]
 
 

@@ -14,7 +14,7 @@ from transclip.platform.profiles import detect_runtime_profile
 from transclip.platform.runtime import user_cache_dir, user_config_dir, user_log_dir
 from transclip.settings import Settings, default_settings
 
-from tests.service_helpers import FakeRuntime
+from tests.service_helpers import FakeRuntime, normalize_path_text
 
 
 class PlatformRuntimeTests(unittest.TestCase):
@@ -123,7 +123,8 @@ class PlatformRuntimeTests(unittest.TestCase):
             open_path(Path("/tmp/settings.toml"), runtime=runtime)
 
         popen.assert_called_once()
-        self.assertEqual(popen.call_args.args[0], ["xdg-open", "/tmp/settings.toml"])
+        self.assertEqual(popen.call_args.args[0][0], "xdg-open")
+        self.assertEqual(normalize_path_text(popen.call_args.args[0][1]), "/tmp/settings.toml")
 
     def test_open_path_uses_startfile_on_windows(self):
         runtime = FakeRuntime(system="Windows", home=Path("C:/Users/tester"))
@@ -132,7 +133,11 @@ class PlatformRuntimeTests(unittest.TestCase):
 
             open_path(Path("C:/Users/tester/settings.toml"), runtime=runtime)
 
-        startfile.assert_called_once_with("C:/Users/tester/settings.toml")
+        startfile.assert_called_once()
+        self.assertEqual(
+            normalize_path_text(startfile.call_args.args[0]),
+            "C:/Users/tester/settings.toml",
+        )
 
     def test_windows_profile_defaults_to_granite_ar(self):
         runtime = FakeRuntime(system="Windows", home=Path("C:/Users/tester"))

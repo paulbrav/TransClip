@@ -15,13 +15,14 @@ from transclip.daemon import (
     service_state,
     toggle_log_path,
 )
+from transclip.daemon.macos import launch_agent_path
 from transclip.daemon.windows import build_task_scheduler_xml, install_windows_daemon
 from transclip.desktop.hotkey import build_toggle_invocation, windows_hotkey_setup_message
 from transclip.paths import service_settings_path
 from transclip.product import TASK_SCHEDULER_NAME
 from transclip.settings import Settings
 
-from tests.service_helpers import FakeRuntime
+from tests.service_helpers import FakeRuntime, normalize_path_text
 
 
 class DaemonTests(unittest.TestCase):
@@ -29,10 +30,10 @@ class DaemonTests(unittest.TestCase):
         unit = build_systemd_unit(Path("/tmp/settings.toml"))
 
         self.assertIn("Description=TransClip dictation service", unit)
-        self.assertIn(
-            f"-m transclip.cli --settings {service_settings_path(Path('/tmp/settings.toml'))} serve",
-            unit,
+        settings_fragment = (
+            f"-m transclip.cli --settings {service_settings_path(Path('/tmp/settings.toml'))} serve"
         )
+        self.assertIn(normalize_path_text(settings_fragment), normalize_path_text(unit))
         self.assertIn("Restart=on-failure", unit)
         self.assertIn("FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE", unit)
 
@@ -133,7 +134,8 @@ class DaemonTests(unittest.TestCase):
             self.assertTrue(any("Keyboard Shortcut" in result.detail for result in results))
             self.assertTrue(
                 any(
-                    "Library/Logs/transclip/toggle-record.log" in result.detail
+                    "Library/Logs/transclip/toggle-record.log"
+                    in normalize_path_text(result.detail)
                     for result in results
                 )
             )
@@ -170,7 +172,7 @@ class DaemonTests(unittest.TestCase):
 
         self.assertTrue(result.ok)
         self.assertIn(
-            ["launchctl", "bootstrap", "gui/501", "/Users/test/Library/LaunchAgents/com.paulbrav.transclip.plist"],
+            ["launchctl", "bootstrap", "gui/501", str(launch_agent_path(runtime))],
             calls,
         )
 
@@ -188,7 +190,7 @@ class DaemonTests(unittest.TestCase):
 
         self.assertTrue(result.ok)
         self.assertIn(
-            ["launchctl", "bootstrap", "gui/501", "/Users/test/Library/LaunchAgents/com.paulbrav.transclip.plist"],
+            ["launchctl", "bootstrap", "gui/501", str(launch_agent_path(runtime))],
             calls,
         )
 
@@ -295,14 +297,17 @@ class DaemonTests(unittest.TestCase):
     def test_service_settings_path_preserves_absolute_windows_paths(self):
         path = Path("C:/Users/test user/AppData/Roaming/transclip/settings.toml")
         self.assertEqual(
-            service_settings_path(path),
+            normalize_path_text(service_settings_path(path)),
             "C:/Users/test user/AppData/Roaming/transclip/settings.toml",
         )
 
     def test_build_toggle_invocation_preserves_absolute_windows_settings_path(self):
         path = Path("C:/Users/test user/AppData/Roaming/transclip/settings.toml")
         command = build_toggle_invocation(path)
-        self.assertIn("C:/Users/test user/AppData/Roaming/transclip/settings.toml", command)
+        self.assertIn(
+            normalize_path_text(service_settings_path(path)),
+            [normalize_path_text(str(part)) for part in command],
+        )
 
     def test_windows_service_state_ignores_running_substring_without_status_line(self):
         from transclip.daemon.windows import _windows_task_reports_running

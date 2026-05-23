@@ -357,7 +357,8 @@ def load_keyword_file(path: Path) -> list[str]:
 
 def manifest_path(path: Path, output_path: Path) -> str:
     output_dir = output_path.expanduser().resolve().parent
-    return os.path.relpath(path.resolve(), output_dir)
+    relative = os.path.relpath(path.resolve(), output_dir)
+    return relative.replace("\\", "/")
 
 
 def check_results(

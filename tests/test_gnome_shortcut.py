@@ -24,7 +24,7 @@ from transclip.product import (
     SHORTCUT_ALT_PATH,
 )
 
-from tests.service_helpers import FakeRuntime
+from tests.service_helpers import FakeRuntime, normalize_path_text
 
 
 class FakeGSettings:
@@ -108,7 +108,8 @@ class GnomeShortcutTests(unittest.TestCase):
         )
 
     def test_build_toggle_command_is_logging_wrapper(self):
-        command = build_toggle_command()
+        runtime = FakeRuntime(system="Linux", home=Path("/home/test"))
+        command = build_toggle_command(runtime=runtime)
 
         self.assertTrue(command.startswith("/bin/sh -lc "))
         self.assertIn("toggle-record --paste", command)
@@ -136,7 +137,7 @@ class GnomeShortcutTests(unittest.TestCase):
         self.assertTrue(command.lower().startswith("powershell"))
         self.assertIn("toggle-record.log", command)
         self.assertEqual(
-            toggle_log_shell_path(runtime),
+            normalize_path_text(toggle_log_shell_path(runtime)),
             "C:/Users/tester/AppData/Local/transclip/logs/toggle-record.log",
         )
 

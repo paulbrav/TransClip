@@ -11,6 +11,10 @@ from transclip.settings import Settings
 from transclip.text_generation import TextGenerationResult
 
 
+def normalize_path_text(value: str | Path) -> str:
+    return str(value).replace("\\", "/")
+
+
 class FakeASR:
     name = "fake"
     model = "fake-model"
