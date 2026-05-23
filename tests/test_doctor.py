@@ -59,7 +59,7 @@ class DoctorTests(unittest.TestCase):
         )
         with (
             patch.dict("sys.modules", {"flash_attn": object(), "torch": torch}),
-            patch("transclip.doctor.resolve_torch_device", return_value="cuda"),
+            patch("transclip.doctor_asr.resolve_torch_device", return_value="cuda"),
         ):
             self.assertTrue(check_asr_runtime(Settings()).ok)
 
