@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass
 from urllib.error import HTTPError, URLError
 
 from .client import InferenceClient
@@ -51,19 +51,7 @@ def toggle_recording(
     paste_failed_message = ""
     if paste and result.get("action") == "stopped" and result.get("text"):
         paste_result = paste_transcript(str(result["text"]), settings)
-        result["paste"] = (
-            asdict(paste_result)
-            if is_dataclass(paste_result)
-            else {
-                "copied": getattr(paste_result, "copied", True),
-                "pasted": paste_result.pasted,
-                "restored": paste_result.restored,
-                "transcript_left_on_clipboard": paste_result.transcript_left_on_clipboard,
-                "clipboard_backend": getattr(paste_result, "clipboard_backend", "unknown"),
-                "paste_backend": getattr(paste_result, "paste_backend", None),
-                "error_detail": paste_result.error_detail,
-            }
-        )
+        result["paste"] = asdict(paste_result)
         if not paste_result.pasted:
             detail = f" {paste_result.error_detail}" if paste_result.error_detail else ""
             paste_failed_message = "Paste failed. The transcript is still on the clipboard." + detail

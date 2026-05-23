@@ -3,11 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import tempfile
-import time
 from pathlib import Path
 
-from .audio import AudioRecorder, recording_debug
+from .audio import recording_debug
 from .daemon import (
     collect_status,
     logs_dir,
@@ -29,7 +27,7 @@ from .gnome_shortcut import install_shortcut
 from .history import read_history
 from .models import model_rows, prefetch_model
 from .notify import notify
-from .paste import SystemClipboard, paste_transcript
+from .paste import SystemClipboard
 from .product import CLI_COMMAND, DISPLAY_NAME
 from .recording_ops import toggle_recording
 from .service import InferenceEngine, run_server
@@ -82,8 +80,6 @@ def handle_command(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         text = " ".join(args.text) if args.text else sys.stdin.read()
         print(engine.cleanup_text(text)["text"])
         return 0
-    if args.command == "record-once":
-        return handle_record_once(args, settings, engine)
     if args.command == "eval":
         result = run_eval(args.manifest, engine)
         encoded = json.dumps(result, indent=2)
@@ -227,26 +223,6 @@ def handle_toggle_record(args: argparse.Namespace, settings) -> int:
     if outcome.paste_failed_message:
         notify(DISPLAY_NAME, outcome.notification_message)
     print(json.dumps(outcome.payload))
-    return 0
-
-
-def handle_record_once(args: argparse.Namespace, settings, engine: InferenceEngine) -> int:
-    recorder = AudioRecorder(settings)
-    with tempfile.TemporaryDirectory() as tmp:
-        wav = Path(tmp) / "recording.wav"
-        recorder.start()
-        time.sleep(min(args.seconds, settings.max_recording_seconds))
-        recorder.stop_to_wav(wav)
-        result = engine.transcribe(wav)
-        print(result["text"])
-        if args.paste:
-            paste_result = paste_transcript(result["text"], settings)
-            if not paste_result.pasted:
-                detail = f" {paste_result.error_detail}" if paste_result.error_detail else ""
-                notify(
-                    DISPLAY_NAME,
-                    "Paste failed. The transcript is still on the clipboard." + detail,
-                )
     return 0
 
 
