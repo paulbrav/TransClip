@@ -3,7 +3,24 @@
 This repository is TransClip: a local-only toggle-to-talk dictation app with
 local ASR, cleanup, paste injection, daemon lifecycle, tray integration, and an
 eval harness. Before changing behavior, read `CONTEXT.md` so you use the
-project's domain language consistently.
+project's domain language consistently. For package boundaries and stable import
+paths, read [docs/package-layout.md](docs/package-layout.md).
+
+## Package boundaries
+
+Prefer public package entry points over deep submodule imports:
+
+- `transclip.platform.runtime` — OS/runtime facts
+- `transclip.desktop.paste` — clipboard and paste injection
+- `transclip.desktop.hotkey` — shortcut install, toggle commands, readiness helpers
+- `transclip.desktop.tray` — `run_tray` only
+- `transclip.daemon` — service install, status, toggle log
+- `transclip.doctor` — readiness checks
+- `transclip.paths` — shared path normalization (daemon units, toggle command)
+
+Platform-specific modules (`daemon/linux.py`, `desktop/hotkey/linux_gnome.py`,
+`desktop/tray/gtk.py`, etc.) are for tests and adapter work, not general
+feature logic. Route cross-cutting calls through the package routers above.
 
 ## Development Workflow
 

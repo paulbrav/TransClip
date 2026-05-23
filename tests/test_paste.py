@@ -1,14 +1,17 @@
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from transclip.paste import (
+from transclip.desktop.paste import (
     SystemPasteInjector,
     clipboard_capability,
     detect_clipboard_backend,
+    paste_capability,
     paste_commands,
     paste_transcript,
 )
-from transclip.platform_capabilities import session_info
+from transclip.desktop.paste.platform import paste_specs
+from transclip.platform.capabilities import session_info
 from transclip.settings import Settings
 
 from tests.service_helpers import FakeRuntime
@@ -59,7 +62,7 @@ class PasteTests(unittest.TestCase):
         self.assertEqual(clipboard.value, "transcript")
 
     def test_missing_system_clipboard_is_structured_failure(self):
-        with patch("transclip.paste.SystemClipboard", side_effect=RuntimeError("missing clipboard")):
+        with patch("transclip.desktop.paste.SystemClipboard", side_effect=RuntimeError("missing clipboard")):
             result = paste_transcript("transcript", Settings())
 
         self.assertFalse(result.copied)
@@ -208,6 +211,61 @@ class PasteTests(unittest.TestCase):
 
         self.assertTrue(capability.ok)
         self.assertEqual(capability.backend, "wl-clipboard")
+
+    def test_windows_clipboard_and_paste_capabilities_are_available(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+
+        clipboard = clipboard_capability(runtime=runtime)
+        paste = paste_commands(runtime=runtime)
+
+        self.assertTrue(clipboard.ok)
+        self.assertEqual(clipboard.backend, "win32")
+        self.assertEqual(paste[0].backend, "sendinput")
+
+    def test_windows_paste_uses_sendinput_backend(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        with patch("transclip.desktop.paste.win32.send_ctrl_v_paste") as send_paste:
+            injector = SystemPasteInjector(runtime)
+            self.assertTrue(injector.paste())
+
+        send_paste.assert_called_once()
+        self.assertEqual(injector.backend_name, "sendinput")
+
+    def test_x11_paste_registry_prefers_xdotool_before_ydotool(self):
+        def which(name):
+            return f"/usr/bin/{name}"
+
+        info = session_info(environ={"XDG_SESSION_TYPE": "x11"}, system="Linux")
+        backends = [spec.backend for spec in paste_specs(info)]
+        self.assertEqual(backends, ["xdotool", "ydotool", "wtype"])
+
+        commands = paste_commands(which=which, info=info)
+        self.assertEqual(commands[0].backend, "xdotool")
+
+    def test_x11_paste_capability_skips_wtype_when_xdotool_available(self):
+        def which(name):
+            return f"/usr/bin/{name}"
+
+        def run(_command, **_kwargs):
+            return type("Completed", (), {"returncode": 0, "stdout": ""})()
+
+        info = session_info(environ={"XDG_SESSION_TYPE": "x11"}, system="Linux")
+        capability = paste_capability(which=which, info=info, runner=run)
+
+        self.assertTrue(capability.ok)
+        self.assertEqual(capability.backend, "xdotool")
+
+    def test_wayland_paste_registry_prefers_wtype_before_ydotool(self):
+        def which(name):
+            return f"/usr/bin/{name}"
+
+        info = session_info(environ={"XDG_SESSION_TYPE": "wayland"}, system="Linux")
+        backends = [spec.backend for spec in paste_specs(info)]
+        self.assertEqual(backends, ["wtype", "ydotool"])
+
+        commands = paste_commands(which=which, info=info)
+        self.assertEqual(commands[0].backend, "wtype")
+
 
 
 if __name__ == "__main__":

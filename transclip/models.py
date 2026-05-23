@@ -5,9 +5,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from . import platform_runtime
-from .platform_runtime import PlatformRuntime, user_cache_dir
-from .runtime_profile import detect_runtime_profile, is_apple_silicon, machine_architecture
+from transclip.platform.profiles import detect_runtime_profile, is_apple_silicon, machine_architecture
+from transclip.platform.runtime import PlatformRuntime, get_runtime, user_cache_dir
+
 from .settings import Settings, default_settings
 
 GIB = 1024**3
@@ -43,7 +43,7 @@ MODEL_CATALOG: tuple[ModelCatalogEntry, ...] = (
         backend="granite",
         runtime_kind="torch",
         estimated_bytes=8 * GIB,
-        supported_platforms=frozenset({"Darwin", "Linux"}),
+        supported_platforms=frozenset({"Darwin", "Linux", "Windows"}),
         supported_architectures=frozenset({"arm64", "aarch64"}),
         dependency_extra="models",
         prefetch_strategy="transformers",
@@ -53,7 +53,7 @@ MODEL_CATALOG: tuple[ModelCatalogEntry, ...] = (
         backend="granite",
         runtime_kind="torch",
         estimated_bytes=8 * GIB,
-        supported_platforms=frozenset({"Darwin", "Linux"}),
+        supported_platforms=frozenset({"Darwin", "Linux", "Windows"}),
         supported_architectures=frozenset({"arm64", "aarch64"}),
         dependency_extra="models",
         prefetch_strategy="transformers",
@@ -99,7 +99,7 @@ SUPPORTED_TEXT_MODELS = [
         backend="text_generation",
         runtime_kind="torch",
         estimated_bytes=10 * GIB,
-        supported_platforms=frozenset({"Darwin", "Linux"}),
+        supported_platforms=frozenset({"Darwin", "Linux", "Windows"}),
         supported_architectures=None,
         dependency_extra="models",
         prefetch_strategy="transformers",
@@ -157,7 +157,7 @@ def validate_platform_support(
     entry: ModelCatalogEntry,
     runtime: PlatformRuntime | None = None,
 ) -> None:
-    platform_runtime_instance = platform_runtime.get_runtime(runtime)
+    platform_runtime_instance = get_runtime(runtime)
     system = platform_runtime_instance.system()
     if system not in entry.supported_platforms:
         raise ValueError(
@@ -192,11 +192,8 @@ def validate_asr_model_backend(
         if "granite-speech" not in model_id:
             raise ValueError("Granite ASR requires an ibm-granite granite-speech model")
     profile = detect_runtime_profile(runtime)
-    if backend == "granite_nar" and profile.profile_id == "darwin_arm_mlx":
-        raise ValueError(
-            "Granite Speech 4.1 NAR is not supported on macOS. "
-            'Set asr_backend = "mlx_audio_whisper" or choose a supported MLX model.'
-        )
+    if backend == "granite_nar" and profile.granite_nar_unsupported_reason:
+        raise ValueError(profile.granite_nar_unsupported_reason)
     return backend
 
 

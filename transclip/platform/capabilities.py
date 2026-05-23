@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from .platform_runtime import PlatformRuntime, get_runtime
+from .runtime import PlatformRuntime, get_runtime
 
 
 @dataclass(frozen=True, slots=True)

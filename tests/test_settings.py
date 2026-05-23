@@ -61,6 +61,12 @@ class SettingsTests(unittest.TestCase):
         self.assertNotIn("XF86TouchpadOff", active_hotkey(settings, runtime))
         self.assertEqual(paste_shortcut(settings, runtime), "Command+V")
 
+    def test_active_hotkey_uses_windows_binding(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        settings = Settings()
+        self.assertEqual(active_hotkey(settings, runtime), "ctrl+shift+space")
+        self.assertEqual(paste_shortcut(settings, runtime), "Ctrl+V")
+
     def test_patch_settings_returns_new_object_without_mutating_original(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "settings.toml"

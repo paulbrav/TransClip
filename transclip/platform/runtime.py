@@ -67,15 +67,27 @@ def get_runtime(runtime: PlatformRuntime | None = None) -> PlatformRuntime:
 
 def user_config_dir(app_name: str, runtime: PlatformRuntime | None = None) -> Path:
     platform_runtime = get_runtime(runtime)
-    if platform_runtime.system() == "Darwin":
+    system = platform_runtime.system()
+    if system == "Darwin":
         return platform_runtime.home_dir() / "Library" / "Application Support" / app_name
+    if system == "Windows":
+        appdata = platform_runtime.environ("APPDATA")
+        if appdata:
+            return Path(appdata) / app_name
+        return platform_runtime.home_dir() / "AppData" / "Roaming" / app_name
     return platform_runtime.home_dir() / ".config" / app_name
 
 
 def user_cache_dir(app_name: str, runtime: PlatformRuntime | None = None) -> Path:
     platform_runtime = get_runtime(runtime)
-    if platform_runtime.system() == "Darwin":
+    system = platform_runtime.system()
+    if system == "Darwin":
         return platform_runtime.home_dir() / "Library" / "Caches" / app_name
+    if system == "Windows":
+        local_appdata = platform_runtime.environ("LOCALAPPDATA")
+        if local_appdata:
+            return Path(local_appdata) / app_name
+        return platform_runtime.home_dir() / "AppData" / "Local" / app_name
     return platform_runtime.home_dir() / ".cache" / app_name
 
 
@@ -83,14 +95,27 @@ def user_log_dir(app_name: str, runtime: PlatformRuntime | None = None) -> Path:
     platform_runtime = get_runtime(runtime)
     if platform_runtime.system() == "Darwin":
         return platform_runtime.home_dir() / "Library" / "Logs" / app_name
+    if platform_runtime.system() == "Windows":
+        return user_cache_dir(app_name, platform_runtime) / "logs"
     return user_cache_dir(app_name, platform_runtime)
 
 
 def open_path(path: Path, runtime: PlatformRuntime | None = None) -> None:
     platform_runtime = get_runtime(runtime)
-    opener = "open" if platform_runtime.system() == "Darwin" else "xdg-open"
+    system = platform_runtime.system()
+    if system == "Darwin":
+        opener = "open"
+        subprocess.Popen(
+            [opener, str(path)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return
+    if system == "Windows":
+        os.startfile(str(path))  # type: ignore[attr-defined]
+        return
     subprocess.Popen(
-        [opener, str(path)],
+        ["xdg-open", str(path)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )

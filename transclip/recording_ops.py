@@ -3,10 +3,11 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from urllib.error import HTTPError, URLError
 
+from transclip.daemon import append_toggle_log
+from transclip.desktop.paste import paste_transcript
+
 from .client import InferenceClient
-from .daemon import append_toggle_log
 from .history import timestamp
-from .paste import paste_transcript
 from .settings import Settings
 
 

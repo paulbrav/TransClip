@@ -17,6 +17,7 @@ audio = ["sounddevice>=0.5", "numpy>=1.26"]
 models = ["transformers>=4.52.1", "torch>=2.5", "torchaudio>=2.5", "torchcodec>=0.5", "torchvision>=0.20", "accelerate>=1.0", "soundfile>=0.12", "pillow>=10"]
 mlx = ["mlx-audio[stt]>=0.4.3", "huggingface_hub>=0.27", "soundfile>=0.12"]
 macos-ui = ["pyobjc-framework-Cocoa>=10; sys_platform == 'darwin'"]
+windows-ui = ["pystray>=0.19", "pillow>=10", "keyboard>=0.13.5; sys_platform == 'win32'"]
 dev = [
     "coverage[toml]>=7.10",
     "pytest>=8.4",
@@ -37,6 +38,9 @@ src = ["transclip", "scripts", "tests"]
 
 [tool.ruff.lint]
 select = ["B", "C4", "E", "F", "I", "RUF", "SIM", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"transclip/desktop/paste/win32.py" = ["RUF012"]
 
 [tool.ruff.format]
 quote-style = "double"

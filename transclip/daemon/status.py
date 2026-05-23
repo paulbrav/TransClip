@@ -8,40 +8,27 @@ from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 
-from .client import InferenceClient
-from .daemon_lifecycle import (
-    SERVICE_NAME,
-    CommandResult,
-    Runner,
-    build_systemd_unit,
-    install_daemon,
-    install_linux_daemon,
-    logs_dir,
-    service_action,
-    service_state,
-    toggle_log_path,
-    uninstall_daemon,
+from transclip.client import InferenceClient
+from transclip.desktop.hotkey import get_gnome_shortcut_status
+from transclip.desktop.paste import (
+    SystemClipboard,
+    SystemPasteInjector,
+    clipboard_capability,
+    paste_capability,
 )
-from .gnome_shortcut import get_gnome_shortcut_status
-from .paste import SystemClipboard, SystemPasteInjector, clipboard_capability, paste_capability
-from .platform_runtime import PlatformRuntime, get_runtime
-from .settings import Settings
+from transclip.platform.runtime import PlatformRuntime, get_runtime
+from transclip.product import SERVICE_NAME
+from transclip.settings import Settings
+
+from .common import CommandResult, Runner, logs_dir, toggle_log_path
+from .lifecycle import service_state
 
 __all__ = [
-    "SERVICE_NAME",
     "append_toggle_log",
-    "build_systemd_unit",
     "collect_status",
-    "install_daemon",
-    "install_linux_daemon",
     "last_toggle_log_event",
-    "logs_dir",
     "run_smoke_test",
-    "service_action",
-    "service_state",
     "stream_logs",
-    "toggle_log_path",
-    "uninstall_daemon",
 ]
 
 
@@ -95,7 +82,8 @@ def collect_status(
     runtime: PlatformRuntime | None = None,
 ) -> dict[str, Any]:
     platform_runtime = get_runtime(runtime)
-    service = service_state(runner=runner, runtime=platform_runtime)
+    service_state_value = service_state(runner=runner, runtime=platform_runtime)
+    service = asdict(service_state_value)
     try:
         health: dict[str, Any] = InferenceClient(settings).health()
     except URLError as exc:
@@ -113,7 +101,7 @@ def collect_status(
     clipboard = _clipboard_status(platform_runtime)
     paste = _paste_status(platform_runtime)
     last_event = last_toggle_log_event()
-    ready = service.get("active") is True and health.get("status") in {"ready", "recording"}
+    ready = service_state_value.active and health.get("status") in {"ready", "recording"}
     return {
         "ready": ready,
         "service": service,
@@ -212,6 +200,16 @@ def run_smoke_test(
                 f"installed={shortcut.installed} "
                 f"binding={shortcut.binding} "
                 f"command_exists={shortcut.command_exists}",
+            )
+        )
+    elif platform_runtime.system() == "Windows":
+        from transclip.settings import active_hotkey
+
+        binding = active_hotkey(settings, platform_runtime)
+        results.append(
+            CommandResult(
+                True,
+                f"hotkey configured={binding}; global hotkey requires transclip tray",
             )
         )
 

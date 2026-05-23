@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import json
 import os
-import pwd
 import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .platform_runtime import PlatformRuntime, get_runtime
+from transclip.platform.runtime import PlatformRuntime, get_runtime
+
 from .settings import Settings
 from .text_generation import TextGenerationBackend
 
@@ -128,8 +128,10 @@ def detect_default_shell() -> str:
     if shell:
         return shell
     try:
+        import pwd
+
         shell = pwd.getpwuid(os.getuid()).pw_shell.strip()
-    except (KeyError, OSError):
+    except (ImportError, KeyError, OSError):
         shell = ""
     return shell or "/bin/sh"
 

@@ -1,8 +1,9 @@
 # TransClip
 
-Local-only toggle-to-talk dictation for Linux and macOS, with local ASR and
-faithful cleanup for technical notes. Granite NAR is the default backend, but
-TransClip is the product surface.
+Local-only toggle-to-talk dictation for Linux, macOS, and Windows, with local ASR and
+faithful cleanup for technical notes. Granite NAR is the default backend on Linux GPU,
+Granite autoregressive on Windows, and MLX on macOS Apple Silicon. TransClip is the
+product surface.
 
 The default path is now the pure-Python dictation daemon:
 
@@ -12,7 +13,12 @@ shortcut -> transclip toggle-record --paste -> Python service -> clipboard -> pa
 
 The runnable app lives in `transclip/`: Python inference service,
 settings, audio capture, cleanup, paste injection, daemon install/status/log
-commands, debug capture, Python AppIndicator tray, and eval harness.
+commands, debug capture, platform tray UIs, and eval harness.
+
+Platform-specific desktop integration is grouped under `transclip/desktop/`
+(paste, hotkey, tray), with service lifecycle in `transclip/daemon/` and
+readiness checks in `transclip/doctor/`. See [docs/package-layout.md](docs/package-layout.md)
+for the full package map and stable import paths.
 
 ## License
 
@@ -51,6 +57,20 @@ uv sync --extra audio --extra mlx --extra macos-ui
 transclip tray
 ```
 
+On Windows, `install` registers a Task Scheduler logon task. Global hotkey
+`ctrl+shift+space` is registered when `transclip tray` is running (Windows tray
+in `transclip.desktop.tray.win32`). Sync optional UI dependencies for the
+system tray and in-process hotkey:
+
+```bash
+uv sync --extra audio --extra models --extra windows-ui
+transclip tray
+```
+
+Install a CUDA-enabled PyTorch wheel before prefetching Granite AR models, then
+run `transclip models prefetch --model ibm-granite/granite-speech-4.1-2b`.
+Granite NAR is not supported on Windows.
+
 Check readiness and logs:
 
 ```bash
@@ -88,18 +108,18 @@ Run the Python tray:
 transclip tray
 ```
 
-On Linux this uses PyGObject/Ayatana AppIndicator. When running through `uv`,
-the command hands off to system Python if the project virtual environment does
-not expose `gi`. Install the system bindings if missing:
+On Linux this uses PyGObject/Ayatana AppIndicator (GTK tray in
+`transclip.desktop.tray.gtk`). When running through `uv`, the command hands
+off to system Python if the project virtual environment does not expose `gi`. Install the system bindings if missing:
 
 ```bash
 sudo apt install -y python3-gi gir1.2-ayatanaappindicator3-0.1
 ```
 
-On macOS, `transclip tray` uses the native menu bar when `macos-ui` is
-installed (`uv sync --extra macos-ui`). The tray can copy the hotkey setup
-command for Keyboard Shortcuts; global hotkeys are configured manually in
-System Settings or Shortcuts.app.
+On macOS, `transclip tray` uses the native menu bar (`transclip.desktop.tray.macos`)
+when `macos-ui` is installed (`uv sync --extra macos-ui`). The tray can copy
+the hotkey setup command for Keyboard Shortcuts; global hotkeys are configured
+manually in System Settings or Shortcuts.app.
 
 Service controls:
 
@@ -148,6 +168,36 @@ models require `uv sync --extra audio --extra models`.
 | --- | --- | --- |
 | Recording | Microphone | Grant to Terminal, IDE, LaunchAgent Python, or Shortcuts |
 | Paste | Accessibility / Automation | Required for `osascript` paste injection |
+
+## Windows Quick Start
+
+Requirements: Windows 10+, Python 3.12+, NVIDIA CUDA PyTorch for GPU inference.
+
+```bash
+uv sync --extra audio --extra models --extra windows-ui
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+uv run -m transclip.cli init-config
+uv run -m transclip.cli models prefetch --model ibm-granite/granite-speech-4.1-2b
+uv run -m transclip.cli install
+uv run -m transclip.cli status
+uv run -m transclip.cli doctor
+transclip tray
+```
+
+Supported ASR on Windows:
+
+- `ibm-granite/granite-speech-4.1-2b` (default Granite autoregressive)
+- `ibm-granite/granite-speech-4.1-2b-plus` (speaker/timestamp features)
+
+Granite Speech 4.1 NAR and ROCm are not supported on Windows. Eval thresholds
+for Windows Granite AR are in `eval/windows/manifest.json` (relaxed vs Linux NAR).
+
+### Permissions (Windows)
+
+| Action | Permission | Notes |
+| --- | --- | --- |
+| Recording | Microphone | Settings > Privacy & security > Microphone |
+| Paste | Focused app | SendInput Ctrl+V; elevated apps may block injection (UIPI) |
 
 ## Linux CUDA / ROCm Quick Start
 
@@ -358,6 +408,10 @@ uv run -m unittest discover -s tests -v
 uv run -m compileall scripts transclip tests
 VIRTUAL_ENV=$PWD/.venv uv run --active scripts/check_v1_completion.py
 ```
+
+Contributors changing imports or adding platform code should read
+[docs/package-layout.md](docs/package-layout.md) for package boundaries and
+public entry points.
 
 On Wayland, `wtype` is only usable when the compositor supports the virtual
 keyboard protocol; GNOME Wayland may reject it. `ydotool` can be used as a

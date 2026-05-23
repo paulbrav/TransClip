@@ -11,6 +11,10 @@ from transclip.settings import Settings
 from transclip.text_generation import TextGenerationResult
 
 
+def normalize_path_text(value: str | Path) -> str:
+    return str(value).replace("\\", "/")
+
+
 class FakeASR:
     name = "fake"
     model = "fake-model"
@@ -115,7 +119,7 @@ def linux_gpu_runtime(home: Path | None = None) -> FakeRuntime:
 
 
 def patch_linux_gpu_runtime(home: Path | None = None):
-    from contextlib import contextmanager
+    from contextlib import ExitStack, contextmanager
     from unittest.mock import patch
 
     runtime = linux_gpu_runtime(home)
@@ -123,12 +127,20 @@ def patch_linux_gpu_runtime(home: Path | None = None):
     def _runtime(runtime_override=None):
         return runtime if runtime_override is None else runtime_override
 
+    get_runtime_targets = (
+        "transclip.platform.runtime.get_runtime",
+        "transclip.platform.profiles.get_runtime",
+        "transclip.models.get_runtime",
+        "transclip.settings.get_runtime",
+        "transclip.cli_commands.get_runtime",
+    )
+
     @contextmanager
     def _patch():
-        with (
-            patch("transclip.platform_runtime.get_runtime", side_effect=_runtime),
-            patch("transclip.runtime_profile.machine_architecture", return_value="x86_64"),
-        ):
+        with ExitStack() as stack:
+            for target in get_runtime_targets:
+                stack.enter_context(patch(target, side_effect=_runtime))
+            stack.enter_context(patch("transclip.platform.profiles.machine_architecture", return_value="x86_64"))
             yield runtime
 
     return _patch()

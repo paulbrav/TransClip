@@ -5,7 +5,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .platform_runtime import user_log_dir
+from transclip.platform.runtime import user_log_dir
+
 from .product import LOG_DIR_NAME
 from .settings import Settings
 
@@ -86,6 +87,13 @@ def read_history(limit: int | None = None, path: Path | None = None) -> list[dic
     if limit is not None:
         return events[:limit]
     return events
+
+
+def history_file_signature(path: Path | None = None) -> int | None:
+    path = path or history_path()
+    if not path.exists():
+        return None
+    return path.stat().st_mtime_ns
 
 
 def timestamp() -> str:

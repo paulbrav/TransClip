@@ -17,9 +17,9 @@ session, then may copy and paste the transcript and report the outcome to the
 caller.
 
 **Platform runtime**: The operating-system and desktop-session facts TransClip
-relies on, including macOS versus Linux behavior, Wayland versus X11,
-environment variables, user paths, executable discovery, and subprocess command
-execution.
+relies on, including macOS versus Linux versus Windows behavior, Wayland versus
+X11, environment variables, user paths, executable discovery, and subprocess
+command execution.
 
 **Paste capability**: The current ability to place transcript text on the
 clipboard and inject a paste action into the focused application. Capability is
@@ -32,12 +32,15 @@ expected binding, and is available on the current desktop environment. On Linux
 this is the GNOME custom shortcut installed by `transclip install`. On macOS
 global shortcuts are configured manually in System Settings or Shortcuts.app;
 `hotkey_macos` stores the suggested binding while the tray can copy the toggle
-command wrapper.
+command wrapper. On Windows the in-process `keyboard` hook in `transclip tray`
+registers `hotkey_windows` (default `ctrl+shift+space`).
 
 **Runtime profile**: Platform-aware defaults for ASR backend, model, device,
-and supported runtime kinds. Linux x86_64 defaults to Granite NAR; Linux CPU
-defaults to Granite AR; macOS Apple Silicon defaults to MLX Whisper via
-`mlx-audio`.
+service manager, and supported runtime kinds. Linux x86_64 defaults to Granite
+NAR with systemd; Linux CPU defaults to Granite AR. macOS Apple Silicon defaults
+to MLX Whisper via `mlx-audio` with launchd. Windows defaults to Granite AR
+(`ibm-granite/granite-speech-4.1-2b`) with CUDA when available and Task
+Scheduler for the background service. Granite NAR is not supported on Windows.
 
 **ASR runtime**: The local speech-to-text execution path for a WAV file. It
 includes audio preparation, backend selection, local model loading, transcript
@@ -83,3 +86,26 @@ Enter or submit terminal input.
 meets the current dictation quality and latency expectations. It covers manifest
 shape, warmup handling, measured cases, metrics, thresholds, and the JSON output
 consumed by scripts.
+
+## Code layout
+
+TransClip groups platform integration into packages under `transclip/`. Domain
+terms above describe product behavior; the layout below is for navigation and
+imports. Full detail: [docs/package-layout.md](docs/package-layout.md).
+
+**Platform runtime** (domain term) maps to `transclip.platform.runtime` and
+related helpers in `transclip.platform.capabilities` and
+`transclip.platform.profiles`.
+
+**Paste capability** is implemented in `transclip.desktop.paste` (clipboard
+read/write and paste injection backends).
+
+**Shortcut readiness** on Linux uses `transclip.desktop.hotkey` (`install_shortcut`,
+`get_gnome_shortcut_status`, `shortcut_readiness`). On Windows the tray registers
+the global hotkey via `transclip.desktop.hotkey.start_windows_hotkey`. On macOS
+there is no programmatic hotkey installer; setup messages and tray copy-to-clipboard
+use `transclip.desktop.hotkey` and `transclip.desktop.hotkey.common`.
+
+**Interactive dictation** tray UI is routed through `transclip.desktop.tray.run_tray`
+to GTK, Windows, or macOS adapters. Service install and status use
+`transclip.daemon`; readiness checks use `transclip.doctor`.

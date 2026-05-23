@@ -57,8 +57,9 @@ class PrepareRealEvalTests(unittest.TestCase):
             (clips / "case.wav").write_bytes(b"not really wav")
             (clips / "case.txt").write_text("hello", encoding="utf-8")
 
+            output = clips.parent / "manifest.json"
             with self.assertRaisesRegex(ValueError, "expected at least 20"):
-                build_manifest(clips)
+                build_manifest(clips, output_path=output)
 
     def test_missing_reference_fails(self):
         with tempfile.TemporaryDirectory() as tmp:

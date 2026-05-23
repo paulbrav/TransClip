@@ -6,13 +6,17 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from .platform_capabilities import SessionInfo, session_info
-from .platform_runtime import PlatformRuntime, get_runtime
-from .settings import Settings
+from transclip.platform.capabilities import SessionInfo, session_info
+from transclip.platform.runtime import PlatformRuntime, get_runtime
+from transclip.settings import Settings
+
+from .platform import (
+    resolve_clipboard_capability,
+    resolve_paste_capability,
+    resolve_paste_commands,
+)
 
 Which = Callable[[str], str | None]
-TERMINAL_PASTE_SHORTCUT = "ctrl+shift+v"
-WTYPE_TERMINAL_PASTE_COMMAND = ("wtype", "-M", "ctrl", "-M", "shift", "v", "-m", "shift", "-m", "ctrl")
 
 
 class Clipboard(Protocol):
@@ -30,6 +34,8 @@ class ClipboardBackend:
     name: str
     read_command: list[str]
     write_command: list[str]
+    read_fn: Callable[[], str] | None = None
+    write_fn: Callable[[str], None] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,12 +45,15 @@ class ClipboardCapability:
     backend: str | None = None
     read_command: list[str] | None = None
     write_command: list[str] | None = None
+    read_fn: Callable[[], str] | None = None
+    write_fn: Callable[[str], None] | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class PasteCommand:
     backend: str
     command: list[str]
+    native: Callable[[], None] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,9 +73,14 @@ class SystemClipboard:
         return self.backend.name
 
     def read(self) -> str:
+        if self.backend.read_fn is not None:
+            return self.backend.read_fn()
         return self.runtime.check_output(self.backend.read_command, text=True)
 
     def write(self, text: str) -> None:
+        if self.backend.write_fn is not None:
+            self.backend.write_fn(text)
+            return
         self.runtime.run(self.backend.write_command, input=text, text=True, check=True)
 
 
@@ -79,7 +93,7 @@ class SystemPasteInjector:
     def paste(self) -> bool:
         self.errors.clear()
         self.backend_name = None
-        return any(self._try(command.backend, command.command) for command in paste_commands(runtime=self.runtime))
+        return any(self._try(command) for command in paste_commands(runtime=self.runtime))
 
     def available_backend(self) -> str | None:
         return available_paste_backend(runtime=self.runtime)
@@ -87,10 +101,18 @@ class SystemPasteInjector:
     def error_detail(self) -> str:
         return "; ".join(self.errors)
 
-    def _try(self, backend_name: str, command: list[str]) -> bool:
-        error = run_paste_command(command, runtime=self.runtime)
+    def _try(self, paste_command: PasteCommand) -> bool:
+        if paste_command.native is not None:
+            try:
+                paste_command.native()
+            except Exception as exc:
+                self.errors.append(f"{paste_command.backend} paste failed: {exc}")
+                return False
+            self.backend_name = paste_command.backend
+            return True
+        error = run_paste_command(paste_command.command, runtime=self.runtime)
         if error is None:
-            self.backend_name = backend_name
+            self.backend_name = paste_command.backend
             return True
         self.errors.append(error)
         return False
@@ -183,48 +205,7 @@ def clipboard_capability(
     platform_runtime = get_runtime(runtime)
     which = which or platform_runtime.which
     info = info or session_info(runtime=platform_runtime)
-    if info.system == "Darwin":
-        if which("pbcopy") and which("pbpaste"):
-            return ClipboardCapability(True, "found pbcopy/pbpaste", "pbcopy/pbpaste", ["pbpaste"], ["pbcopy"])
-        return ClipboardCapability(False, "macOS clipboard requires pbcopy and pbpaste")
-    if info.session == "wayland":
-        if which("wl-copy") and which("wl-paste"):
-            return ClipboardCapability(
-                True,
-                "found wl-clipboard",
-                "wl-clipboard",
-                ["wl-paste", "--no-newline"],
-                ["wl-copy"],
-            )
-        return ClipboardCapability(
-            False,
-            "Wayland clipboard requires wl-clipboard. Install: sudo apt install wl-clipboard",
-        )
-    if which("xclip"):
-        return ClipboardCapability(
-            True,
-            "found xclip",
-            "xclip",
-            ["xclip", "-selection", "clipboard", "-o"],
-            ["xclip", "-selection", "clipboard"],
-        )
-    if which("xsel"):
-        return ClipboardCapability(
-            True,
-            "found xsel",
-            "xsel",
-            ["xsel", "--clipboard", "--output"],
-            ["xsel", "--clipboard", "--input"],
-        )
-    if which("wl-copy") and which("wl-paste"):
-        return ClipboardCapability(
-            True,
-            "found wl-clipboard",
-            "wl-clipboard",
-            ["wl-paste", "--no-newline"],
-            ["wl-copy"],
-        )
-    return ClipboardCapability(False, "No supported clipboard reader/writer found")
+    return resolve_clipboard_capability(which, info)
 
 
 def paste_commands(
@@ -235,24 +216,7 @@ def paste_commands(
     platform_runtime = get_runtime(runtime)
     which = which or platform_runtime.which
     info = info or session_info(runtime=platform_runtime)
-    if info.system == "Darwin":
-        script = 'tell application "System Events" to keystroke "v" using command down'
-        return [PasteCommand("osascript", ["osascript", "-e", script])] if which("osascript") else []
-    if info.session == "wayland":
-        commands = []
-        if which("wtype"):
-            commands.append(PasteCommand("wtype", list(WTYPE_TERMINAL_PASTE_COMMAND)))
-        if which("ydotool"):
-            commands.append(PasteCommand("ydotool", ["ydotool", "key", TERMINAL_PASTE_SHORTCUT]))
-        return commands
-    commands = []
-    if which("xdotool"):
-        commands.append(PasteCommand("xdotool", ["xdotool", "key", TERMINAL_PASTE_SHORTCUT]))
-    if which("ydotool"):
-        commands.append(PasteCommand("ydotool", ["ydotool", "key", TERMINAL_PASTE_SHORTCUT]))
-    if which("wtype"):
-        commands.append(PasteCommand("wtype", list(WTYPE_TERMINAL_PASTE_COMMAND)))
-    return commands
+    return resolve_paste_commands(which, info)
 
 
 def available_paste_backend(
@@ -274,52 +238,7 @@ def paste_capability(
     runner = runner or platform_runtime.run
     which = which or platform_runtime.which
     info = info or session_info(runtime=platform_runtime)
-    if info.system == "Darwin":
-        ok = bool(which("osascript"))
-        return PasteCapability(
-            ok,
-            "found osascript" if ok else "requires osascript and Accessibility permission",
-            "osascript" if ok else None,
-        )
-    wtype = which("wtype")
-    xdotool = which("xdotool")
-    ydotool = which("ydotool")
-    if info.session == "wayland":
-        details = []
-        if wtype:
-            result = runner(
-                ["wtype", "-M", "ctrl", "-m", "ctrl"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                check=False,
-            )
-            if result.returncode == 0:
-                return PasteCapability(True, "wtype found and compositor accepts virtual keyboard events", "wtype")
-            detail = result.stdout.strip() or f"exit status {result.returncode}"
-            details.append(f"wtype unusable: {detail}")
-        if ydotool:
-            return PasteCapability(
-                True,
-                "ydotool found; requires ydotoold/uinput permissions to inject paste",
-                "ydotool",
-            )
-        if not details:
-            return PasteCapability(False, "Wayland paste injection requires wtype or ydotool; apt: wtype ydotool")
-        return PasteCapability(
-            False,
-            "; ".join(details) + "; fallback requires ydotool with ydotoold/uinput permissions",
-        )
-    if xdotool:
-        return PasteCapability(True, "found: xdotool", "xdotool")
-    if ydotool:
-        return PasteCapability(True, "found: ydotool", "ydotool")
-    if wtype:
-        return PasteCapability(
-            False,
-            "wtype is installed, but non-Wayland sessions require xdotool or ydotool; apt: xdotool ydotool",
-        )
-    return PasteCapability(False, "requires wtype, xdotool, or ydotool; apt: xdotool ydotool")
+    return resolve_paste_capability(which, info, runner)
 
 
 def run_paste_command(command: list[str], runtime: PlatformRuntime | None = None) -> str | None:
@@ -347,5 +266,13 @@ def detect_clipboard_backend(runtime: PlatformRuntime | None = None) -> Clipboar
     capability = clipboard_capability(runtime=runtime)
     if not capability.ok:
         raise RuntimeError(capability.detail)
-    assert capability.backend and capability.read_command and capability.write_command
-    return ClipboardBackend(capability.backend, capability.read_command, capability.write_command)
+    assert capability.backend
+    read_command = capability.read_command or []
+    write_command = capability.write_command or []
+    return ClipboardBackend(
+        capability.backend,
+        read_command,
+        write_command,
+        read_fn=capability.read_fn,
+        write_fn=capability.write_fn,
+    )

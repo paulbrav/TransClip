@@ -3,11 +3,9 @@ from __future__ import annotations
 import os
 import platform as py_platform
 
-from .cleanup import CleanupPlan
-from .device import resolve_torch_device, torch_cuda_usable, torch_mps_available
-from .doctor_platform import check_macos_version
-from .doctor_types import Check
-from .models import (
+from transclip.cleanup import CleanupPlan
+from transclip.device import resolve_torch_device, torch_cuda_usable, torch_mps_available
+from transclip.models import (
     cache_artifacts_present,
     model_cache_path,
     model_cache_root,
@@ -15,9 +13,12 @@ from .models import (
     required_model_cache_paths,
     resolve_catalog_entry,
 )
-from .platform_runtime import PlatformRuntime, get_runtime
-from .runtime_profile import detect_runtime_profile, is_apple_silicon, is_native_arm_python
-from .settings import Settings
+from transclip.platform.profiles import detect_runtime_profile, is_apple_silicon, is_native_arm_python
+from transclip.platform.runtime import PlatformRuntime, get_runtime
+from transclip.settings import Settings
+
+from .platform import check_macos_version
+from .types import Check
 
 
 def build_backend_checks(settings: Settings, runtime: PlatformRuntime | None = None) -> list[Check]:
@@ -47,12 +48,12 @@ def build_backend_checks(settings: Settings, runtime: PlatformRuntime | None = N
     elif backend == "granite_nar":
         checks.extend(
             [
-                check_torch_runtime(settings),
+                check_torch_runtime(settings, runtime),
                 check_asr_runtime(settings),
             ]
         )
     elif entry is not None and entry.runtime_kind == "torch":
-        checks.append(check_torch_runtime(settings))
+        checks.append(check_torch_runtime(settings, runtime))
     else:
         checks.append(Check("asr_runtime", True, f"{settings.asr_backend} has no extra runtime checks"))
     return checks
@@ -119,7 +120,9 @@ def check_mlx_model_cache(settings: Settings, runtime: PlatformRuntime | None = 
     )
 
 
-def check_torch_runtime(settings: Settings) -> Check:
+def check_torch_runtime(settings: Settings, runtime: PlatformRuntime | None = None) -> Check:
+    platform_runtime = get_runtime(runtime)
+    system = platform_runtime.system()
     try:
         import torch
     except ImportError:
@@ -130,17 +133,23 @@ def check_torch_runtime(settings: Settings) -> Check:
     version = getattr(torch, "__version__", "unknown")
     hip = getattr(getattr(torch, "version", None), "hip", None)
     if requested in {"cuda", "rocm"} and not cuda_usable:
-        return Check(
-            "torch_runtime",
-            False,
-            f"torch {version} hip={hip}; requested {settings.asr_device}, but GPU tensor smoke failed",
-        )
+        if system == "Windows":
+            detail = f"torch {version}; requested {settings.asr_device}, but CUDA tensor smoke failed"
+        else:
+            detail = (
+                f"torch {version} hip={hip}; requested {settings.asr_device}, but GPU tensor smoke failed"
+            )
+        return Check("torch_runtime", False, detail)
     if requested == "mps" and not mps_usable:
         return Check("torch_runtime", False, f"torch {version}; requested MPS, but MPS is unavailable")
     if cuda_usable:
+        if system == "Windows":
+            return Check("torch_runtime", True, f"torch {version}; CUDA tensor smoke passed")
         return Check("torch_runtime", True, f"torch {version} hip={hip}; GPU tensor smoke passed")
     if mps_usable:
         return Check("torch_runtime", True, f"torch {version}; MPS available")
+    if system == "Windows":
+        return Check("torch_runtime", True, f"torch {version}; auto will use CPU")
     return Check("torch_runtime", True, f"torch {version} hip={hip}; auto will use CPU")
 
 

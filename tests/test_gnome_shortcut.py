@@ -2,7 +2,12 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from transclip.gnome_shortcut import (
+from transclip.desktop.hotkey import (
+    build_toggle_command,
+    macos_hotkey_setup_message,
+    toggle_log_shell_path,
+)
+from transclip.desktop.hotkey.linux_gnome import (
     GNOME_CUSTOM_KEYBINDINGS_KEY,
     GNOME_MEDIA_KEYS_SCHEMA,
     TRANSCLIP_SHORTCUT_BINDING,
@@ -12,11 +17,6 @@ from transclip.gnome_shortcut import (
     install_gnome_shortcut,
     shortcut_readiness,
 )
-from transclip.hotkey_setup import (
-    build_toggle_command,
-    macos_hotkey_setup_message,
-    toggle_log_shell_path,
-)
 from transclip.product import (
     FALLBACK_HOTKEY_LINUX,
     LEGACY_SHORTCUT_PATH,
@@ -24,7 +24,7 @@ from transclip.product import (
     SHORTCUT_ALT_PATH,
 )
 
-from tests.service_helpers import FakeRuntime
+from tests.service_helpers import FakeRuntime, normalize_path_text
 
 
 class FakeGSettings:
@@ -108,7 +108,8 @@ class GnomeShortcutTests(unittest.TestCase):
         )
 
     def test_build_toggle_command_is_logging_wrapper(self):
-        command = build_toggle_command()
+        runtime = FakeRuntime(system="Linux", home=Path("/home/test"))
+        command = build_toggle_command(runtime=runtime)
 
         self.assertTrue(command.startswith("/bin/sh -lc "))
         self.assertIn("toggle-record --paste", command)
@@ -119,10 +120,28 @@ class GnomeShortcutTests(unittest.TestCase):
         runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"))
         command = build_toggle_command(runtime=runtime)
 
-        self.assertIn("/Users/test/Library/Logs/transclip/toggle-record.log", command)
-        self.assertEqual(
-            toggle_log_shell_path(runtime),
+        self.assertIn(
             "/Users/test/Library/Logs/transclip/toggle-record.log",
+            normalize_path_text(command),
+        )
+        self.assertEqual(
+            normalize_path_text(toggle_log_shell_path(runtime)),
+            "/Users/test/Library/Logs/transclip/toggle-record.log",
+        )
+
+    def test_build_toggle_command_uses_windows_log_dir(self):
+        runtime = FakeRuntime(
+            system="Windows",
+            home=Path("C:/Users/tester"),
+            env={"LOCALAPPDATA": "C:/Users/tester/AppData/Local"},
+        )
+        command = build_toggle_command(runtime=runtime)
+
+        self.assertTrue(command.lower().startswith("powershell"))
+        self.assertIn("toggle-record.log", command)
+        self.assertEqual(
+            normalize_path_text(toggle_log_shell_path(runtime)),
+            "C:/Users/tester/AppData/Local/transclip/logs/toggle-record.log",
         )
 
     def test_macos_hotkey_setup_message_uses_hotkey_macos_not_linux_copilot(self):

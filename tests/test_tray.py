@@ -5,9 +5,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from transclip.desktop.tray import run_tray
+from transclip.desktop.tray.gtk import run_python_tray
+from transclip.desktop.tray.win32 import run_windows_tray
+from transclip.history import history_file_signature
+from transclip.recording_ops import ToggleOutcome
 from transclip.settings import DEFAULT_HOTKEY_LINUX, Settings, load_settings, write_settings
-from transclip.tray import run_tray
-from transclip.tray_gtk import _history_file_signature, run_python_tray
 
 from tests.service_helpers import FakeRuntime
 
@@ -191,8 +194,8 @@ class TrayTests(unittest.TestCase):
     def test_health_refresh_updates_existing_menu_without_replacing_it(self):
         with (
             patch.dict(sys.modules, self.modules),
-            patch("transclip.tray_session.InferenceClient", FakeClient),
-            patch("transclip.tray_session.read_history", return_value=[]),
+            patch("transclip.desktop.tray.session.InferenceClient", FakeClient),
+            patch("transclip.desktop.tray.session.read_history", return_value=[]),
         ):
             code = run_python_tray(Settings())
 
@@ -212,9 +215,9 @@ class TrayTests(unittest.TestCase):
 
         with (
             patch.dict(sys.modules, self.modules),
-            patch("transclip.tray_session.InferenceClient", FakeClient),
-            patch("transclip.tray_session.read_history", return_value=history_events) as read_history,
-            patch("transclip.tray_gtk._history_file_signature", side_effect=[123, 123, 456]),
+            patch("transclip.desktop.tray.session.InferenceClient", FakeClient),
+            patch("transclip.desktop.tray.session.read_history", return_value=history_events) as read_history,
+            patch("transclip.desktop.tray.menu_update.history_file_signature", side_effect=[123, 123, 456]),
         ):
             code = run_python_tray(Settings())
             indicator = FakeIndicatorFactory.current
@@ -235,10 +238,10 @@ class TrayTests(unittest.TestCase):
     def test_history_file_signature_uses_mtime(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "history.jsonl"
-            self.assertIsNone(_history_file_signature(path))
+            self.assertIsNone(history_file_signature(path))
             path.write_text("{}\n", encoding="utf-8")
-            first = _history_file_signature(path)
-            second = _history_file_signature(path)
+            first = history_file_signature(path)
+            second = history_file_signature(path)
             self.assertIsNotNone(first)
             self.assertEqual(first, second)
 
@@ -251,9 +254,9 @@ class TrayTests(unittest.TestCase):
             write_settings(settings, settings_file)
             with (
                 patch.dict(sys.modules, self.modules),
-                patch("transclip.tray_session.InferenceClient", FakeClient),
-                patch("transclip.tray_session.read_history", return_value=[]),
-                patch("transclip.tray_gtk.install_shortcut") as install_shortcut,
+                patch("transclip.desktop.tray.session.InferenceClient", FakeClient),
+                patch("transclip.desktop.tray.session.read_history", return_value=[]),
+                patch("transclip.desktop.tray.gtk.install_shortcut") as install_shortcut,
             ):
                 code = run_python_tray(settings, explicit_settings_path=settings_file)
                 indicator = FakeIndicatorFactory.current
@@ -274,9 +277,9 @@ class TrayTests(unittest.TestCase):
             write_settings(settings, settings_file)
             with (
                 patch.dict(sys.modules, self.modules),
-                patch("transclip.tray_session.InferenceClient", FakeClient),
-                patch("transclip.tray_session.read_history", return_value=[]),
-                patch("transclip.tray_session.service_action") as service_action,
+                patch("transclip.desktop.tray.session.InferenceClient", FakeClient),
+                patch("transclip.desktop.tray.session.read_history", return_value=[]),
+                patch("transclip.desktop.tray.session.service_action") as service_action,
             ):
                 service_action.return_value = types.SimpleNamespace(detail="restarted")
                 code = run_python_tray(settings, explicit_settings_path=settings_file)
@@ -300,9 +303,9 @@ class TrayTests(unittest.TestCase):
             write_settings(settings, settings_file)
             with (
                 patch.dict(sys.modules, self.modules),
-                patch("transclip.tray_session.InferenceClient", FakeClient),
-                patch("transclip.tray_session.read_history", return_value=[]),
-                patch("transclip.tray_session.service_action") as service_action,
+                patch("transclip.desktop.tray.session.InferenceClient", FakeClient),
+                patch("transclip.desktop.tray.session.read_history", return_value=[]),
+                patch("transclip.desktop.tray.session.service_action") as service_action,
             ):
                 service_action.return_value = types.SimpleNamespace(detail="restarted")
                 code = run_python_tray(settings, explicit_settings_path=settings_file)
@@ -325,9 +328,9 @@ class TrayTests(unittest.TestCase):
             write_settings(Settings(toggle_cooldown_ms=900), settings_file)
             with (
                 patch.dict(sys.modules, self.modules),
-                patch("transclip.tray_session.InferenceClient", FakeClient),
-                patch("transclip.tray_session.read_history", return_value=[]),
-                patch("transclip.tray_gtk.install_shortcut"),
+                patch("transclip.desktop.tray.session.InferenceClient", FakeClient),
+                patch("transclip.desktop.tray.session.read_history", return_value=[]),
+                patch("transclip.desktop.tray.gtk.install_shortcut"),
             ):
                 run_python_tray(settings, explicit_settings_path=settings_file)
                 set_hotkey_item = menu_item_by_label(FakeIndicatorFactory.current, "Set hotkey...")
@@ -347,9 +350,9 @@ class TrayTests(unittest.TestCase):
             write_settings(settings, settings_file)
             with (
                 patch.dict(sys.modules, self.modules),
-                patch("transclip.tray_session.InferenceClient", FakeClient),
-                patch("transclip.tray_session.read_history", return_value=[]),
-                patch("transclip.tray_gtk.install_shortcut", side_effect=RuntimeError("gsettings failed")),
+                patch("transclip.desktop.tray.session.InferenceClient", FakeClient),
+                patch("transclip.desktop.tray.session.read_history", return_value=[]),
+                patch("transclip.desktop.tray.gtk.install_shortcut", side_effect=RuntimeError("gsettings failed")),
             ):
                 run_python_tray(settings, explicit_settings_path=settings_file)
                 indicator = FakeIndicatorFactory.current
@@ -372,9 +375,9 @@ class TrayTests(unittest.TestCase):
             write_settings(settings, settings_file)
             with (
                 patch.dict(sys.modules, self.modules),
-                patch("transclip.tray_session.InferenceClient", FakeClient),
-                patch("transclip.tray_session.read_history", return_value=[]),
-                patch("transclip.tray_gtk.install_shortcut") as install_shortcut,
+                patch("transclip.desktop.tray.session.InferenceClient", FakeClient),
+                patch("transclip.desktop.tray.session.read_history", return_value=[]),
+                patch("transclip.desktop.tray.gtk.install_shortcut") as install_shortcut,
             ):
                 run_python_tray(settings, explicit_settings_path=settings_file)
                 indicator = FakeIndicatorFactory.current
@@ -387,8 +390,8 @@ class TrayTests(unittest.TestCase):
     def test_run_tray_routes_darwin_to_macos_tray(self):
         runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"))
         with (
-            patch("transclip.tray.get_runtime", return_value=runtime),
-            patch("transclip.tray.run_macos_tray", return_value=0) as run_macos_tray,
+            patch("transclip.desktop.tray.get_runtime", return_value=runtime),
+            patch("transclip.desktop.tray.macos.run_macos_tray", return_value=0) as run_macos_tray,
         ):
             code = run_tray(Settings())
 
@@ -398,12 +401,126 @@ class TrayTests(unittest.TestCase):
     def test_darwin_tray_fails_clearly_without_pyobjc(self):
         runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"))
         with (
-            patch("transclip.tray.get_runtime", return_value=runtime),
+            patch("transclip.desktop.tray.get_runtime", return_value=runtime),
             patch.dict(sys.modules, {"AppKit": None}),
         ):
             code = run_tray(Settings())
 
         self.assertEqual(code, 1)
+
+    def test_run_tray_routes_windows_to_windows_tray(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        with (
+            patch("transclip.desktop.tray.get_runtime", return_value=runtime),
+            patch("transclip.desktop.tray.win32.run_windows_tray", return_value=0) as run_windows_tray,
+        ):
+            code = run_tray(Settings())
+
+        self.assertEqual(code, 0)
+        run_windows_tray.assert_called_once()
+
+    def test_windows_tray_fails_clearly_without_pystray(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        with (
+            patch("transclip.desktop.tray.get_runtime", return_value=runtime),
+            patch.dict(sys.modules, {"pystray": None}),
+        ):
+            code = run_tray(Settings())
+
+        self.assertEqual(code, 1)
+
+    def test_windows_menu_uses_set_hotkey_action(self):
+        from transclip.desktop.tray.menu import tray_menu_nodes
+
+        actions = [node.action for node in tray_menu_nodes("Windows") if node.kind == "action"]
+        self.assertIn("set_hotkey", actions)
+        self.assertNotIn("copy_hotkey_setup", actions)
+
+    def test_windows_update_menu_mutates_item_text_without_menu_rebuild(self):
+        top_level_menus = {"count": 0}
+        icon_holder: dict[str, object] = {}
+        menu_holder: dict[str, object] = {}
+
+        class FakeMenuItem:
+            def __init__(self, text, action=None, enabled=True):
+                self.text = text
+                self.action = action
+                self.enabled = enabled
+                self.submenu = None
+
+        class FakeMenu:
+            def __init__(self, *items):
+                self.items = list(items)
+
+            SEPARATOR = object()
+
+        class FakeIcon:
+            def __init__(self, _name, _image, _title, menu):
+                top_level_menus["count"] += 1
+                self.menu = menu
+                self.visible = False
+                icon_holder["icon"] = self
+
+            def run(self, setup=None):
+                setup(self)
+                menu_holder["before_toggle"] = self.menu
+                toggle = next(
+                    item
+                    for item in self.menu.items
+                    if getattr(item, "action", None) and item.text == "Record"
+                )
+                toggle.action(None, toggle)
+
+        pystray_mod = types.SimpleNamespace(
+            Menu=FakeMenu,
+            MenuItem=FakeMenuItem,
+            Icon=FakeIcon,
+        )
+        pil_mod = types.SimpleNamespace(
+            Image=types.SimpleNamespace(new=lambda *_args, **_kwargs: object()),
+            ImageDraw=types.SimpleNamespace(
+                Draw=lambda *_args: types.SimpleNamespace(ellipse=lambda *_a, **_k: None),
+            ),
+        )
+
+        health_state = {"status": "ready"}
+
+        class FakeClient:
+            def __init__(self, *_args, **_kwargs):
+                return None
+
+            def health(self):
+                return {"status": health_state["status"]}
+
+        def fake_toggle(_settings, paste=False, client=None):
+            health_state["status"] = "recording"
+            return ToggleOutcome(
+                ok=True,
+                payload={"action": "started"},
+                service_url="http://127.0.0.1:8765",
+            )
+
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        with (
+            patch.dict(sys.modules, {"pystray": pystray_mod, "PIL": pil_mod}),
+            patch("transclip.desktop.tray.session.InferenceClient", FakeClient),
+            patch("transclip.desktop.tray.session.read_history", return_value=[]),
+            patch("transclip.desktop.tray.session.toggle_recording", fake_toggle),
+            patch("transclip.desktop.tray.win32.start_windows_hotkey", return_value=lambda: None),
+        ):
+            code = run_windows_tray(Settings(), runtime=runtime)
+
+        icon = icon_holder["icon"]
+        status = next(
+            item for item in icon.menu.items if getattr(item, "text", "").startswith("Service:")
+        )
+        toggle = next(item for item in icon.menu.items if getattr(item, "action", None))
+
+        self.assertEqual(code, 0)
+        self.assertEqual(top_level_menus["count"], 1)
+        self.assertIs(menu_holder["before_toggle"], icon.menu)
+        self.assertEqual(status.text, "Service: recording")
+        self.assertEqual(toggle.text, "Stop + paste")
 
 
 def menu_item_by_label(indicator, label: str):

@@ -8,12 +8,16 @@ from pathlib import Path
 from .audio import recording_debug
 from .daemon import (
     collect_status,
+    install_daemon,
     logs_dir,
     run_smoke_test,
+    service_action,
     stream_logs,
     toggle_log_path,
+    uninstall_daemon,
 )
-from .daemon_lifecycle import install_daemon, service_action, uninstall_daemon
+from .desktop.hotkey import install_shortcut
+from .desktop.paste import SystemClipboard
 from .doctor import (
     check_asr_runtime,
     check_model_cache,
@@ -23,12 +27,10 @@ from .doctor import (
     run_checks,
 )
 from .eval_harness import run_eval
-from .gnome_shortcut import install_shortcut
 from .history import read_history
 from .models import ModelRow, model_rows, prefetch_model
 from .notify import notify
-from .paste import SystemClipboard
-from .platform_runtime import get_runtime
+from .platform.runtime import get_runtime
 from .product import CLI_COMMAND, DISPLAY_NAME
 from .recording_ops import toggle_recording
 from .service import InferenceEngine, run_server
@@ -57,7 +59,7 @@ def handle_command(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
     if args.command in {"install", "uninstall", "start", "stop", "restart", "status", "logs", "smoke-test"}:
         return handle_daemon_command(args, settings)
     if args.command == "tray":
-        from .tray import run_tray
+        from .desktop.tray import run_tray
 
         return run_tray(settings, explicit_settings_path=args.settings)
     if args.command == "history":
@@ -192,6 +194,8 @@ def handle_config(args: argparse.Namespace, settings) -> int:
             print(f"set\t{args.field} = {args.value}")
             if args.field == "hotkey_linux":
                 print(f"run: {CLI_COMMAND} install-gnome-shortcut or {CLI_COMMAND} doctor --fix")
+            if args.field == "hotkey_windows":
+                print(f"restart {CLI_COMMAND} tray to apply the new Windows hotkey")
             return 0
     except Exception as exc:
         print(str(exc), file=sys.stderr)

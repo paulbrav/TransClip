@@ -5,17 +5,20 @@ from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 from typing import Any, get_type_hints
 
-from .platform_runtime import PlatformRuntime, get_runtime, user_config_dir
+from transclip.platform.profiles import detect_runtime_profile
+from transclip.platform.runtime import PlatformRuntime, get_runtime, user_config_dir
+
 from .product import CONFIG_DIR_NAME
-from .runtime_profile import detect_runtime_profile
 
 DEFAULT_HOTKEY_LINUX = "<Super><Shift>XF86TouchpadOff"
+DEFAULT_HOTKEY_WINDOWS = "ctrl+shift+space"
 
 
 @dataclass(slots=True)
 class Settings:
     hotkey_linux: str = DEFAULT_HOTKEY_LINUX
     hotkey_macos: str = "Option+Space"
+    hotkey_windows: str = DEFAULT_HOTKEY_WINDOWS
     language: str = "en"
     asr_model: str = "ibm-granite/granite-speech-4.1-2b-nar"
     cleanup_enabled: bool = True
@@ -44,12 +47,22 @@ class Settings:
 
 def active_hotkey(settings: Settings, runtime: PlatformRuntime | None = None) -> str:
     platform_runtime = get_runtime(runtime)
-    return settings.hotkey_macos if platform_runtime.system() == "Darwin" else settings.hotkey_linux
+    system = platform_runtime.system()
+    if system == "Darwin":
+        return settings.hotkey_macos
+    if system == "Windows":
+        return settings.hotkey_windows
+    return settings.hotkey_linux
 
 
 def paste_shortcut(settings: Settings, runtime: PlatformRuntime | None = None) -> str:
     platform_runtime = get_runtime(runtime)
-    return "Command+V" if platform_runtime.system() == "Darwin" else "Ctrl+Shift+V"
+    system = platform_runtime.system()
+    if system == "Darwin":
+        return "Command+V"
+    if system == "Windows":
+        return "Ctrl+V"
+    return "Ctrl+Shift+V"
 
 
 def default_settings(runtime: PlatformRuntime | None = None) -> Settings:
@@ -89,7 +102,7 @@ def settings_field_names() -> list[str]:
 def settings_to_toml(settings: Settings) -> str:
     values = asdict(settings)
     groups = [
-        ("hotkey_linux", "hotkey_macos", "language"),
+        ("hotkey_linux", "hotkey_macos", "hotkey_windows", "language"),
         (
             "asr_model",
             "cleanup_enabled",
