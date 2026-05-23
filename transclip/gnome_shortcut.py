@@ -4,26 +4,24 @@ import ast
 import os
 import shlex
 import subprocess
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .hotkey_setup import build_toggle_command
 from .platform_capabilities import session_info
-from .platform_runtime import PlatformRuntime, get_runtime, user_log_dir
+from .platform_runtime import PlatformRuntime, get_runtime
 from .product import (
     CLI_COMMAND,
     FALLBACK_HOTKEY_LINUX,
-    IMPORT_PACKAGE,
     LEGACY_SHORTCUT_NAME,
     LEGACY_SHORTCUT_PATH,
-    LOG_DIR_NAME,
     SHORTCUT_ALT_NAME,
     SHORTCUT_ALT_PATH,
     SHORTCUT_NAME,
     SHORTCUT_PATH,
 )
-from .settings import DEFAULT_HOTKEY_LINUX, Settings
+from .settings import DEFAULT_HOTKEY_LINUX
 
 GNOME_MEDIA_KEYS_SCHEMA = "org.gnome.settings-daemon.plugins.media-keys"
 GNOME_CUSTOM_KEYBINDINGS_KEY = "custom-keybindings"
@@ -58,44 +56,6 @@ class ShortcutReadiness:
     ok: bool
     detail: str
     status: GnomeShortcutStatus | None = None
-
-
-def build_toggle_command(
-    settings_path: Path | None = None,
-    runtime: PlatformRuntime | None = None,
-) -> str:
-    command = build_toggle_invocation(settings_path)
-    log_path = toggle_log_shell_path(runtime)
-    quoted_log_path = shlex.quote(log_path)
-    script = f'mkdir -p "$(dirname {quoted_log_path})"; ' + shlex.join(command) + f" >> {quoted_log_path} 2>&1"
-    return shlex.join(["/bin/sh", "-lc", script])
-
-
-def toggle_log_shell_path(runtime: PlatformRuntime | None = None) -> str:
-    log_dir = user_log_dir(LOG_DIR_NAME, runtime)
-    return str(log_dir / "toggle-record.log")
-
-
-def macos_hotkey_setup_message(
-    settings: Settings | None = None,
-    settings_path: Path | None = None,
-    runtime: PlatformRuntime | None = None,
-) -> str:
-    current = settings or Settings()
-    binding = current.hotkey_macos
-    command = build_toggle_command(settings_path, runtime=runtime)
-    return (
-        f"Configure a macOS Keyboard Shortcut or Shortcuts.app action for binding {binding!r}:\n"
-        f"{command}"
-    )
-
-
-def build_toggle_invocation(settings_path: Path | None = None) -> list[str]:
-    command = [sys.executable, "-m", f"{IMPORT_PACKAGE}.cli"]
-    if settings_path:
-        command.extend(["--settings", str(settings_path.expanduser().resolve())])
-    command.extend(["toggle-record", "--paste"])
-    return command
 
 
 def install_gnome_shortcut(

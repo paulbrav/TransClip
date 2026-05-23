@@ -8,10 +8,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from .gnome_shortcut import (
-    build_toggle_command,
-    install_shortcut,
-)
+from .gnome_shortcut import install_shortcut
+from .hotkey_setup import macos_hotkey_setup_message
 from .platform_runtime import PlatformRuntime, get_runtime, user_log_dir
 from .product import DISPLAY_NAME, IMPORT_PACKAGE, LAUNCHD_LABEL, LOG_DIR_NAME, SERVICE_NAME
 from .settings import Settings, load_settings, write_default_settings
@@ -164,9 +162,7 @@ def install_macos_daemon(
     results.append(
         CommandResult(
             True,
-            "configure a macOS Keyboard Shortcut or Shortcuts.app action "
-            f"for binding {load_settings(settings_path).hotkey_macos!r}: "
-            + build_toggle_command(settings_path, runtime=runtime),
+            macos_hotkey_setup_message(load_settings(settings_path), settings_path, runtime=runtime),
         )
     )
     return results

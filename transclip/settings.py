@@ -5,7 +5,7 @@ from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 from typing import Any, get_type_hints
 
-from .platform_runtime import PlatformRuntime, default_platform_runtime, user_config_dir
+from .platform_runtime import PlatformRuntime, get_runtime, user_config_dir
 from .product import CONFIG_DIR_NAME
 from .runtime_profile import detect_runtime_profile
 
@@ -41,13 +41,15 @@ class Settings:
     host: str = "127.0.0.1"
     port: int = 8765
 
-    @property
-    def active_hotkey(self) -> str:
-        return self.hotkey_macos if default_platform_runtime.system() == "Darwin" else self.hotkey_linux
 
-    @property
-    def paste_shortcut(self) -> str:
-        return "Command+V" if default_platform_runtime.system() == "Darwin" else "Ctrl+Shift+V"
+def active_hotkey(settings: Settings, runtime: PlatformRuntime | None = None) -> str:
+    platform_runtime = get_runtime(runtime)
+    return settings.hotkey_macos if platform_runtime.system() == "Darwin" else settings.hotkey_linux
+
+
+def paste_shortcut(settings: Settings, runtime: PlatformRuntime | None = None) -> str:
+    platform_runtime = get_runtime(runtime)
+    return "Command+V" if platform_runtime.system() == "Darwin" else "Ctrl+Shift+V"
 
 
 def default_settings(runtime: PlatformRuntime | None = None) -> Settings:

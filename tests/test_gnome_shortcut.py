@@ -8,11 +8,13 @@ from transclip.gnome_shortcut import (
     TRANSCLIP_SHORTCUT_BINDING,
     TRANSCLIP_SHORTCUT_NAME,
     TRANSCLIP_SHORTCUT_PATH,
-    build_toggle_command,
     command_exists,
     install_gnome_shortcut,
-    macos_hotkey_setup_message,
     shortcut_readiness,
+)
+from transclip.hotkey_setup import (
+    build_toggle_command,
+    macos_hotkey_setup_message,
     toggle_log_shell_path,
 )
 from transclip.product import (

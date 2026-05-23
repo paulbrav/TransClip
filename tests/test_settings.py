@@ -1,20 +1,20 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
-from transclip.platform_runtime import DefaultPlatformRuntime
 from transclip.settings import (
     DEFAULT_HOTKEY_LINUX,
     Settings,
+    active_hotkey,
     coerce_setting_value,
     load_settings,
+    paste_shortcut,
     patch_settings,
     set_setting,
     write_default_settings,
 )
 
-from tests.service_helpers import linux_gpu_runtime, patch_linux_gpu_runtime
+from tests.service_helpers import FakeRuntime, linux_gpu_runtime, patch_linux_gpu_runtime
 
 
 class SettingsTests(unittest.TestCase):
@@ -49,17 +49,17 @@ class SettingsTests(unittest.TestCase):
                 load_settings(path)
 
     def test_platform_helpers_have_defaults(self):
-        with patch.object(DefaultPlatformRuntime, "system", return_value="Linux"):
-            settings = Settings()
-            self.assertIn("XF86TouchpadOff", settings.active_hotkey)
-            self.assertIn("V", settings.paste_shortcut)
+        runtime = FakeRuntime(system="Linux", home=Path("/home/user"))
+        settings = Settings()
+        self.assertIn("XF86TouchpadOff", active_hotkey(settings, runtime))
+        self.assertIn("V", paste_shortcut(settings, runtime))
 
     def test_active_hotkey_uses_macos_binding_on_darwin(self):
-        with patch.object(DefaultPlatformRuntime, "system", return_value="Darwin"):
-            settings = Settings()
-            self.assertEqual(settings.active_hotkey, "Option+Space")
-            self.assertNotIn("XF86TouchpadOff", settings.active_hotkey)
-            self.assertEqual(settings.paste_shortcut, "Command+V")
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"))
+        settings = Settings()
+        self.assertEqual(active_hotkey(settings, runtime), "Option+Space")
+        self.assertNotIn("XF86TouchpadOff", active_hotkey(settings, runtime))
+        self.assertEqual(paste_shortcut(settings, runtime), "Command+V")
 
     def test_patch_settings_returns_new_object_without_mutating_original(self):
         with tempfile.TemporaryDirectory() as tmp:
