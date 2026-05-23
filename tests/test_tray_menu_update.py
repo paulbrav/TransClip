@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from transclip.desktop.tray.menu_update import (
     HistoryMenuState,
+    after_tray_action,
     apply_menu_snapshot,
     compute_tray_menu_snapshot,
     history_preview_entries,
@@ -63,7 +64,7 @@ class TrayMenuUpdateTests(unittest.TestCase):
     def test_snapshot_latest_enabled_reflects_latest_or_history(self):
         with (
             patch_linux_gpu_runtime(),
-            patch("transclip.desktop.tray.menu_update.latest_history_text", return_value=""),
+            patch("transclip.desktop.tray.session.latest_history_text", return_value=""),
         ):
             session = self._session()
             session.latest = ""
@@ -74,6 +75,16 @@ class TrayMenuUpdateTests(unittest.TestCase):
 
         self.assertFalse(empty.latest_enabled)
         self.assertTrue(with_latest.latest_enabled)
+
+    def test_snapshot_latest_enabled_uses_history_when_latest_empty(self):
+        with patch_linux_gpu_runtime():
+            session = self._session()
+            session.latest = ""
+            history_state = HistoryMenuState(signature=object(), latest_text="from history")
+
+        snapshot = compute_tray_menu_snapshot(session, history_state=history_state)
+
+        self.assertTrue(snapshot.latest_enabled)
 
     def test_should_refresh_history_skips_unchanged_signature(self):
         state = HistoryMenuState(signature=123)
@@ -127,6 +138,19 @@ class TrayMenuUpdateTests(unittest.TestCase):
         self.assertEqual(len(entries), 2)
         self.assertEqual(entries[0][1], "Line one")
         self.assertIn("Line one", entries[0][0])
+
+    def test_after_tray_action_skips_history_refresh_without_latest_transcript(self):
+        history_state = HistoryMenuState(signature=object())
+        refreshed: list[bool] = []
+
+        after_tray_action(
+            lambda: "done",
+            history_state=history_state,
+            refresh_history=lambda: refreshed.append(True),
+            update_menu=lambda: None,
+        )
+
+        self.assertEqual(refreshed, [])
 
 
 if __name__ == "__main__":

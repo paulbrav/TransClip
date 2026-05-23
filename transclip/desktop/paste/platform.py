@@ -161,13 +161,23 @@ def _windows_paste_specs() -> Sequence[PasteSpec]:
     )
 
 
+def _wtype_paste_commands(which: Which, _info: SessionInfo) -> list[list[str]]:
+    return [list(WTYPE_TERMINAL_PASTE_COMMAND)] if which("wtype") else []
+
+
+def _ydotool_paste_commands(which: Which, _info: SessionInfo) -> list[list[str]]:
+    return [["ydotool", "key", TERMINAL_PASTE_SHORTCUT]] if which("ydotool") else []
+
+
+def _ydotool_found_capability(which: Which, _info: SessionInfo, _runner: Runner):
+    from transclip.desktop.paste import PasteCapability
+
+    if which("ydotool"):
+        return PasteCapability(True, "found: ydotool", "ydotool")
+    return None
+
+
 def _wayland_paste_specs() -> Sequence[PasteSpec]:
-    def wtype_commands(which: Which, _info: SessionInfo) -> list[list[str]]:
-        return [list(WTYPE_TERMINAL_PASTE_COMMAND)] if which("wtype") else []
-
-    def ydotool_commands(which: Which, _info: SessionInfo) -> list[list[str]]:
-        return [["ydotool", "key", TERMINAL_PASTE_SHORTCUT]] if which("ydotool") else []
-
     def wtype_capability(which: Which, _info: SessionInfo, runner: Runner):
         from transclip.desktop.paste import PasteCapability
 
@@ -202,8 +212,13 @@ def _wayland_paste_specs() -> Sequence[PasteSpec]:
         return "; ".join(details) + "; fallback requires ydotool with ydotoold/uinput permissions"
 
     return (
-        PasteSpec("wtype", wtype_capability, build_commands=wtype_commands),
-        PasteSpec("ydotool", ydotool_capability, build_commands=ydotool_commands, failure_detail=wayland_failure),
+        PasteSpec("wtype", wtype_capability, build_commands=_wtype_paste_commands),
+        PasteSpec(
+            "ydotool",
+            ydotool_capability,
+            build_commands=_ydotool_paste_commands,
+            failure_detail=wayland_failure,
+        ),
     )
 
 
@@ -211,24 +226,11 @@ def _x11_paste_specs() -> Sequence[PasteSpec]:
     def xdotool_commands(which: Which, _info: SessionInfo) -> list[list[str]]:
         return [["xdotool", "key", TERMINAL_PASTE_SHORTCUT]] if which("xdotool") else []
 
-    def ydotool_commands(which: Which, _info: SessionInfo) -> list[list[str]]:
-        return [["ydotool", "key", TERMINAL_PASTE_SHORTCUT]] if which("ydotool") else []
-
-    def wtype_commands(which: Which, _info: SessionInfo) -> list[list[str]]:
-        return [list(WTYPE_TERMINAL_PASTE_COMMAND)] if which("wtype") else []
-
     def xdotool_capability(which: Which, _info: SessionInfo, _runner: Runner):
         from transclip.desktop.paste import PasteCapability
 
         if which("xdotool"):
             return PasteCapability(True, "found: xdotool", "xdotool")
-        return None
-
-    def ydotool_capability(which: Which, _info: SessionInfo, _runner: Runner):
-        from transclip.desktop.paste import PasteCapability
-
-        if which("ydotool"):
-            return PasteCapability(True, "found: ydotool", "ydotool")
         return None
 
     def wtype_capability(which: Which, _info: SessionInfo, _runner: Runner):
@@ -248,8 +250,8 @@ def _x11_paste_specs() -> Sequence[PasteSpec]:
 
     return (
         PasteSpec("xdotool", xdotool_capability, build_commands=xdotool_commands),
-        PasteSpec("ydotool", ydotool_capability, build_commands=ydotool_commands),
-        PasteSpec("wtype", wtype_capability, build_commands=wtype_commands, failure_detail=x11_failure),
+        PasteSpec("ydotool", _ydotool_found_capability, build_commands=_ydotool_paste_commands),
+        PasteSpec("wtype", wtype_capability, build_commands=_wtype_paste_commands, failure_detail=x11_failure),
     )
 
 

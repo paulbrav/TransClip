@@ -194,8 +194,11 @@ class TrayTests(unittest.TestCase):
     def test_health_refresh_updates_existing_menu_without_replacing_it(self):
         with (
             patch.dict(sys.modules, self.modules),
-            patch("transclip.desktop.tray.session.InferenceClient", FakeClient),
-            patch("transclip.desktop.tray.session.read_history", return_value=[]),
+            patch(
+                "transclip.service.client_health.fetch_service_health_result",
+                return_value=({"status": "ready"}, None),
+            ),
+            patch("transclip.history.read_history", return_value=[]),
         ):
             code = run_python_tray(Settings())
 
@@ -215,8 +218,11 @@ class TrayTests(unittest.TestCase):
 
         with (
             patch.dict(sys.modules, self.modules),
-            patch("transclip.desktop.tray.session.InferenceClient", FakeClient),
-            patch("transclip.desktop.tray.session.read_history", return_value=history_events) as read_history,
+            patch(
+                "transclip.service.client_health.fetch_service_health_result",
+                return_value=({"status": "ready"}, None),
+            ),
+            patch("transclip.history.read_history", return_value=history_events) as read_history,
             patch("transclip.desktop.tray.menu_update.history_file_signature", side_effect=[123, 123, 456]),
         ):
             code = run_python_tray(Settings())
@@ -254,8 +260,11 @@ class TrayTests(unittest.TestCase):
             write_settings(settings, settings_file)
             with (
                 patch.dict(sys.modules, self.modules),
-                patch("transclip.desktop.tray.session.InferenceClient", FakeClient),
-                patch("transclip.desktop.tray.session.read_history", return_value=[]),
+                patch(
+                    "transclip.service.client_health.fetch_service_health_result",
+                    return_value=({"status": "ready"}, None),
+                ),
+                patch("transclip.history.read_history", return_value=[]),
                 patch("transclip.desktop.tray.gtk.install_shortcut") as install_shortcut,
             ):
                 code = run_python_tray(settings, explicit_settings_path=settings_file)
@@ -277,9 +286,12 @@ class TrayTests(unittest.TestCase):
             write_settings(settings, settings_file)
             with (
                 patch.dict(sys.modules, self.modules),
-                patch("transclip.desktop.tray.session.InferenceClient", FakeClient),
-                patch("transclip.desktop.tray.session.read_history", return_value=[]),
-                patch("transclip.desktop.tray.session.service_action") as service_action,
+                patch(
+                    "transclip.service.client_health.fetch_service_health_result",
+                    return_value=({"status": "ready"}, None),
+                ),
+                patch("transclip.history.read_history", return_value=[]),
+                patch("transclip.daemon.service_action") as service_action,
             ):
                 service_action.return_value = types.SimpleNamespace(detail="restarted")
                 code = run_python_tray(settings, explicit_settings_path=settings_file)
@@ -303,9 +315,12 @@ class TrayTests(unittest.TestCase):
             write_settings(settings, settings_file)
             with (
                 patch.dict(sys.modules, self.modules),
-                patch("transclip.desktop.tray.session.InferenceClient", FakeClient),
-                patch("transclip.desktop.tray.session.read_history", return_value=[]),
-                patch("transclip.desktop.tray.session.service_action") as service_action,
+                patch(
+                    "transclip.service.client_health.fetch_service_health_result",
+                    return_value=({"status": "ready"}, None),
+                ),
+                patch("transclip.history.read_history", return_value=[]),
+                patch("transclip.daemon.service_action") as service_action,
             ):
                 service_action.return_value = types.SimpleNamespace(detail="restarted")
                 code = run_python_tray(settings, explicit_settings_path=settings_file)
@@ -328,8 +343,11 @@ class TrayTests(unittest.TestCase):
             write_settings(Settings(toggle_cooldown_ms=900), settings_file)
             with (
                 patch.dict(sys.modules, self.modules),
-                patch("transclip.desktop.tray.session.InferenceClient", FakeClient),
-                patch("transclip.desktop.tray.session.read_history", return_value=[]),
+                patch(
+                    "transclip.service.client_health.fetch_service_health_result",
+                    return_value=({"status": "ready"}, None),
+                ),
+                patch("transclip.history.read_history", return_value=[]),
                 patch("transclip.desktop.tray.gtk.install_shortcut"),
             ):
                 run_python_tray(settings, explicit_settings_path=settings_file)
@@ -350,8 +368,11 @@ class TrayTests(unittest.TestCase):
             write_settings(settings, settings_file)
             with (
                 patch.dict(sys.modules, self.modules),
-                patch("transclip.desktop.tray.session.InferenceClient", FakeClient),
-                patch("transclip.desktop.tray.session.read_history", return_value=[]),
+                patch(
+                    "transclip.service.client_health.fetch_service_health_result",
+                    return_value=({"status": "ready"}, None),
+                ),
+                patch("transclip.history.read_history", return_value=[]),
                 patch("transclip.desktop.tray.gtk.install_shortcut", side_effect=RuntimeError("gsettings failed")),
             ):
                 run_python_tray(settings, explicit_settings_path=settings_file)
@@ -375,8 +396,11 @@ class TrayTests(unittest.TestCase):
             write_settings(settings, settings_file)
             with (
                 patch.dict(sys.modules, self.modules),
-                patch("transclip.desktop.tray.session.InferenceClient", FakeClient),
-                patch("transclip.desktop.tray.session.read_history", return_value=[]),
+                patch(
+                    "transclip.service.client_health.fetch_service_health_result",
+                    return_value=({"status": "ready"}, None),
+                ),
+                patch("transclip.history.read_history", return_value=[]),
                 patch("transclip.desktop.tray.gtk.install_shortcut") as install_shortcut,
             ):
                 run_python_tray(settings, explicit_settings_path=settings_file)
@@ -503,9 +527,12 @@ class TrayTests(unittest.TestCase):
         runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
         with (
             patch.dict(sys.modules, {"pystray": pystray_mod, "PIL": pil_mod}),
-            patch("transclip.desktop.tray.session.InferenceClient", FakeClient),
-            patch("transclip.desktop.tray.session.read_history", return_value=[]),
-            patch("transclip.desktop.tray.session.toggle_recording", fake_toggle),
+            patch(
+                "transclip.service.client_health.fetch_service_health_result",
+                return_value=({"status": "ready"}, None),
+            ),
+            patch("transclip.history.read_history", return_value=[]),
+            patch("transclip.recording_ops.toggle_recording", fake_toggle),
             patch("transclip.desktop.tray.win32.start_windows_hotkey", return_value=lambda: None),
         ):
             code = run_windows_tray(Settings(), runtime=runtime)

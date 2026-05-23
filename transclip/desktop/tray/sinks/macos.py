@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..menu import MACOS_SELECTORS, MODEL_ITEMS_REF
+from ..menu import MODEL_ITEMS_REF
 
 
 class MacOSMenuSink:
@@ -17,12 +17,17 @@ class MacOSMenuSink:
         self._controller.menu_refs[ref] = self._controller.appendLabel_toMenu_(text, self._menu)
 
     def action(self, ref: str, label: str, action, *, enabled: bool = True, callback=None) -> None:
-        del enabled, callback
+        if callback is None:
+            raise ValueError("macOS tray actions require callbacks")
+        key = ref or str(action)
+        self._controller.action_callbacks[key] = callback
         item = self._controller.appendItem_action_toMenu_(
             label,
-            MACOS_SELECTORS[action],
+            "dispatchTrayAction:",
             self._menu,
         )
+        item.setRepresentedObject_(key)
+        item.setEnabled_(enabled)
         if ref:
             self._controller.menu_refs[ref] = item
 

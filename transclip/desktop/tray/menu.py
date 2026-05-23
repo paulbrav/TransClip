@@ -4,11 +4,9 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Literal
 
-from transclip.models import ModelRow, asr_model_rows
+from transclip.models import ModelRow, asr_model_rows, model_display_name
 from transclip.platform.runtime import PlatformRuntime
 from transclip.settings import Settings
-
-from .session import model_cleanup_label, model_menu_label
 
 TrayAction = Literal[
     "status",
@@ -38,17 +36,6 @@ TRAY_ACTION_LABELS: dict[TrayAction, str] = {
     "copy_hotkey_setup": "Copy hotkey setup command",
     "open_settings": "Open settings",
     "quit": "Quit tray",
-}
-
-MACOS_SELECTORS: dict[TrayAction, str] = {
-    "toggle": "toggleRecord:",
-    "copy_latest": "copyLatest:",
-    "start_service": "startService:",
-    "restart_service": "restartService:",
-    "model_cleanup": "toggleModelCleanup:",
-    "copy_hotkey_setup": "copyHotkeySetup:",
-    "open_settings": "openSettings:",
-    "quit": "quitTray:",
 }
 
 MODEL_ITEMS_REF = "model_items"
@@ -115,6 +102,16 @@ def tray_icon_for_health(icon: str, *, system: str) -> str:
         "ready": "audio-input-microphone-symbolic",
         "offline": "dialog-warning-symbolic",
     }[icon]
+
+
+def model_cleanup_label(settings: Settings) -> str:
+    prefix = "✓ " if settings.voice_model_cleanup_always_on else ""
+    return prefix + "Model cleanup always on"
+
+
+def model_menu_label(model_id: str, backend: str, settings: Settings) -> str:
+    prefix = "✓ " if settings.asr_model == model_id and settings.asr_backend == backend else ""
+    return prefix + model_display_name(model_id)
 
 
 def asr_model_choices(

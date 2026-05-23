@@ -6,8 +6,8 @@ from typing import Any, Protocol
 
 from transclip.history import history_file_signature
 
-from .menu import tray_action_label, tray_status_label
-from .session import TraySession, latest_history_text, preview_text
+from .menu import model_menu_label, tray_action_label, tray_status_label
+from .session import TraySession, can_copy_latest, preview_text
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +23,7 @@ class TrayMenuSnapshot:
 class HistoryMenuState:
     signature: object
     refreshing: bool = False
+    latest_text: str = ""
 
 
 class TrayMenuView(Protocol):
@@ -37,12 +38,17 @@ class TrayMenuView(Protocol):
     def set_health_icon(self, icon: str) -> None: ...
 
 
-def compute_tray_menu_snapshot(session: TraySession) -> TrayMenuSnapshot:
+def compute_tray_menu_snapshot(
+    session: TraySession,
+    *,
+    history_state: HistoryMenuState | None = None,
+) -> TrayMenuSnapshot:
     health = session.health
+    cached = history_state.latest_text if history_state is not None else None
     return TrayMenuSnapshot(
         status_label=tray_status_label(health.status, health.detail),
         toggle_label=tray_action_label("toggle", recording=health.recording, settings=session.settings),
-        latest_enabled=bool(session.latest or latest_history_text()),
+        latest_enabled=can_copy_latest(session, cached_history_text=cached),
         model_cleanup_label=tray_action_label(
             "model_cleanup",
             recording=health.recording,
@@ -108,10 +114,9 @@ def apply_tray_menu_update(
     view: TrayMenuView,
     *,
     model_items: Sequence[tuple[Any, Any]],
+    history_state: HistoryMenuState | None = None,
 ) -> TrayMenuSnapshot:
-    from .session import model_menu_label
-
-    snapshot = compute_tray_menu_snapshot(session)
+    snapshot = compute_tray_menu_snapshot(session, history_state=history_state)
     label_pairs = [
         (item, model_menu_label(row.model_id, row.backend, session.settings))
         for item, row in model_items
@@ -136,8 +141,10 @@ def refresh_history_menu(
         events = history_preview_entries(session)
         if events:
             view.rebuild_history(events)
+            state.latest_text = events[0][1]
         else:
             view.rebuild_history([("No recent transcripts", "")])
+            state.latest_text = ""
         state.signature = signature
     finally:
         state.refreshing = False

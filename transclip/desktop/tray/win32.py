@@ -6,18 +6,14 @@ from pathlib import Path
 from typing import Any
 
 from transclip.desktop.hotkey.windows import start_windows_hotkey
-from transclip.platform.runtime import PlatformRuntime, open_path
+from transclip.platform.runtime import PlatformRuntime
 from transclip.product import DISPLAY_NAME
 from transclip.settings import Settings, patch_settings, settings_path
 
+from .controller import TrayController, build_tray_action_callbacks
 from .materialize import materialize_tray_menu
-from .menu import MODEL_ITEMS_REF, tray_menu_nodes
-from .menu_update import (
-    HistoryMenuState,
-    after_tray_action,
-    apply_tray_menu_update,
-)
-from .menu_update import refresh_history_menu as refresh_shared_history
+from .menu import tray_menu_nodes
+from .menu_update import HistoryMenuState
 from .session import TraySession
 from .sinks.win32 import PystrayMenuSink
 
@@ -58,9 +54,6 @@ def run_windows_tray(
         hotkey_holder["stop"] = start_windows_hotkey(on_hotkey, session.settings, session.runtime)
 
     class PystrayMenuView:
-        def __init__(self) -> None:
-            self._health_icon = session.health.icon
-
         def set_label(self, ref: str, text: str) -> None:
             menu_refs[ref].text = text
 
@@ -72,56 +65,32 @@ def run_windows_tray(
                 item.text = label
 
         def rebuild_history(self, entries) -> None:
-            submenu_items: list = []
-            for preview, full_text in entries:
-                if not full_text:
-                    submenu_items.append(pystray.MenuItem(preview, None, enabled=False))
-                    continue
-
-                def copy_history(_icon, _item, value=full_text):
-                    session.copy_text(value)
-                    update_menu()
-
-                submenu_items.append(pystray.MenuItem(preview, copy_history))
-            menu_refs["history_menu"].submenu = pystray.Menu(*submenu_items)
+            menu_refs["_history_entries"] = list(entries)
 
         def set_health_icon(self, icon: str) -> None:
-            self._health_icon = icon
             icon_obj = icon_holder["icon"]
             if icon_obj is not None:
                 icon_obj.icon = build_image(icon)
 
     menu_view = PystrayMenuView()
-
-    def run_tray_action(action: Callable[[], object]) -> None:
-        after_tray_action(
-            action,
-            history_state=history_state,
-            refresh_history=lambda: refresh_history_menu(force=True),
-            update_menu=update_menu,
-        )
-
-    def toggle_record(_icon=None, _item=None) -> None:
-        run_tray_action(session.toggle_record)
-
-    def copy_latest(_icon=None, _item=None) -> None:
-        session.copy_latest()
-        update_menu()
+    controller = TrayController(
+        session,
+        menu_view,
+        menu_refs,
+        history_state=history_state,
+        on_health_icon=lambda: menu_view.set_health_icon(session.health.icon),
+    )
 
     def set_hotkey(_icon=None, _item=None) -> None:
         _set_hotkey_dialog(session, restart_hotkey)
-        update_menu()
+        controller.update_menu()
 
-    action_callbacks = {
-        "toggle": toggle_record,
-        "copy_latest": copy_latest,
-        "start_service": lambda *_: run_tray_action(session.start_service),
-        "restart_service": lambda *_: run_tray_action(session.restart_service),
-        "model_cleanup": lambda *_: run_tray_action(session.toggle_model_cleanup),
-        "set_hotkey": set_hotkey,
-        "open_settings": lambda *_: open_path(session.open_settings(), session.runtime),
-        "quit": lambda *_: icon_holder["icon"].stop() if icon_holder["icon"] is not None else None,
-    }
+    action_callbacks = build_tray_action_callbacks(
+        controller,
+        session,
+        set_hotkey=set_hotkey,
+        quit=lambda: icon_holder["icon"].stop() if icon_holder["icon"] is not None else None,
+    )
 
     def build_menu() -> pystray.Menu:
         items: list = []
@@ -132,29 +101,19 @@ def run_windows_tray(
                 items,
                 menu_refs,
                 pystray=pystray,
-                after_action=run_tray_action,
+                after_action=controller.run_tray_action,
                 set_model=session.set_asr_model,
+                on_copy_history=controller.copy_history_text,
             ),
             action_callbacks=action_callbacks,
             initial_status_label=True,
+            on_history_open=controller.refresh_history_menu,
+            history_state=history_state,
         )
         return pystray.Menu(*items)
 
-    def update_menu() -> None:
-        if icon_holder["icon"] is None:
-            return
-        apply_tray_menu_update(
-            session,
-            menu_view,
-            model_items=menu_refs.get(MODEL_ITEMS_REF, []),
-        )
-        refresh_history_menu()
-
-    def refresh_history_menu(force: bool = False) -> None:
-        refresh_shared_history(session, history_state, menu_view, force=force)
-
     def on_hotkey() -> None:
-        toggle_record()
+        controller.toggle_record()
 
     icon = pystray.Icon(
         DISPLAY_NAME,
@@ -167,9 +126,8 @@ def run_windows_tray(
     def setup(_icon) -> None:
         restart_hotkey()
         _icon.visible = True
-        session.refresh_health()
-        refresh_history_menu(force=True)
-        update_menu()
+        controller.refresh_health()
+        controller.refresh_history_menu(force=True)
 
     try:
         icon.run(setup=setup)

@@ -30,11 +30,13 @@ class GtkMenuSink:
         self._append_separator(self._menu)
 
     def status_label(self, ref: str, text: str) -> None:
-        self._menu_refs[ref] = self._append_label(self._menu, text)
+        item = self._append_label(self._menu, text)
+        item.set_sensitive(False)
+        self._menu_refs[ref] = item
 
     def action(self, ref: str, label: str, action, *, enabled: bool = True, callback=None) -> None:
-        del enabled
         item = self._append_item(self._menu, label, callback)
+        item.set_sensitive(enabled)
         if ref:
             self._menu_refs[ref] = item
 

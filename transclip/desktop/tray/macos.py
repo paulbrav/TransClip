@@ -4,23 +4,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from transclip.desktop.hotkey import macos_hotkey_setup_message
 from transclip.models import ModelRow
-from transclip.platform.runtime import PlatformRuntime, open_path
+from transclip.platform.runtime import PlatformRuntime
 from transclip.product import DISPLAY_NAME
 from transclip.settings import Settings
 
+from .controller import TrayController, build_tray_action_callbacks
 from .materialize import materialize_tray_menu
-from .menu import (
-    MODEL_ITEMS_REF,
-    tray_icon_for_health,
-    tray_menu_nodes,
-)
-from .menu_update import (
-    HistoryMenuState,
-    after_tray_action,
-    apply_tray_menu_update,
-)
-from .menu_update import refresh_history_menu as refresh_shared_history
+from .menu import tray_icon_for_health, tray_menu_nodes
+from .menu_update import HistoryMenuState
 from .session import TraySession
 from .sinks.macos import MacOSMenuSink
 
@@ -86,38 +79,52 @@ def run_macos_tray(
             themed = tray_icon_for_health(icon, system=session.runtime.system())
             self._controller.status_item.button().setTitle_(themed)
 
-    class MacOSTrayController(NSObject):
+    class MacOSTrayDelegate(NSObject):
         def initWithSession_(self, tray_session):
             self = self.init()
             self.session = tray_session
             self.menu_refs: dict[str, Any] = {}
+            self.action_callbacks: dict[str, Any] = {}
             self.menu_view = MacOSMenuView(self)
+            self.tray_controller = TrayController(
+                self.session,
+                self.menu_view,
+                self.menu_refs,
+                history_state=history_state,
+                on_health_icon=lambda: self.menu_view.set_health_icon(self.session.health.icon),
+            )
             self.status_item = NSStatusBar.systemStatusBar().statusItemWithLength_(NSVariableStatusItemLength)
             self.status_item.button().setTitle_("🎙")
             self.status_item.button().setToolTip_(DISPLAY_NAME)
             self.buildMenu()
             return self
 
-        def runTrayAction_(self, action):
-            after_tray_action(
-                action,
-                history_state=history_state,
-                refresh_history=lambda: self.refreshHistoryMenu(force=True),
-                update_menu=self.updateMenu,
-            )
-
         def buildMenu(self):
             menu = NSMenu.alloc().init()
             menu.setDelegate_(self)
+            self.action_callbacks = build_tray_action_callbacks(
+                self.tray_controller,
+                self.session,
+                copy_hotkey_setup=lambda: self.tray_controller.copy_history_text(
+                    macos_hotkey_setup_message(
+                        self.session.settings,
+                        self.session.explicit_settings_path,
+                        self.session.runtime,
+                    ),
+                ),
+                quit=lambda: NSApplication.sharedApplication().terminate_(self),
+            )
             materialize_tray_menu(
                 tray_menu_nodes(self.session.runtime.system()),
                 self.session,
                 MacOSMenuSink(self, menu),
-                action_callbacks={},
+                action_callbacks=self.action_callbacks,
                 initial_status_label=True,
+                on_history_open=self.tray_controller.refresh_history_menu,
+                history_state=history_state,
             )
-            self.refreshHistoryMenu(force=True)
-            self.updateMenu()
+            self.tray_controller.refresh_history_menu(force=True)
+            self.tray_controller.update_menu()
             self.status_item.setMenu_(menu)
 
         def appendItem_action_toMenu_(self, title, action, menu):
@@ -132,74 +139,43 @@ def run_macos_tray(
             menu.addItem_(item)
             return item
 
+        def dispatchTrayAction_(self, sender):
+            callback = self.action_callbacks.get(str(sender.representedObject() or ""))
+            if callback is not None:
+                callback()
+
         def refreshHealth(self):
-            self.session.refresh_health()
-            self.updateMenu()
+            self.tray_controller.refresh_health()
             return True
 
         def refreshHealth_(self, _timer):
             return self.refreshHealth()
 
-        def updateMenu(self):
-            apply_tray_menu_update(
-                self.session,
-                self.menu_view,
-                model_items=self.menu_refs.get(MODEL_ITEMS_REF, []),
-            )
-
-        def refreshHistoryMenu(self, force: bool = False):
-            refresh_shared_history(self.session, history_state, self.menu_view, force=force)
-
         def menuWillOpen_(self, _menu):
-            self.refreshHistoryMenu()
+            self.tray_controller.refresh_history_menu()
             self.refreshHealth()
 
-        def toggleRecord_(self, _item):
-            self.runTrayAction_(self.session.toggle_record)
-
-        def copyLatest_(self, _item):
-            self.session.copy_latest()
-            self.updateMenu()
-
         def copyHistoryItem_(self, item):
-            self.session.copy_text(str(item.representedObject() or ""))
-            self.updateMenu()
-
-        def copyHotkeySetup_(self, _item):
-            self.session.copy_text(self.session.hotkey_setup_message())
-            self.updateMenu()
-
-        def startService_(self, _item):
-            self.runTrayAction_(self.session.start_service)
-
-        def restartService_(self, _item):
-            self.runTrayAction_(self.session.restart_service)
-
-        def toggleModelCleanup_(self, _item):
-            self.runTrayAction_(self.session.toggle_model_cleanup)
+            self.tray_controller.copy_history_text(str(item.representedObject() or ""))
 
         def setASRModel_(self, item):
             row: ModelRow = item.representedObject()
-            self.runTrayAction_(lambda: self.session.set_asr_model(row.model_id, row.backend))
-
-        def openSettings_(self, _item):
-            open_path(self.session.open_settings(), self.session.runtime)
-
-        def quitTray_(self, _item):
-            NSApplication.sharedApplication().terminate_(self)
+            self.tray_controller.run_tray_action(
+                lambda: self.session.set_asr_model(row.model_id, row.backend),
+            )
 
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
-    controller = MacOSTrayController.alloc().initWithSession_(session)
-    app.setDelegate_(controller)
+    delegate = MacOSTrayDelegate.alloc().initWithSession_(session)
+    app.setDelegate_(delegate)
     timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
         3.0,
-        controller,
+        delegate,
         "refreshHealth:",
         None,
         True,
     )
-    _MACOS_TRAY_REFS[:] = [controller, controller.status_item, timer]
-    controller.refreshHealth()
+    _MACOS_TRAY_REFS[:] = [delegate, delegate.status_item, timer]
+    delegate.refreshHealth()
     app.run()
     return 0

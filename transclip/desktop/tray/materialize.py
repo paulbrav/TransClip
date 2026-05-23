@@ -14,7 +14,8 @@ from .menu import (
     tray_submenu_is_history,
     tray_submenu_title,
 )
-from .session import TraySession
+from .menu_update import HistoryMenuState
+from .session import TraySession, can_copy_latest
 
 
 class TrayMenuSink(Protocol):
@@ -45,6 +46,7 @@ def materialize_tray_menu(
     action_callbacks: dict[TrayAction, Callable[..., Any]],
     initial_status_label: bool = False,
     on_history_open: Callable[[], None] | None = None,
+    history_state: HistoryMenuState | None = None,
 ) -> None:
     for node in nodes:
         if node.kind == "separator":
@@ -75,7 +77,8 @@ def materialize_tray_menu(
             recording=session.health.recording,
             settings=session.settings,
         )
-        enabled = node.action != "copy_latest" or bool(session.latest)
+        cached = history_state.latest_text if history_state is not None else None
+        enabled = node.action != "copy_latest" or can_copy_latest(session, cached_history_text=cached)
         sink.action(
             node.ref,
             label,

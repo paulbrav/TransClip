@@ -3,23 +3,17 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from transclip.desktop.hotkey import install_shortcut
-from transclip.platform.runtime import open_path
 from transclip.product import APP_ID, DISPLAY_NAME, IMPORT_PACKAGE
 from transclip.settings import Settings, patch_settings, settings_path
 
+from .controller import TrayController, build_tray_action_callbacks
 from .materialize import materialize_tray_menu
-from .menu import MODEL_ITEMS_REF, tray_icon_for_health, tray_menu_nodes
-from .menu_update import (
-    HistoryMenuState,
-    after_tray_action,
-    apply_tray_menu_update,
-)
-from .menu_update import refresh_history_menu as refresh_shared_history
+from .menu import tray_icon_for_health, tray_menu_nodes
+from .menu_update import HistoryMenuState
 from .session import TraySession
 from .sinks.gtk import GtkMenuSink
 
@@ -48,9 +42,6 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
     indicator.set_status(AppIndicator.IndicatorStatus.ACTIVE)
 
     class GtkMenuView:
-        def __init__(self) -> None:
-            self._health_icon = session.health.icon
-
         def set_label(self, ref: str, text: str) -> None:
             _set_menu_item_label(menu_refs[ref], text)
 
@@ -72,46 +63,22 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
                     item = _append_item(
                         history_menu,
                         preview,
-                        lambda _item, value=full_text: session.copy_text(value),
+                        lambda _item, value=full_text: controller.copy_history_text(value),
                     )
                 item.show_all()
 
         def set_health_icon(self, icon: str) -> None:
-            self._health_icon = icon
             themed = tray_icon_for_health(icon, system=session.runtime.system())
             indicator.set_icon_full(themed, DISPLAY_NAME)
 
     menu_view = GtkMenuView()
-
-    def apply_health_icon() -> None:
-        menu_view.set_health_icon(session.health.icon)
-
-    def refresh_health() -> bool:
-        session.refresh_health()
-        apply_health_icon()
-        update_menu()
-        return True
-
-    def toggle_record(_item=None) -> None:
-        after_tray_action(
-            session.toggle_record,
-            history_state=history_state,
-            refresh_history=lambda: refresh_history_menu(force=True),
-            update_menu=update_menu,
-            before_update=apply_health_icon,
-        )
-
-    def copy_latest(_item=None) -> None:
-        session.copy_latest()
-        update_menu()
-
-    def run_tray_action(action: Callable[[], object]) -> None:
-        after_tray_action(
-            action,
-            history_state=history_state,
-            refresh_history=lambda: refresh_history_menu(force=True),
-            update_menu=update_menu,
-        )
+    controller = TrayController(
+        session,
+        menu_view,
+        menu_refs,
+        history_state=history_state,
+        on_health_icon=lambda: menu_view.set_health_icon(session.health.icon),
+    )
 
     def set_hotkey(_item=None) -> None:
         current = session.settings.hotkey_linux
@@ -134,11 +101,11 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
             return
         if not value:
             session.set_detail("Hotkey was not changed")
-            update_menu()
+            controller.update_menu()
             return
         if not _valid_accelerator(Gtk, value):
             session.set_detail("Hotkey is not a valid GNOME accelerator")
-            update_menu()
+            controller.update_menu()
             return
         path = explicit_settings_path or settings_path()
         try:
@@ -147,18 +114,14 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
             session.set_detail(f"Hotkey set to {value}")
         except Exception as exc:
             session.set_detail(f"Hotkey update failed: {exc}")
-        update_menu()
+        controller.update_menu()
 
-    action_callbacks = {
-        "toggle": toggle_record,
-        "copy_latest": copy_latest,
-        "start_service": lambda *_: run_tray_action(session.start_service),
-        "restart_service": lambda *_: run_tray_action(session.restart_service),
-        "model_cleanup": lambda *_: run_tray_action(session.toggle_model_cleanup),
-        "set_hotkey": set_hotkey,
-        "open_settings": lambda *_: open_path(session.open_settings(), session.runtime),
-        "quit": Gtk.main_quit,
-    }
+    action_callbacks = build_tray_action_callbacks(
+        controller,
+        session,
+        set_hotkey=set_hotkey,
+        quit=Gtk.main_quit,
+    )
 
     def build_menu() -> None:
         menu = Gtk.Menu()
@@ -171,30 +134,21 @@ def run_python_tray(settings: Settings, explicit_settings_path: Path | None = No
                 append_separator=_append_separator,
                 append_label=_append_label,
                 append_item=_append_item,
-                after_action=run_tray_action,
+                after_action=controller.run_tray_action,
                 set_model=session.set_asr_model,
             ),
             action_callbacks=action_callbacks,
-            on_history_open=refresh_history_menu,
+            on_history_open=controller.refresh_history_menu,
+            history_state=history_state,
         )
-        refresh_history_menu()
-        update_menu()
+        controller.refresh_history_menu()
+        controller.update_menu()
         menu.show_all()
         indicator.set_menu(menu)
 
-    def update_menu() -> None:
-        apply_tray_menu_update(
-            session,
-            menu_view,
-            model_items=menu_refs.get(MODEL_ITEMS_REF, []),
-        )
-
-    def refresh_history_menu(force: bool = False) -> None:
-        refresh_shared_history(session, history_state, menu_view, force=force)
-
     build_menu()
-    GLib.timeout_add_seconds(3, refresh_health)
-    refresh_health()
+    GLib.timeout_add_seconds(3, lambda: controller.refresh_health() or True)
+    controller.refresh_health()
     Gtk.main()
     return 0
 
@@ -254,7 +208,7 @@ def _reexec_with_system_python(explicit_settings_path: Path | None) -> int:
 
     root = repo_root()
     env = dict(os.environ)
-    env["PYTHONPATH"] = str(repo_root) + os.pathsep + env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(root) + os.pathsep + env.get("PYTHONPATH", "")
     command = [python, "-m", f"{IMPORT_PACKAGE}.cli"]
     if explicit_settings_path:
         command.extend(["--settings", str(explicit_settings_path)])

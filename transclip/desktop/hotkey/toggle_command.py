@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 
 from transclip.paths import service_settings_path
-from transclip.platform.runtime import PlatformRuntime, get_runtime, user_log_dir
-from transclip.product import IMPORT_PACKAGE, LOG_DIR_NAME
+from transclip.platform.runtime import PlatformRuntime, get_runtime
+from transclip.product import IMPORT_PACKAGE
 
 
 def build_toggle_invocation(settings_path: Path | None = None) -> list[str]:
@@ -19,8 +19,9 @@ def build_toggle_invocation(settings_path: Path | None = None) -> list[str]:
 
 
 def toggle_log_shell_path(runtime: PlatformRuntime | None = None) -> str:
-    log_dir = user_log_dir(LOG_DIR_NAME, runtime)
-    return str(log_dir / "toggle-record.log")
+    from transclip.daemon.common import toggle_log_path
+
+    return str(toggle_log_path(runtime))
 
 
 def build_toggle_command(
