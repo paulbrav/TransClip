@@ -6,9 +6,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from transclip.history import history_file_signature
+from transclip.recording_ops import ToggleOutcome
 from transclip.settings import DEFAULT_HOTKEY_LINUX, Settings, load_settings, write_settings
 from transclip.tray import run_tray
 from transclip.tray_gtk import run_python_tray
+from transclip.tray_win32 import run_windows_tray
 
 from tests.service_helpers import FakeRuntime
 
@@ -433,6 +435,92 @@ class TrayTests(unittest.TestCase):
         actions = [node.action for node in tray_menu_nodes("Windows") if node.kind == "action"]
         self.assertIn("set_hotkey", actions)
         self.assertNotIn("copy_hotkey_setup", actions)
+
+    def test_windows_update_menu_mutates_item_text_without_menu_rebuild(self):
+        top_level_menus = {"count": 0}
+        icon_holder: dict[str, object] = {}
+        menu_holder: dict[str, object] = {}
+
+        class FakeMenuItem:
+            def __init__(self, text, action=None, enabled=True):
+                self.text = text
+                self.action = action
+                self.enabled = enabled
+                self.submenu = None
+
+        class FakeMenu:
+            def __init__(self, *items):
+                self.items = list(items)
+
+            SEPARATOR = object()
+
+        class FakeIcon:
+            def __init__(self, _name, _image, _title, menu):
+                top_level_menus["count"] += 1
+                self.menu = menu
+                self.visible = False
+                icon_holder["icon"] = self
+
+            def run(self, setup=None):
+                setup(self)
+                menu_holder["before_toggle"] = self.menu
+                toggle = next(
+                    item
+                    for item in self.menu.items
+                    if getattr(item, "action", None) and item.text == "Record"
+                )
+                toggle.action(None, toggle)
+
+        pystray_mod = types.SimpleNamespace(
+            Menu=FakeMenu,
+            MenuItem=FakeMenuItem,
+            Icon=FakeIcon,
+        )
+        pil_mod = types.SimpleNamespace(
+            Image=types.SimpleNamespace(new=lambda *_args, **_kwargs: object()),
+            ImageDraw=types.SimpleNamespace(
+                Draw=lambda *_args: types.SimpleNamespace(ellipse=lambda *_a, **_k: None),
+            ),
+        )
+
+        health_state = {"status": "ready"}
+
+        class FakeClient:
+            def __init__(self, *_args, **_kwargs):
+                return None
+
+            def health(self):
+                return {"status": health_state["status"]}
+
+        def fake_toggle(_settings, paste=False, client=None):
+            health_state["status"] = "recording"
+            return ToggleOutcome(
+                ok=True,
+                payload={"action": "started"},
+                service_url="http://127.0.0.1:8765",
+            )
+
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        with (
+            patch.dict(sys.modules, {"pystray": pystray_mod, "PIL": pil_mod}),
+            patch("transclip.tray_session.InferenceClient", FakeClient),
+            patch("transclip.tray_session.read_history", return_value=[]),
+            patch("transclip.tray_session.toggle_recording", fake_toggle),
+            patch("transclip.tray_win32.start_windows_hotkey", return_value=lambda: None),
+        ):
+            code = run_windows_tray(Settings(), runtime=runtime)
+
+        icon = icon_holder["icon"]
+        status = next(
+            item for item in icon.menu.items if getattr(item, "text", "").startswith("Service:")
+        )
+        toggle = next(item for item in icon.menu.items if getattr(item, "action", None))
+
+        self.assertEqual(code, 0)
+        self.assertEqual(top_level_menus["count"], 1)
+        self.assertIs(menu_holder["before_toggle"], icon.menu)
+        self.assertEqual(status.text, "Service: recording")
+        self.assertEqual(toggle.text, "Stop + paste")
 
 
 def menu_item_by_label(indicator, label: str):

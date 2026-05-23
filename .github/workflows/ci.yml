@@ -21,6 +21,28 @@ jobs:
         run: uv run python -m compileall transclip scripts tests
       - name: Unit tests
         run: uv run python -m unittest discover -s tests -v
+      - name: Windows eval gate wiring
+        run: |
+          uv run python -c "
+          from pathlib import Path
+          from transclip.eval_harness import EvalGatePolicy
+          policy = EvalGatePolicy.from_manifest(Path('eval/windows/manifest.json'))
+          cases = policy.min_cases
+          payload = {
+              'summary': {
+                  'cases': cases,
+                  'mean_release_to_ready_ms': 300.0,
+                  'under_700ms': cases,
+                  'mean_keyword_preservation': 1.0,
+                  'mean_wer': 0.05,
+                  'cleanup_semantic_drift_failures': 0,
+                  'paste_failures': 0,
+              },
+              'results': [{'timings_ms': {'end_to_end': 300.0}}] * cases,
+          }
+          report = policy.check_results(payload)
+          assert report['status'] == 'pass', report
+          "
 
   macos:
     runs-on: macos-15
