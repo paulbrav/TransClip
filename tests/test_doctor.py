@@ -235,6 +235,68 @@ card 1: Generic_1 [HD-Audio Generic], device 0: ALC245 Analog [ALC245 Analog]
         self.assertFalse(check.ok)
         self.assertIn("sounddevice is not installed", check.detail)
 
+    def test_windows_hotkey_check_mentions_tray_binding(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        check = check_hotkey_readiness(Settings(), runtime)
+
+        self.assertTrue(check.ok)
+        self.assertIn("ctrl+shift+space", check.detail)
+        self.assertIn("tray", check.detail.lower())
+        self.assertNotIn("XF86TouchpadOff", check.detail)
+
+    def test_windows_microphone_check_mentions_privacy_settings(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        fake_sd = type(
+            "FakeSoundDevice",
+            (),
+            {
+                "query_devices": staticmethod(lambda kind: {"name": "USB Mic", "max_input_channels": 1}),
+            },
+        )()
+        with patch.dict("sys.modules", {"sounddevice": fake_sd}):
+            check = check_microphone_devices(runtime=runtime)
+
+        self.assertTrue(check.ok)
+        self.assertIn("USB Mic", check.detail)
+        self.assertIn("Microphone", check.detail)
+
+    def test_windows_service_manager_check_mentions_task_scheduler(self):
+        from transclip.daemon_common import ServiceState
+        from transclip.doctor import check_service_manager
+
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        check = check_service_manager(
+            ServiceState(installed=False, active=False, detail="missing"),
+            runtime,
+        )
+
+        self.assertFalse(check.ok)
+        self.assertIn("Task Scheduler", check.detail)
+
+    def test_windows_granite_asr_runtime_skips_flash_attn_gate(self):
+        settings = Settings(
+            asr_backend="granite",
+            asr_model="ibm-granite/granite-speech-4.1-2b",
+        )
+        with patch.dict("sys.modules", {"flash_attn": None}):
+            check = check_asr_runtime(settings)
+
+        self.assertTrue(check.ok)
+        self.assertNotIn("flash-attn", check.detail)
+        self.assertIn("no extra runtime checks", check.detail)
+
+    def test_windows_doctor_paste_and_clipboard_checks_pass(self):
+        from transclip.doctor import check_clipboard_tools, check_paste_tools
+
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        clipboard = check_clipboard_tools(runtime)
+        paste = check_paste_tools(runtime)
+
+        self.assertTrue(clipboard.ok)
+        self.assertIn("Win32", clipboard.detail)
+        self.assertTrue(paste.ok)
+        self.assertIn("SendInput", paste.detail)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from transclip.paste import (
@@ -208,6 +209,26 @@ class PasteTests(unittest.TestCase):
 
         self.assertTrue(capability.ok)
         self.assertEqual(capability.backend, "wl-clipboard")
+
+    def test_windows_clipboard_and_paste_capabilities_are_available(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+
+        clipboard = clipboard_capability(runtime=runtime)
+        paste = paste_commands(runtime=runtime)
+
+        self.assertTrue(clipboard.ok)
+        self.assertEqual(clipboard.backend, "win32")
+        self.assertEqual(paste[0].backend, "sendinput")
+
+    def test_windows_paste_uses_sendinput_backend(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        with patch("transclip.win32_clipboard.send_ctrl_v_paste") as send_paste:
+            injector = SystemPasteInjector(runtime)
+            self.assertTrue(injector.paste())
+
+        send_paste.assert_called_once()
+        self.assertEqual(injector.backend_name, "sendinput")
+
 
 
 if __name__ == "__main__":

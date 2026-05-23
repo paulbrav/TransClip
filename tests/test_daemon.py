@@ -8,11 +8,19 @@ from transclip.daemon import (
     append_toggle_log,
     build_systemd_unit,
     collect_status,
-    install_linux_daemon,
     last_toggle_log_event,
     toggle_log_path,
 )
-from transclip.daemon_lifecycle import install_macos_daemon, service_action, service_state
+from transclip.daemon_common import service_settings_path
+from transclip.daemon_lifecycle import (
+    install_linux_daemon,
+    install_macos_daemon,
+    service_action,
+    service_state,
+)
+from transclip.daemon_windows import build_task_scheduler_xml, install_windows_daemon
+from transclip.hotkey_setup import build_toggle_invocation, windows_hotkey_setup_message
+from transclip.product import TASK_SCHEDULER_NAME
 from transclip.settings import Settings
 
 from tests.service_helpers import FakeRuntime
@@ -96,6 +104,17 @@ class DaemonTests(unittest.TestCase):
                 toggle_log_path(runtime),
                 Path(tmp) / "Library" / "Logs" / "transclip" / "toggle-record.log",
             )
+
+    def test_toggle_log_path_is_under_localappdata_logs_on_windows(self):
+        runtime = FakeRuntime(
+            system="Windows",
+            home=Path("C:/Users/tester"),
+            env={"LOCALAPPDATA": "C:/Users/tester/AppData/Local"},
+        )
+        self.assertEqual(
+            toggle_log_path(runtime),
+            Path("C:/Users/tester/AppData/Local/transclip/logs/toggle-record.log"),
+        )
 
     def test_macos_install_uses_launchctl_bootstrap(self):
         calls = []
@@ -181,12 +200,12 @@ class DaemonTests(unittest.TestCase):
         def loaded_not_running(_command, **_kwargs):
             return type("Completed", (), {"returncode": 0, "stdout": "state = exited"})()
 
-        self.assertFalse(service_state(runner=loaded_not_running, runtime=runtime)["active"])
+        self.assertFalse(service_state(runner=loaded_not_running, runtime=runtime).active)
 
         def running(_command, **_kwargs):
             return type("Completed", (), {"returncode": 0, "stdout": "state = running\npid = 123"})()
 
-        self.assertTrue(service_state(runner=running, runtime=runtime)["active"])
+        self.assertTrue(service_state(runner=running, runtime=runtime).active)
 
     def test_paste_status_reports_probe_failure(self):
         capability = type(
@@ -207,6 +226,91 @@ class DaemonTests(unittest.TestCase):
 
         self.assertFalse(status["paste"]["ok"])
         self.assertIn("wtype unusable", status["paste"]["detail"])
+
+    def test_windows_install_uses_schtasks_and_skips_gnome_shortcut(self):
+        calls = []
+
+        def runner(command, **_kwargs):
+            calls.append(command)
+            return type("Completed", (), {"returncode": 0, "stdout": ""})()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            runtime = FakeRuntime(
+                system="Windows",
+                home=home,
+                env={"LOCALAPPDATA": str(home / "AppData/Local")},
+            )
+            with patch("transclip.daemon_lifecycle.install_shortcut") as install_shortcut:
+                results = install_windows_daemon(
+                    runner=runner,
+                    runtime=runtime,
+                    hotkey_setup_message=windows_hotkey_setup_message,
+                )
+
+            xml_path = home / "AppData/Local/transclip/logs/TransClip.xml"
+            self.assertTrue(xml_path.exists())
+            self.assertIn(["schtasks", "/Create", "/TN", TASK_SCHEDULER_NAME, "/XML", str(xml_path), "/F"], calls)
+            self.assertIn(["schtasks", "/Run", "/TN", TASK_SCHEDULER_NAME], calls)
+            install_shortcut.assert_not_called()
+            self.assertTrue(any("ctrl+shift+space" in result.detail for result in results))
+            self.assertTrue(any("prefetch" in result.detail for result in results))
+
+    def test_windows_service_state_reports_running_task(self):
+        runtime = FakeRuntime(
+            system="Windows",
+            home=Path("C:/Users/test"),
+            env={"LOCALAPPDATA": "C:/Users/test/AppData/Local"},
+        )
+
+        def running(_command, **_kwargs):
+            return type("Completed", (), {"returncode": 0, "stdout": "Status: Running"})()
+
+        state = service_state(runner=running, runtime=runtime)
+        self.assertTrue(state.active)
+
+    def test_windows_service_action_runs_schtasks(self):
+        calls = []
+
+        def runner(command, **_kwargs):
+            calls.append(command)
+            return type("Completed", (), {"returncode": 0, "stdout": ""})()
+
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        result = service_action("start", runner=runner, runtime=runtime)
+
+        self.assertTrue(result.ok)
+        self.assertIn(["schtasks", "/Run", "/TN", TASK_SCHEDULER_NAME], calls)
+
+    def test_task_scheduler_xml_quotes_settings_paths_with_spaces(self):
+        settings_path = Path("C:/Users/test user/AppData/Roaming/transclip/settings.toml")
+        xml = build_task_scheduler_xml(settings_path)
+
+        self.assertIn('encoding="UTF-16"', xml)
+        self.assertIn("<Enabled>true</Enabled>", xml)
+        self.assertIn("<Hidden>true</Hidden>", xml)
+        self.assertIn("test user", xml)
+        self.assertIn("--settings", xml)
+        self.assertIn("-m transclip.cli", xml)
+        self.assertIn(" serve</Arguments>", xml)
+
+    def test_service_settings_path_preserves_absolute_windows_paths(self):
+        path = Path("C:/Users/test user/AppData/Roaming/transclip/settings.toml")
+        self.assertEqual(
+            service_settings_path(path),
+            "C:/Users/test user/AppData/Roaming/transclip/settings.toml",
+        )
+
+    def test_build_toggle_invocation_preserves_absolute_windows_settings_path(self):
+        path = Path("C:/Users/test user/AppData/Roaming/transclip/settings.toml")
+        command = build_toggle_invocation(path)
+        self.assertIn("C:/Users/test user/AppData/Roaming/transclip/settings.toml", command)
+
+    def test_windows_service_state_ignores_running_substring_without_status_line(self):
+        from transclip.daemon_windows import _windows_task_reports_running
+
+        self.assertFalse(_windows_task_reports_running("Last Result: Running tasks only"))
+        self.assertTrue(_windows_task_reports_running("Status: Running"))
 
 
 if __name__ == "__main__":

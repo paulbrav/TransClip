@@ -14,9 +14,10 @@ from transclip.models import (
     normalize_asr_backend,
     prefetch_model,
     required_model_cache_paths,
+    supported_catalog_entries,
     validate_asr_model_backend,
 )
-from transclip.settings import Settings
+from transclip.settings import Settings, default_settings
 
 from tests.service_helpers import FakeRuntime, linux_gpu_runtime, patch_linux_gpu_runtime
 
@@ -124,6 +125,35 @@ class ModelsTests(unittest.TestCase):
         ):
             settings = Settings(model_cache_dir=tmp)
             ensure_disk_space(settings, SUPPORTED_MODELS[0])
+
+    def test_windows_catalog_excludes_nar_and_defaults_to_granite_ar(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        with patch("transclip.device.torch_cuda_usable", return_value=True):
+            defaults = default_settings(runtime)
+            entries = supported_catalog_entries(runtime)
+            model_ids = {entry.model_id for entry in entries}
+            rows = model_rows(defaults, runtime)
+
+        self.assertEqual(defaults.asr_backend, "granite")
+        self.assertEqual(defaults.asr_model, "ibm-granite/granite-speech-4.1-2b")
+        self.assertIn("ibm-granite/granite-speech-4.1-2b", model_ids)
+        self.assertIn("ibm-granite/granite-speech-4.1-2b-plus", model_ids)
+        self.assertNotIn("ibm-granite/granite-speech-4.1-2b-nar", model_ids)
+        default_row = next(row for row in rows if "default" in row.marker)
+        self.assertEqual(default_row.backend, "granite")
+        self.assertEqual(default_row.model_id, "ibm-granite/granite-speech-4.1-2b")
+
+    def test_windows_rejects_granite_nar_backend(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        with (
+            patch("transclip.device.torch_cuda_usable", return_value=True),
+            self.assertRaisesRegex(ValueError, "not supported on Windows"),
+        ):
+            validate_asr_model_backend(
+                "granite_nar",
+                "ibm-granite/granite-speech-4.1-2b-nar",
+                runtime,
+            )
 
 
 if __name__ == "__main__":

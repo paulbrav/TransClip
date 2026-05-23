@@ -5,9 +5,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from transclip.history import history_file_signature
 from transclip.settings import DEFAULT_HOTKEY_LINUX, Settings, load_settings, write_settings
 from transclip.tray import run_tray
-from transclip.tray_gtk import _history_file_signature, run_python_tray
+from transclip.tray_gtk import run_python_tray
 
 from tests.service_helpers import FakeRuntime
 
@@ -214,7 +215,7 @@ class TrayTests(unittest.TestCase):
             patch.dict(sys.modules, self.modules),
             patch("transclip.tray_session.InferenceClient", FakeClient),
             patch("transclip.tray_session.read_history", return_value=history_events) as read_history,
-            patch("transclip.tray_gtk._history_file_signature", side_effect=[123, 123, 456]),
+            patch("transclip.tray_gtk.history_file_signature", side_effect=[123, 123, 456]),
         ):
             code = run_python_tray(Settings())
             indicator = FakeIndicatorFactory.current
@@ -235,10 +236,10 @@ class TrayTests(unittest.TestCase):
     def test_history_file_signature_uses_mtime(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "history.jsonl"
-            self.assertIsNone(_history_file_signature(path))
+            self.assertIsNone(history_file_signature(path))
             path.write_text("{}\n", encoding="utf-8")
-            first = _history_file_signature(path)
-            second = _history_file_signature(path)
+            first = history_file_signature(path)
+            second = history_file_signature(path)
             self.assertIsNotNone(first)
             self.assertEqual(first, second)
 
@@ -404,6 +405,34 @@ class TrayTests(unittest.TestCase):
             code = run_tray(Settings())
 
         self.assertEqual(code, 1)
+
+    def test_run_tray_routes_windows_to_windows_tray(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        with (
+            patch("transclip.tray.get_runtime", return_value=runtime),
+            patch("transclip.tray_win32.run_windows_tray", return_value=0) as run_windows_tray,
+        ):
+            code = run_tray(Settings())
+
+        self.assertEqual(code, 0)
+        run_windows_tray.assert_called_once()
+
+    def test_windows_tray_fails_clearly_without_pystray(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        with (
+            patch("transclip.tray.get_runtime", return_value=runtime),
+            patch.dict(sys.modules, {"pystray": None}),
+        ):
+            code = run_tray(Settings())
+
+        self.assertEqual(code, 1)
+
+    def test_windows_menu_uses_set_hotkey_action(self):
+        from transclip.tray_menu import tray_menu_nodes
+
+        actions = [node.action for node in tray_menu_nodes("Windows") if node.kind == "action"]
+        self.assertIn("set_hotkey", actions)
+        self.assertNotIn("copy_hotkey_setup", actions)
 
 
 def menu_item_by_label(indicator, label: str):

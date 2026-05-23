@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from dataclasses import replace
@@ -36,6 +37,16 @@ class PlatformRuntimeTests(unittest.TestCase):
                 Path(tmp) / "Library" / "Caches" / "transclip",
             )
             self.assertEqual(user_log_dir("transclip", runtime), Path(tmp) / "Library" / "Logs" / "transclip")
+
+    def test_windows_paths(self):
+        runtime = FakeRuntime(
+            system="Windows",
+            home=Path("C:/Users/tester"),
+            env={"APPDATA": "C:/Users/tester/AppData/Roaming", "LOCALAPPDATA": "C:/Users/tester/AppData/Local"},
+        )
+        self.assertEqual(user_config_dir("transclip", runtime), Path("C:/Users/tester/AppData/Roaming/transclip"))
+        self.assertEqual(user_cache_dir("transclip", runtime), Path("C:/Users/tester/AppData/Local/transclip"))
+        self.assertEqual(user_log_dir("transclip", runtime), Path("C:/Users/tester/AppData/Local/transclip/logs"))
 
     def test_linux_profile_defaults(self):
         runtime = FakeRuntime(system="Linux", home=Path("/home/user"))
@@ -113,6 +124,53 @@ class PlatformRuntimeTests(unittest.TestCase):
 
         popen.assert_called_once()
         self.assertEqual(popen.call_args.args[0], ["xdg-open", "/tmp/settings.toml"])
+
+    def test_open_path_uses_startfile_on_windows(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/tester"))
+        with patch.object(os, "startfile", create=True) as startfile:
+            from transclip.platform_runtime import open_path
+
+            open_path(Path("C:/Users/tester/settings.toml"), runtime=runtime)
+
+        startfile.assert_called_once_with("C:/Users/tester/settings.toml")
+
+    def test_windows_profile_defaults_to_granite_ar(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/tester"))
+        with patch("transclip.device.torch_cuda_usable", return_value=True):
+            profile = detect_runtime_profile(runtime)
+            settings = default_settings(runtime)
+
+        self.assertEqual(profile.profile_id, "windows_cuda")
+        self.assertEqual(profile.service_manager, "task_scheduler")
+        self.assertEqual(settings.asr_backend, "granite")
+        self.assertEqual(settings.asr_model, "ibm-granite/granite-speech-4.1-2b")
+
+    def test_windows_cpu_profile_defaults(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/tester"))
+        with patch("transclip.device.torch_cuda_usable", return_value=False):
+            profile = detect_runtime_profile(runtime)
+            settings = default_settings(runtime)
+
+        self.assertEqual(profile.profile_id, "windows_cpu")
+        self.assertEqual(settings.asr_device, "cpu")
+
+    def test_granite_nar_rejected_on_windows(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/tester"))
+        with patch("transclip.device.torch_cuda_usable", return_value=True):
+            settings = replace(
+                default_settings(runtime),
+                asr_backend="granite_nar",
+                asr_model="ibm-granite/granite-speech-4.1-2b-nar",
+            )
+            with self.assertRaisesRegex(ValueError, "not supported on Windows"):
+                validate_asr_model_backend(settings.asr_backend, settings.asr_model, runtime)
+
+    def test_supported_catalog_entries_exclude_nar_on_windows(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/tester"))
+        model_ids = {entry.model_id for entry in supported_catalog_entries(runtime)}
+
+        self.assertIn("ibm-granite/granite-speech-4.1-2b", model_ids)
+        self.assertNotIn("ibm-granite/granite-speech-4.1-2b-nar", model_ids)
 
 
 if __name__ == "__main__":
