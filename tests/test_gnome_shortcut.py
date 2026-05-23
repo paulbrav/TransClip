@@ -120,9 +120,12 @@ class GnomeShortcutTests(unittest.TestCase):
         runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"))
         command = build_toggle_command(runtime=runtime)
 
-        self.assertIn("/Users/test/Library/Logs/transclip/toggle-record.log", command)
+        self.assertIn(
+            "/Users/test/Library/Logs/transclip/toggle-record.log",
+            normalize_path_text(command),
+        )
         self.assertEqual(
-            toggle_log_shell_path(runtime),
+            normalize_path_text(toggle_log_shell_path(runtime)),
             "/Users/test/Library/Logs/transclip/toggle-record.log",
         )
 

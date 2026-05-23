@@ -30,10 +30,9 @@ class DaemonTests(unittest.TestCase):
         unit = build_systemd_unit(Path("/tmp/settings.toml"))
 
         self.assertIn("Description=TransClip dictation service", unit)
-        settings_fragment = (
-            f"-m transclip.cli --settings {service_settings_path(Path('/tmp/settings.toml'))} serve"
-        )
-        self.assertIn(normalize_path_text(settings_fragment), normalize_path_text(unit))
+        settings_path = normalize_path_text(service_settings_path(Path("/tmp/settings.toml")))
+        normalized_unit = normalize_path_text(unit).replace("'", "")
+        self.assertIn(f"-m transclip.cli --settings {settings_path} serve", normalized_unit)
         self.assertIn("Restart=on-failure", unit)
         self.assertIn("FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE", unit)
 
