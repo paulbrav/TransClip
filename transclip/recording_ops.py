@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from urllib.error import HTTPError, URLError
 
+from transclip.best_effort import best_effort
 from transclip.daemon import append_toggle_log
 from transclip.desktop.paste import paste_transcript
 from transclip.service import InferenceClient
@@ -76,9 +77,5 @@ def _log_toggle_error(message: str, service_url: str) -> None:
     )
 
 
-def _append_toggle_log(event: dict) -> str:
-    try:
-        append_toggle_log(event)
-    except Exception as exc:
-        return str(exc)
-    return ""
+def _append_toggle_log(event: dict) -> str | None:
+    return best_effort(lambda: append_toggle_log(event))

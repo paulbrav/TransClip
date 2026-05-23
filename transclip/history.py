@@ -3,12 +3,16 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from transclip.platform.runtime import user_log_dir
 
 from .product import LOG_DIR_NAME
 from .settings import Settings
+
+
+class TranscriptHistoryInput(Protocol):
+    def get(self, key: str, default: Any = None) -> Any: ...
 
 
 def history_dir() -> Path:
@@ -33,7 +37,7 @@ def append_history_event(event: dict[str, Any], path: Path | None = None) -> Non
 
 
 def append_transcript_history(
-    result: dict[str, Any],
+    result: TranscriptHistoryInput,
     settings: Settings,
     source: str,
     duration_ms: float | None = None,
