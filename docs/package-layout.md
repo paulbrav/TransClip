@@ -26,18 +26,22 @@ transclip/
       windows.py           # In-process keyboard hook (tray)
     tray/                  # Menu bar / AppIndicator UI
       __init__.py          # run_tray router
+      controller.py        # TrayController + shared action callbacks
+      ports.py             # TrayPorts test seams (health, toggle, history, …)
       session.py
       menu.py
       menu_update.py       # TrayMenuSnapshot, after_tray_action
       materialize.py       # Shared menu tree walk (TrayMenuSink protocol)
+      views.py             # RefDrivenMenuView for platform menu refs
       gtk.py               # Linux GTK/AppIndicator adapter
       win32.py             # Windows pystray adapter
       macos.py             # macOS PyObjC adapter
       sinks/               # Platform TrayMenuSink implementations
   daemon/                  # Service install, lifecycle, status, logs
     __init__.py            # Public re-export hub
+    protocol.py            # PlatformDaemon protocol
     common.py
-    lifecycle.py           # Thin OS dispatch
+    lifecycle.py           # OS registry + dispatch
     linux.py               # systemd
     macos.py               # launchd
     windows.py             # Task Scheduler
@@ -53,6 +57,8 @@ transclip/
     session.py             # DictationSession
     health.py              # build_health_status, cleanup_labels, settings_health_payload
     client_health.py       # fetch_service_health_result, service_health_is_ready, … (caller-side HTTP)
+    serialize.py           # TranscriptOutcome / CleanupResult → typed HTTP responses
+    json_response.py       # json_object_response helper for InferenceClient
     types.py               # ServiceHealthResponse, RecordSessionResponse, …
     routes.py              # dispatch_get/post, RouteResponse
     engine.py              # InferenceEngine
@@ -89,6 +95,7 @@ Use these from CLI, scripts, tests, and cross-package code:
 | Hotkey | `transclip.desktop.hotkey` | `install_shortcut`, `hotkey_setup_message`, `build_toggle_command`, `get_gnome_shortcut_status`, `shortcut_readiness`, `start_windows_hotkey` |
 | Tray | `transclip.desktop.tray` | `run_tray` |
 | Daemon | `transclip.daemon` | `install_daemon`, `service_state`, `collect_status`, `toggle_log_path`, … |
+| Daemon protocol | `transclip.daemon.protocol` | `PlatformDaemon` |
 | Doctor | `transclip.doctor` | `run_checks`, `Check` |
 | Service | `transclip.service` | `InferenceEngine`, `InferenceClient`, `create_server`, `run_server`, typed HTTP responses in `types` |
 | Service client health | `transclip.service.client_health` | `fetch_service_health_result`, `service_health_is_ready`, `service_health_check_detail` |
@@ -116,17 +123,20 @@ do not import `linux_gnome` directly.
 ### Tray adapters
 
 Shared menu structure lives in `menu.py` (node tree) and `materialize.py`
-(walks the tree through a `TrayMenuSink`). Platform code in `gtk.py`,
-`win32.py`, and `macos.py` is thin orchestration; sink classes live under
-`tray/sinks/`.
+(walks the tree through a `TrayMenuSink`). `TrayController` and `TrayPorts`
+orchestrate session state, health, and actions; `RefDrivenMenuView` in
+`views.py` implements the shared `TrayMenuView` protocol for ref-keyed widgets.
+Platform code in `gtk.py`, `win32.py`, and `macos.py` is thin orchestration;
+sink classes live under `tray/sinks/`.
 
 Post-action behavior (refresh history after toggle, update labels) uses
 `after_tray_action` in `menu_update.py` across all three tray adapters.
 
 ### Daemon split
 
-- `lifecycle.py` — dispatch only (`install_daemon`, `service_state`, …).
-- `linux.py` / `macos.py` / `windows.py` — platform install units and service control.
+- `protocol.py` — `PlatformDaemon` contract shared by platform modules.
+- `lifecycle.py` — registry and dispatch only (`install_daemon`, `service_state`, …).
+- `linux.py` / `macos.py` / `windows.py` — platform install units, service control, and `platform_daemon` adapter.
 - `status.py` — HTTP-adjacent status, smoke-test, toggle log, log streaming.
 
 ### Service package boundaries
