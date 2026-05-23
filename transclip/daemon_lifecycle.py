@@ -90,12 +90,20 @@ def build_launch_agent(
         "KeepAlive": True,
         "StandardOutPath": str(log_root / "service.out.log"),
         "StandardErrorPath": str(log_root / "service.err.log"),
-        "EnvironmentVariables": {
-            "FLASH_ATTENTION_TRITON_AMD_ENABLE": "TRUE",
-            "TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL": "1",
-        },
     }
     return plistlib.dumps(payload, sort_keys=True)
+
+
+def launchd_gui_domain(runtime: PlatformRuntime | None = None) -> str:
+    output = get_runtime(runtime).check_output(["id", "-u"])
+    if isinstance(output, bytes):
+        output = output.decode()
+    uid = output.strip()
+    return f"gui/{uid}"
+
+
+def launchd_target(runtime: PlatformRuntime | None = None) -> str:
+    return f"{launchd_gui_domain(runtime)}/{LAUNCHD_LABEL}"
 
 
 def install_daemon(
@@ -149,13 +157,16 @@ def install_macos_daemon(
     plist_path.parent.mkdir(parents=True, exist_ok=True)
     plist_path.write_bytes(build_launch_agent(settings_path, runtime=runtime))
     results.append(CommandResult(True, f"wrote {plist_path}"))
-    results.append(run_command(["launchctl", "unload", str(plist_path)], runner, tolerate_failure=True))
-    results.append(run_command(["launchctl", "load", str(plist_path)], runner))
+    domain = launchd_gui_domain(runtime)
+    target = launchd_target(runtime)
+    results.append(run_command(["launchctl", "bootout", target], runner, tolerate_failure=True))
+    results.append(run_command(["launchctl", "bootstrap", domain, str(plist_path)], runner))
     results.append(
         CommandResult(
             True,
-            "configure a macOS Keyboard Shortcut or Shortcuts.app action to run: "
-            + build_toggle_command(settings_path),
+            "configure a macOS Keyboard Shortcut or Shortcuts.app action "
+            f"for binding {load_settings(settings_path).hotkey_macos!r}: "
+            + build_toggle_command(settings_path, runtime=runtime),
         )
     )
     return results
@@ -178,7 +189,8 @@ def uninstall_daemon(
         return results
     if system == "Darwin":
         path = launch_agent_path(runtime)
-        results = [run_command(["launchctl", "unload", str(path)], runner, tolerate_failure=True)]
+        target = launchd_target(runtime)
+        results = [run_command(["launchctl", "bootout", target], runner, tolerate_failure=True)]
         if path.exists():
             path.unlink()
             results.append(CommandResult(True, f"removed {path}"))
@@ -201,14 +213,14 @@ def service_action(
         return run_command(commands[action], runner)
     if system == "Darwin":
         plist_path = str(launch_agent_path(runtime))
+        domain = launchd_gui_domain(runtime)
+        target = launchd_target(runtime)
+        if action in {"start", "restart"} and _launchd_is_loaded(target, runner):
+            return run_command(["launchctl", "kickstart", "-k", target], runner)
         commands = {
-            "start": ["launchctl", "load", plist_path],
-            "stop": ["launchctl", "unload", plist_path],
-            "restart": [
-                "sh",
-                "-lc",
-                f"launchctl unload {shlex.quote(plist_path)}; launchctl load {shlex.quote(plist_path)}",
-            ],
+            "start": ["launchctl", "bootstrap", domain, plist_path],
+            "stop": ["launchctl", "bootout", target],
+            "restart": ["launchctl", "bootstrap", domain, plist_path],
         }
         return run_command(commands[action], runner)
     return CommandResult(False, f"unsupported platform: {system}")
@@ -242,16 +254,18 @@ def service_state(
         }
     if system == "Darwin":
         path = launch_agent_path(runtime)
+        target = launchd_target(runtime)
         result = runner(
-            ["launchctl", "list", LAUNCHD_LABEL],
+            ["launchctl", "print", target],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             check=False,
         )
+        active = result.returncode == 0 and _launchd_print_reports_running(result.stdout)
         return {
             "installed": path.exists(),
-            "active": result.returncode == 0,
+            "active": active,
             "detail": result.stdout.strip() or f"exit {result.returncode}",
         }
     return {"installed": False, "active": False, "detail": f"unsupported platform: {system}"}
@@ -280,3 +294,24 @@ def run_command(
     elif result.returncode != 0:
         detail += f": exit {result.returncode}"
     return CommandResult(ok, detail)
+
+
+def _launchd_is_loaded(target: str, runner: Runner) -> bool:
+    result = runner(
+        ["launchctl", "print", target],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def _launchd_print_reports_running(output: str) -> bool:
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("state ="):
+            return stripped.removeprefix("state =").strip() == "running"
+        if stripped.startswith("pid ="):
+            return True
+    return False

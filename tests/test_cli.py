@@ -235,7 +235,7 @@ class CliTests(unittest.TestCase):
     def test_tray_command_runs_python_tray(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings_path = write_test_settings(Path(tmp), "127.0.0.1", unused_local_port())
-            with patch("transclip.tray.run_python_tray", return_value=7):
+            with patch("transclip.tray.run_tray", return_value=7):
                 code = main(["--settings", str(settings_path), "tray"])
 
             self.assertEqual(code, 7)

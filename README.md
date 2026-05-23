@@ -41,6 +41,16 @@ and starts it with `systemctl --user`, and installs the GNOME custom shortcut
 `<Super><Shift>XF86TouchpadOff`; press once to start recording and again to
 stop, transcribe, copy, and paste.
 
+On macOS Apple Silicon, `install` writes a LaunchAgent plist and prints the
+shell command to bind in System Settings or Shortcuts.app. Default suggested
+binding is `Option+Space`. Use the menu bar tray for click-to-record after
+installing the optional UI extra:
+
+```bash
+uv sync --extra audio --extra mlx --extra macos-ui
+transclip tray
+```
+
 Check readiness and logs:
 
 ```bash
@@ -86,6 +96,11 @@ not expose `gi`. Install the system bindings if missing:
 sudo apt install -y python3-gi gir1.2-ayatanaappindicator3-0.1
 ```
 
+On macOS, `transclip tray` uses the native menu bar when `macos-ui` is
+installed (`uv sync --extra macos-ui`). The tray can copy the hotkey setup
+command for Keyboard Shortcuts; global hotkeys are configured manually in
+System Settings or Shortcuts.app.
+
 Service controls:
 
 ```bash
@@ -100,6 +115,41 @@ To run the service manually instead of using the service manager:
 ```bash
 uv run -m transclip.cli serve
 ```
+
+## macOS Apple Silicon Quick Start
+
+Requirements: Apple Silicon, native ARM Python 3.12+, macOS 14+.
+
+```bash
+uv sync --extra audio --extra mlx --extra macos-ui
+uv run -m transclip.cli init-config
+uv run -m transclip.cli models prefetch --model mlx-community/whisper-large-v3-turbo-asr-fp16
+uv run -m transclip.cli install
+uv run -m transclip.cli status
+uv run -m transclip.cli doctor
+transclip tray
+```
+
+Configure a global shortcut using the command printed by `install` or copied
+from the tray menu (`Copy hotkey setup command`). Suggested binding:
+`Option+Space`.
+
+Supported MLX ASR models on macOS:
+
+- `mlx-community/whisper-large-v3-turbo-asr-fp16` (default)
+- `mlx-community/granite-4.0-1b-speech-8bit` (`asr_backend = "granite_mlx"`)
+
+Granite Speech 4.1 NAR is not supported on macOS. Optional Torch/MPS Granite AR
+models require `uv sync --extra audio --extra models`.
+
+### Permissions (macOS TCC)
+
+| Action | Permission | Notes |
+| --- | --- | --- |
+| Recording | Microphone | Grant to Terminal, IDE, LaunchAgent Python, or Shortcuts |
+| Paste | Accessibility / Automation | Required for `osascript` paste injection |
+
+## Linux CUDA / ROCm Quick Start
 
 For the portable CPU/CUDA path, install the model extras first:
 

@@ -194,7 +194,7 @@ card 1: Generic_1 [HD-Audio Generic], device 0: ALC245 Analog [ALC245 Analog]
             available={"arecord": "/usr/bin/arecord"},
             run_func=lambda _command, **_kwargs: completed,
         )
-        check = check_microphone_devices(runtime)
+        check = check_microphone_devices(runtime=runtime)
 
         self.assertTrue(check.ok)
         self.assertIn("HD-Audio Generic", check.detail)
@@ -206,10 +206,28 @@ card 1: Generic_1 [HD-Audio Generic], device 0: ALC245 Analog [ALC245 Analog]
             available={"arecord": "/usr/bin/arecord"},
             run_func=lambda _command, **_kwargs: completed,
         )
-        check = check_microphone_devices(runtime)
+        check = check_microphone_devices(runtime=runtime)
 
         self.assertFalse(check.ok)
         self.assertIn("arecord did not list", check.detail)
+
+    def test_darwin_hotkey_check_mentions_keyboard_shortcut_and_active_binding(self):
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"))
+        check = check_hotkey_readiness(Settings(), runtime)
+
+        self.assertTrue(check.ok)
+        self.assertIn("Keyboard Shortcut", check.detail)
+        self.assertIn("Option+Space", check.detail)
+        self.assertNotIn("XF86TouchpadOff", check.detail)
+        self.assertIn("toggle-record --paste", check.detail)
+
+    def test_darwin_microphone_check_does_not_require_portaudio(self):
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"))
+        with patch.dict("sys.modules", {"sounddevice": None}):
+            check = check_microphone_devices(runtime=runtime)
+
+        self.assertFalse(check.ok)
+        self.assertIn("sounddevice is not installed", check.detail)
 
 
 if __name__ == "__main__":

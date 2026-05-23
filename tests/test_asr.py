@@ -9,12 +9,15 @@ from transclip.asr import (
     FileTranscriptASRBackend,
     GraniteSpeechNarTransformersBackend,
     GraniteSpeechTransformersBackend,
+    MlxAudioASRBackend,
     _configure_rocm_nar_attention_env,
     _granite_nar_dtype,
     build_asr_backend,
     granite_user_prompt,
 )
 from transclip.settings import Settings
+
+from tests.service_helpers import FakeRuntime
 
 
 class ASRTests(unittest.TestCase):
@@ -56,6 +59,18 @@ class ASRTests(unittest.TestCase):
         self.assertIsInstance(nar_backend, GraniteSpeechNarTransformersBackend)
         self.assertTrue(nar_backend.local_files_only)
         self.assertEqual(nar_backend.cache_dir, "/models")
+
+    def test_darwin_arm_selects_mlx_backend(self):
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"), check_output_text="arm64")
+        backend = build_asr_backend(
+            Settings(
+                asr_backend="mlx_audio_whisper",
+                asr_model="mlx-community/whisper-large-v3-turbo-asr-fp16",
+                models_local_files_only=False,
+            ),
+            runtime=runtime,
+        )
+        self.assertIsInstance(backend, MlxAudioASRBackend)
 
     def test_non_granite_model_is_rejected(self):
         with self.assertRaises(ValueError):

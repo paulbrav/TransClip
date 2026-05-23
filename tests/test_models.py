@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from transclip.models import (
+    MODEL_CATALOG,
     SUPPORTED_MODELS,
     SUPPORTED_TEXT_MODELS,
     cache_artifacts_present,
@@ -24,6 +25,7 @@ class ModelsTests(unittest.TestCase):
 
         self.assertIn(("granite_nar", "ibm-granite/granite-speech-4.1-2b-nar"), rows)
         self.assertIn(("granite", "ibm-granite/granite-speech-4.1-2b"), rows)
+        self.assertGreater(len(MODEL_CATALOG), 2)
         text_rows = {(model.backend, model.model_id) for model in SUPPORTED_TEXT_MODELS}
         self.assertIn(("text_generation", "Qwen/Qwen3.5-4B"), text_rows)
 
@@ -37,9 +39,9 @@ class ModelsTests(unittest.TestCase):
             validate_asr_model_backend("transformers", "ibm-granite/granite-speech-4.1-2b"),
             "granite",
         )
-        with self.assertRaisesRegex(ValueError, "Granite NAR ASR requires"):
+        with self.assertRaisesRegex(ValueError, "requires asr_backend='granite'"):
             validate_asr_model_backend("granite_nar", "ibm-granite/granite-speech-4.1-2b")
-        with self.assertRaisesRegex(ValueError, "Use asr_backend"):
+        with self.assertRaisesRegex(ValueError, "requires asr_backend='granite_nar'"):
             validate_asr_model_backend("granite", "ibm-granite/granite-speech-4.1-2b-nar")
 
     def test_cache_detection_and_rows_do_not_download(self):

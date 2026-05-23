@@ -56,9 +56,9 @@ def handle_command(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
     if args.command in {"install", "uninstall", "start", "stop", "restart", "status", "logs", "smoke-test"}:
         return handle_daemon_command(args, settings)
     if args.command == "tray":
-        from .tray import run_python_tray
+        from .tray import run_tray
 
-        return run_python_tray(settings, explicit_settings_path=args.settings)
+        return run_tray(settings, explicit_settings_path=args.settings)
     if args.command == "history":
         return handle_history(args)
     if args.command == "models":

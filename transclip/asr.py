@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import platform as py_platform
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
 from .device import resolve_torch_device
-from .models import validate_asr_model_backend
+from .models import (
+    mlx_snapshot_path,
+    model_cache_path,
+    resolve_catalog_entry,
+    validate_asr_model_backend,
+)
+from .platform_runtime import PlatformRuntime
 from .settings import Settings
 from .timing import timed_ms
 
@@ -31,15 +39,39 @@ class PreparedAudio:
     sample_rate: int
 
 
-class DefaultASRAudioPreparer:
+@dataclass(slots=True)
+class PreparedPathAudio:
+    wav_path: Path
+    sample_rate: int
+    temporary: bool = False
+
+
+class AudioLoader:
     def __init__(self, target_sample_rate: int = 16000):
         self.target_sample_rate = target_sample_rate
 
-    def prepare(self, wav_path: Path) -> PreparedAudio:
+    def load_samples(self, wav_path: Path) -> tuple[Any, int]:
         import soundfile as sf
-        import torch
 
         samples, sample_rate = sf.read(str(wav_path), dtype="float32", always_2d=True)
+        return samples, sample_rate
+
+    @staticmethod
+    def fold_mono(samples: Any) -> Any:
+        if samples.shape[1] == 1:
+            return samples[:, 0]
+        return samples.mean(axis=1)
+
+
+class TorchAudioPreparer:
+    def __init__(self, target_sample_rate: int = 16000):
+        self.target_sample_rate = target_sample_rate
+        self.loader = AudioLoader(target_sample_rate)
+
+    def prepare(self, wav_path: Path) -> PreparedAudio:
+        import torch
+
+        samples, sample_rate = self.loader.load_samples(wav_path)
         wav = torch.from_numpy(samples.T)
         if wav.shape[0] != 1:
             wav = wav.mean(dim=0, keepdim=True)
@@ -48,6 +80,30 @@ class DefaultASRAudioPreparer:
 
             wav = torchaudio.functional.resample(wav, sample_rate, self.target_sample_rate)
         return PreparedAudio(wav=wav, sample_rate=self.target_sample_rate)
+
+
+class PathAudioPreparer:
+    def __init__(self, target_sample_rate: int = 16000):
+        self.target_sample_rate = target_sample_rate
+        self.loader = AudioLoader(target_sample_rate)
+
+    def prepare(self, wav_path: Path) -> PreparedPathAudio:
+        samples, sample_rate = self.loader.load_samples(wav_path)
+        if sample_rate == self.target_sample_rate and samples.shape[1] == 1:
+            return PreparedPathAudio(wav_path=wav_path, sample_rate=sample_rate)
+
+        import soundfile as sf
+
+        mono = self.loader.fold_mono(samples)
+        if sample_rate != self.target_sample_rate:
+            mono = _linear_resample(mono, sample_rate, self.target_sample_rate)
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as handle:
+            output = Path(handle.name)
+        sf.write(str(output), mono, self.target_sample_rate)
+        return PreparedPathAudio(wav_path=output, sample_rate=self.target_sample_rate, temporary=True)
+
+
+DefaultASRAudioPreparer = TorchAudioPreparer
 
 
 class GraniteSpeechTransformersBackend:
@@ -59,7 +115,7 @@ class GraniteSpeechTransformersBackend:
         self.local_files_only = True
         self.cache_dir = ""
         self._loaded = None
-        self.audio_preparer = DefaultASRAudioPreparer()
+        self.audio_preparer = TorchAudioPreparer()
 
     def _device(self):
         return resolve_torch_device(self.device)
@@ -73,7 +129,7 @@ class GraniteSpeechTransformersBackend:
         except ImportError as exc:
             raise RuntimeError("transformers, torch, and torchaudio are required. Install transclip[models].") from exc
 
-        dtype = torch.bfloat16 if device == "cuda" else torch.float32
+        dtype = _granite_transformers_dtype(torch, device)
         processor = AutoProcessor.from_pretrained(
             self.model,
             local_files_only=self.local_files_only,
@@ -137,7 +193,7 @@ class GraniteSpeechNarTransformersBackend:
         self.local_files_only = True
         self.cache_dir = ""
         self._loaded = None
-        self.audio_preparer = DefaultASRAudioPreparer()
+        self.audio_preparer = TorchAudioPreparer()
 
     def _device(self):
         return resolve_torch_device(self.device)
@@ -189,6 +245,74 @@ class GraniteSpeechNarTransformersBackend:
         return TranscriptionResult(output.text_preds[0].strip(), timings, self.name, self.model)
 
 
+class MlxAudioASRBackend:
+    name = "mlx-audio"
+
+    def __init__(self, model: str, backend_kind: str, settings: Settings | None = None):
+        self.model = model
+        self.backend_kind = backend_kind
+        self.settings = settings
+        self.local_files_only = True
+        self.cache_dir = ""
+        self._resolved_path: str | None = None
+        self.audio_preparer = PathAudioPreparer()
+
+    def _model_path(self) -> str:
+        if self._resolved_path:
+            return self._resolved_path
+        settings = self.settings
+        if self.local_files_only and settings is not None:
+            snapshot = mlx_snapshot_path(self.model, settings)
+            if snapshot is not None:
+                self._resolved_path = str(snapshot)
+                return self._resolved_path
+            cache_path = model_cache_path(self.model, settings)
+            if cache_path.exists():
+                self._resolved_path = str(cache_path)
+                return self._resolved_path
+            raise RuntimeError(
+                f"Local MLX model artifacts missing for {self.model}. "
+                f"Run: transclip models prefetch --model {self.model}"
+            )
+        self._resolved_path = self.model
+        return self._resolved_path
+
+    def transcribe(self, wav_path: Path, keywords: list[str] | None = None) -> TranscriptionResult:
+        del keywords
+        timings: dict[str, float] = {}
+        with timed_ms(timings, "asr"):
+            try:
+                from mlx_audio.stt.generate import generate_transcription
+            except ImportError as exc:
+                raise RuntimeError(
+                    "mlx-audio is required on macOS Apple Silicon. Install transclip[mlx]."
+                ) from exc
+            model_path = self._model_path()
+            audio = self.audio_preparer.prepare(wav_path)
+            try:
+                with tempfile.TemporaryDirectory(prefix="transclip-mlx-") as tmp:
+                    output_stem = str(Path(tmp) / "transcript")
+                    try:
+                        result = generate_transcription(
+                            model=model_path,
+                            audio=str(audio.wav_path),
+                            output_path=output_stem,
+                            format="txt",
+                        )
+                    except TypeError:
+                        result = generate_transcription(
+                            audio_path=str(audio.wav_path),
+                            model_path=model_path,
+                            output_path=output_stem,
+                            format="txt",
+                        )
+                    text = getattr(result, "text", None) or str(result)
+            finally:
+                if getattr(audio, "temporary", False):
+                    audio.wav_path.unlink(missing_ok=True)
+        return TranscriptionResult(text.strip(), timings, self.name, self.model)
+
+
 class FileTranscriptASRBackend:
     name = "test-file"
 
@@ -204,18 +328,29 @@ class FileTranscriptASRBackend:
         return TranscriptionResult(text.strip(), timings, self.name, self.model)
 
 
-def build_asr_backend(settings: Settings) -> ASRBackend:
+def build_asr_backend(
+    settings: Settings,
+    runtime: PlatformRuntime | None = None,
+) -> ASRBackend:
     if settings.asr_backend.startswith("file:"):
         return FileTranscriptASRBackend(Path(settings.asr_backend.removeprefix("file:")))
-    backend_kind = validate_asr_model_backend(settings.asr_backend, settings.asr_model)
+    backend_kind = validate_asr_model_backend(settings.asr_backend, settings.asr_model, runtime)
+    entry = resolve_catalog_entry(settings, runtime)
+    if entry is None:
+        raise ValueError(f"Unsupported ASR configuration: {settings.asr_backend} / {settings.asr_model}")
+
+    torch_device = "auto" if backend_kind == "granite" and settings.asr_device == "mlx" else settings.asr_device
     if backend_kind == "granite_nar":
-        backend = GraniteSpeechNarTransformersBackend(settings.asr_model, settings.asr_device)
-        backend.local_files_only = settings.models_local_files_only
-        backend.cache_dir = settings.model_cache_dir
-        return backend
-    backend = GraniteSpeechTransformersBackend(settings.asr_model, settings.asr_device)
+        backend = GraniteSpeechNarTransformersBackend(settings.asr_model, torch_device)
+    elif backend_kind in {"mlx_audio_whisper", "granite_mlx"}:
+        backend = MlxAudioASRBackend(settings.asr_model, backend_kind, settings)
+    else:
+        backend = GraniteSpeechTransformersBackend(settings.asr_model, torch_device)
+
     backend.local_files_only = settings.models_local_files_only
     backend.cache_dir = settings.model_cache_dir
+    if isinstance(backend, MlxAudioASRBackend) and settings.models_local_files_only:
+        backend._model_path()
     return backend
 
 
@@ -225,6 +360,23 @@ def granite_user_prompt(keywords: list[str] | None = None) -> str:
         if keyword_text:
             return f"transcribe the speech to text. Keywords: {keyword_text}"
     return "transcribe the speech with proper punctuation and capitalization."
+
+
+def _granite_transformers_dtype(torch, device: str):
+    if device == "cuda":
+        return torch.bfloat16
+    if device == "mps" and _mps_bfloat16_supported():
+        return torch.bfloat16
+    return torch.float32
+
+
+def _mps_bfloat16_supported() -> bool:
+    version = py_platform.mac_ver()[0]
+    try:
+        major = int(version.split(".", 1)[0])
+    except (TypeError, ValueError):
+        return True
+    return major >= 14
 
 
 def _granite_nar_dtype(torch, device: str):
@@ -239,3 +391,16 @@ def _configure_rocm_nar_attention_env(os_module, torch, device: str) -> None:
     if device == "cuda" and getattr(torch.version, "hip", None):
         os_module.environ.setdefault("FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE")
         os_module.environ.setdefault("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL", "1")
+
+
+def _linear_resample(samples: Any, source_rate: int, target_rate: int) -> Any:
+    if source_rate == target_rate:
+        return samples
+    import numpy as np
+
+    if len(samples) == 0:
+        return samples
+    target_length = max(1, round(len(samples) * target_rate / source_rate))
+    source_positions = np.linspace(0.0, 1.0, num=len(samples), endpoint=True)
+    target_positions = np.linspace(0.0, 1.0, num=target_length, endpoint=True)
+    return np.interp(target_positions, source_positions, samples).astype(samples.dtype, copy=False)

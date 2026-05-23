@@ -6,7 +6,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from transclip.settings import DEFAULT_HOTKEY_LINUX, Settings, load_settings, write_settings
-from transclip.tray import _history_file_signature, run_python_tray
+from transclip.tray import _history_file_signature, run_python_tray, run_tray
+
+from tests.service_helpers import FakeRuntime
 
 
 class FakeLabel:
@@ -380,6 +382,27 @@ class TrayTests(unittest.TestCase):
 
         install_shortcut.assert_not_called()
         self.assertIn("not a valid", indicator.menus[0].children[0].child.text)
+
+    def test_run_tray_routes_darwin_to_macos_tray(self):
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"))
+        with (
+            patch("transclip.tray.get_runtime", return_value=runtime),
+            patch("transclip.tray.run_macos_tray", return_value=0) as run_macos_tray,
+        ):
+            code = run_tray(Settings())
+
+        self.assertEqual(code, 0)
+        run_macos_tray.assert_called_once()
+
+    def test_darwin_tray_fails_clearly_without_pyobjc(self):
+        runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"))
+        with (
+            patch("transclip.tray.get_runtime", return_value=runtime),
+            patch.dict(sys.modules, {"AppKit": None}),
+        ):
+            code = run_tray(Settings())
+
+        self.assertEqual(code, 1)
 
 
 def menu_item_by_label(indicator, label: str):
