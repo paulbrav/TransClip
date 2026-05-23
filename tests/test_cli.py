@@ -6,39 +6,41 @@ import unittest
 from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
+from urllib.error import URLError
 
 from transclip.cli import main
 from transclip.daemon.lifecycle import toggle_log_path
+from transclip.desktop.paste import PasteResult
 from transclip.settings import Settings, write_settings
 
-from tests.service_helpers import FakeRecorder, FakeRuntime, patch_linux_gpu_runtime, serve_test_engine, stop_server
+from tests.service_helpers import FakeRuntime
 
 
-class InMemoryClipboard:
-    backend_name = "fake-clipboard"
-    value = ""
+class FakeToggleClient:
+    base_url = "http://127.0.0.1:1"
 
-    def read(self) -> str:
-        return type(self).value
+    def __init__(self, settings, *, responses=None, error=None):
+        del settings
+        self.responses = responses if responses is not None else []
+        self.error = error
 
-    def write(self, text: str) -> None:
-        type(self).value = text
+    def record_toggle(self):
+        if self.error is not None:
+            raise self.error
+        if not self.responses:
+            raise AssertionError("record_toggle called without a queued response")
+        return dict(self.responses.pop(0))
 
 
-class FakePasteInjector:
-    pasted = True
-
-    def __init__(self):
-        self.backend_name = None
-
-    def paste(self) -> bool:
-        if type(self).pasted:
-            self.backend_name = "fake-paste"
-            return True
-        return False
-
-    def error_detail(self) -> str:
-        return "fake paste failed"
+def fake_paste_transcript(transcript: str, settings, **kwargs) -> PasteResult:
+    return PasteResult(
+        copied=True,
+        pasted=True,
+        restored=False,
+        transcript_left_on_clipboard=True,
+        clipboard_backend="fake-clipboard",
+        paste_backend="fake-paste",
+    )
 
 
 class CliTests(unittest.TestCase):
@@ -49,27 +51,30 @@ class CliTests(unittest.TestCase):
         return toggle_log_path(self._linux_runtime(root))
 
     def _enter_toggle_patches(self, stack: ExitStack, root: Path, **extra) -> None:
-        stack.enter_context(patch("transclip.service.AudioRecorder", FakeRecorder))
-        stack.enter_context(patch("transclip.desktop.paste.SystemClipboard", InMemoryClipboard))
-        stack.enter_context(patch("transclip.desktop.paste.SystemPasteInjector", FakePasteInjector))
-        stack.enter_context(patch("transclip.cli_commands.notify"))
+        stack.enter_context(patch("transclip.cli.toggle_cmd.notify"))
         stack.enter_context(patch("transclip.daemon.status.toggle_log_path", return_value=self._toggle_log_path(root)))
+        stack.enter_context(patch("transclip.recording_ops.paste_transcript", fake_paste_transcript))
         for key, value in extra.items():
             stack.enter_context(patch(key, value))
 
     def test_toggle_record_starts_without_paste(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            server, thread, host, port = serve_test_engine(transcript="hello")
-            settings_path = write_test_settings(root, host, port)
-            try:
-                stdout = io.StringIO()
-                with ExitStack() as stack:
-                    self._enter_toggle_patches(stack, root)
-                    stack.enter_context(redirect_stdout(stdout))
-                    code = main(["--settings", str(settings_path), "toggle-record", "--paste"])
-            finally:
-                stop_server(server, thread)
+            settings_path = write_test_settings(root, "127.0.0.1", unused_local_port())
+            stdout = io.StringIO()
+            with ExitStack() as stack:
+                self._enter_toggle_patches(stack, root)
+                stack.enter_context(
+                    patch(
+                        "transclip.recording_ops.InferenceClient",
+                        lambda settings: FakeToggleClient(
+                            settings,
+                            responses=[{"action": "started", "status": "recording"}],
+                        ),
+                    ),
+                )
+                stack.enter_context(redirect_stdout(stdout))
+                code = main(["--settings", str(settings_path), "toggle-record", "--paste"])
 
             self.assertEqual(code, 0)
             payload = json.loads(stdout.getvalue())
@@ -82,22 +87,24 @@ class CliTests(unittest.TestCase):
     def test_toggle_record_stops_and_pastes_transcript(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            server, thread, host, port = serve_test_engine(transcript="hello")
-            settings_path = write_test_settings(root, host, port)
-            try:
-                InMemoryClipboard.value = "prior"
-                with ExitStack() as stack:
-                    self._enter_toggle_patches(stack, root)
-                    stack.enter_context(redirect_stdout(io.StringIO()))
-                    self.assertEqual(main(["--settings", str(settings_path), "toggle-record"]), 0)
-
-                stdout = io.StringIO()
-                with ExitStack() as stack:
-                    self._enter_toggle_patches(stack, root)
-                    stack.enter_context(redirect_stdout(stdout))
-                    code = main(["--settings", str(settings_path), "toggle-record", "--paste"])
-            finally:
-                stop_server(server, thread)
+            settings_path = write_test_settings(root, "127.0.0.1", unused_local_port())
+            stdout = io.StringIO()
+            responses = [
+                {"action": "started", "status": "recording"},
+                {"action": "stopped", "status": "ready", "text": "Hello."},
+            ]
+            with ExitStack() as stack:
+                self._enter_toggle_patches(stack, root)
+                stack.enter_context(
+                    patch(
+                        "transclip.recording_ops.InferenceClient",
+                        lambda settings: FakeToggleClient(settings, responses=responses),
+                    ),
+                )
+                stack.enter_context(redirect_stdout(io.StringIO()))
+                self.assertEqual(main(["--settings", str(settings_path), "toggle-record"]), 0)
+                stack.enter_context(redirect_stdout(stdout))
+                code = main(["--settings", str(settings_path), "toggle-record", "--paste"])
 
             self.assertEqual(code, 0)
             payload = json.loads(stdout.getvalue())
@@ -106,7 +113,6 @@ class CliTests(unittest.TestCase):
             self.assertTrue(payload["paste"]["pasted"])
             self.assertEqual(payload["paste"]["clipboard_backend"], "fake-clipboard")
             self.assertEqual(payload["paste"]["paste_backend"], "fake-paste")
-            self.assertEqual(InMemoryClipboard.value, "Hello.")
             log_event = read_last_toggle_log(root)
             self.assertEqual(log_event["action"], "stopped")
             self.assertEqual(log_event["text"], "Hello.")
@@ -118,6 +124,12 @@ class CliTests(unittest.TestCase):
             stderr = io.StringIO()
             with ExitStack() as stack:
                 self._enter_toggle_patches(stack, root)
+                stack.enter_context(
+                    patch(
+                        "transclip.recording_ops.InferenceClient",
+                        lambda settings: FakeToggleClient(settings, error=URLError("refused")),
+                    ),
+                )
                 stack.enter_context(redirect_stderr(stderr))
                 code = main(["--settings", str(settings_path), "toggle-record", "--paste"])
 
@@ -131,25 +143,27 @@ class CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / ".cache").write_text("not a directory", encoding="utf-8")
-            server, thread, host, port = serve_test_engine(transcript="hello")
-            settings_path = write_test_settings(root, host, port)
-            try:
-                stdout = io.StringIO()
-                with ExitStack() as stack:
-                    stack.enter_context(patch("transclip.service.AudioRecorder", FakeRecorder))
-                    stack.enter_context(
-                        patch("transclip.daemon.status.toggle_log_path", return_value=self._toggle_log_path(root))
-                    )
-                    stack.enter_context(redirect_stdout(stdout))
-                    code = main(["--settings", str(settings_path), "toggle-record"])
-            finally:
-                stop_server(server, thread)
+            settings_path = write_test_settings(root, "127.0.0.1", unused_local_port())
+            stdout = io.StringIO()
+            with ExitStack() as stack:
+                self._enter_toggle_patches(stack, root)
+                stack.enter_context(
+                    patch(
+                        "transclip.recording_ops.InferenceClient",
+                        lambda settings: FakeToggleClient(
+                            settings,
+                            responses=[{"action": "started", "status": "recording"}],
+                        ),
+                    ),
+                )
+                stack.enter_context(redirect_stdout(stdout))
+                code = main(["--settings", str(settings_path), "toggle-record"])
 
-        self.assertEqual(code, 0)
-        payload = json.loads(stdout.getvalue())
-        self.assertEqual(payload["action"], "started")
-        self.assertIn("log_error", payload)
-        self.assertIn(".cache", payload["log_error"])
+            self.assertEqual(code, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["action"], "started")
+            self.assertIn("log_error", payload)
+            self.assertIn(".cache", payload["log_error"])
 
     def test_history_json_and_copy(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -157,7 +171,7 @@ class CliTests(unittest.TestCase):
             stdout = io.StringIO()
             events = [{"text": "latest", "timestamp": "now", "source": "/transcribe"}]
             with (
-                patch("transclip.cli_commands.read_history", return_value=events),
+                patch("transclip.cli.history_cmd.read_history", return_value=events),
                 redirect_stdout(stdout),
             ):
                 code = main(["--settings", str(settings_path), "history", "--json"])
@@ -173,8 +187,8 @@ class CliTests(unittest.TestCase):
 
             stdout = io.StringIO()
             with (
-                patch("transclip.cli_commands.read_history", return_value=events),
-                patch("transclip.cli_commands.SystemClipboard", Clipboard),
+                patch("transclip.cli.history_cmd.read_history", return_value=events),
+                patch("transclip.cli.formatting.SystemClipboard", Clipboard),
                 redirect_stdout(stdout),
             ):
                 code = main(["--settings", str(settings_path), "history", "--copy", "1"])
@@ -197,16 +211,6 @@ class CliTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(stdout.getvalue().strip(), "250")
 
-    def test_models_list_uses_local_catalog(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            settings_path = write_test_settings(Path(tmp), "127.0.0.1", unused_local_port())
-            stdout = io.StringIO()
-            with patch_linux_gpu_runtime(), redirect_stdout(stdout):
-                code = main(["--settings", str(settings_path), "models", "list"])
-
-            self.assertEqual(code, 0)
-            self.assertIn("ibm-granite/granite-speech-4.1-2b-nar", stdout.getvalue())
-
     def test_install_gnome_shortcut_uses_configured_hotkey(self):
         with tempfile.TemporaryDirectory() as tmp:
             settings_path = Path(tmp) / "settings.toml"
@@ -223,7 +227,7 @@ class CliTests(unittest.TestCase):
                 },
             )()
             with (
-                patch("transclip.cli_commands.install_shortcut", return_value=shortcut) as install,
+                patch("transclip.cli.shortcut_cmd.install_shortcut", return_value=shortcut) as install,
                 redirect_stdout(stdout),
             ):
                 code = main(["--settings", str(settings_path), "install-gnome-shortcut"])

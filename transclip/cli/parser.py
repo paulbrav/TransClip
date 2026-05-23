@@ -3,11 +3,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .cli_commands import handle_command
-from .product import CLI_COMMAND
+from transclip.product import CLI_COMMAND
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog=CLI_COMMAND)
     parser.add_argument("--settings", type=Path)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -76,9 +75,4 @@ def main(argv: list[str] | None = None) -> int:
     doctor.add_argument("--fix", action="store_true")
     doctor.add_argument("--audio-debug", action="store_true")
 
-    args = parser.parse_args(argv)
-    return handle_command(args, parser)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    return parser
