@@ -4,19 +4,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from transclip.hotkey_windows import install_hotkey, start_windows_hotkey
+from transclip.hotkey_windows import start_windows_hotkey
 from transclip.settings import Settings
 
 from tests.service_helpers import FakeRuntime
 
 
 class HotkeyWindowsTests(unittest.TestCase):
-    def test_install_hotkey_is_tray_owned_noop(self):
-        ok, detail = install_hotkey()
-
-        self.assertTrue(ok)
-        self.assertIn("tray", detail.lower())
-
     def test_start_windows_hotkey_registers_binding_from_settings(self):
         runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
         settings = Settings(hotkey_windows="ctrl+alt+t")

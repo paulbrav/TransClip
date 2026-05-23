@@ -6,10 +6,6 @@ from .platform_runtime import PlatformRuntime, get_runtime
 from .settings import Settings, active_hotkey
 
 
-def install_hotkey() -> tuple[bool, str]:
-    return True, "Windows hotkey is registered by the tray app when transclip tray is running"
-
-
 def start_windows_hotkey(
     callback: Callable[[], None],
     settings: Settings,

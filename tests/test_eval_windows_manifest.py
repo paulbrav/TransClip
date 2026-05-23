@@ -45,7 +45,9 @@ class EvalWindowsManifestTests(unittest.TestCase):
 
     def test_windows_manifest_has_relaxed_thresholds_and_granite_candidates(self):
         self.assertEqual(self.manifest["platform"], "windows-x86_64")
-        self.assertGreaterEqual(self.manifest["thresholds"]["release_to_ready_p95_ms"], 6000)
+        thresholds = self.manifest["thresholds"]
+        self.assertGreaterEqual(thresholds["mean_release_to_ready_max_ms"], 6000)
+        self.assertGreaterEqual(thresholds["worst_release_to_ready_max_ms"], 6000)
         backends = {candidate["asr_backend"] for candidate in self.manifest["candidates"]}
         self.assertEqual(backends, {"granite"})
         self.assertNotIn("granite_nar", backends)
@@ -58,11 +60,11 @@ class EvalWindowsManifestTests(unittest.TestCase):
 
         self.assertEqual(policy.min_cases, case_count)
         self.assertEqual(policy.max_cases, case_count)
-        self.assertEqual(policy.max_latency_ms, thresholds["release_to_ready_p95_ms"])
-        self.assertEqual(policy.max_mean_latency_ms, thresholds["release_to_ready_p95_ms"])
+        self.assertEqual(policy.max_latency_ms, thresholds["worst_release_to_ready_max_ms"])
+        self.assertEqual(policy.max_mean_latency_ms, thresholds["mean_release_to_ready_max_ms"])
         self.assertEqual(policy.max_mean_wer, thresholds["wer_max"])
         self.assertEqual(policy.min_keyword_preservation, thresholds["keyword_preservation_min"])
-        self.assertEqual(policy.min_under_700_ratio, 0.0)
+        self.assertEqual(policy.min_under_700_ratio, thresholds["under_700_min_ratio"])
 
     def test_windows_policy_passes_fast_synthetic_payload(self):
         policy = EvalGatePolicy.from_manifest(self.manifest_path)
@@ -77,6 +79,14 @@ class EvalWindowsManifestTests(unittest.TestCase):
             policy.check_results(
                 synthetic_payload(cases=len(self.manifest["cases"]), latency=7000.0),
             )
+
+    def test_macos_manifest_loads_explicit_gate_thresholds(self):
+        path = Path(__file__).resolve().parents[1] / "eval" / "macos" / "manifest.json"
+        policy = EvalGatePolicy.from_manifest(path)
+        thresholds = json.loads(path.read_text(encoding="utf-8"))["thresholds"]
+
+        self.assertEqual(policy.max_mean_latency_ms, thresholds["mean_release_to_ready_max_ms"])
+        self.assertEqual(policy.min_under_700_ratio, thresholds["under_700_min_ratio"])
 
 
 if __name__ == "__main__":

@@ -51,9 +51,10 @@ class ClipboardSpec:
 @dataclass(frozen=True, slots=True)
 class PasteSpec:
     backend: str
-    build_commands: Callable[[Which, SessionInfo], list[list[str]]]
     capability: Callable[[Which, SessionInfo, Runner], PasteCapability | None]
-    invoker: Callable[[], None] | None = None
+    build_commands: Callable[[Which, SessionInfo], list[list[str]]] | None = None
+    execute_native: Callable[[], None] | None = None
+    failure_detail: Callable[[list[str]], str] | None = None
 
 
 def _darwin_clipboard_specs() -> Sequence[ClipboardSpec]:
@@ -133,19 +134,31 @@ def _darwin_paste_specs() -> Sequence[PasteSpec]:
             "osascript" if ok else None,
         )
 
-    return (PasteSpec("osascript", build_commands, capability),)
+    def darwin_failure(_details: list[str]) -> str:
+        return "requires osascript and Accessibility permission"
+
+    return (
+        PasteSpec("osascript", capability, build_commands=build_commands, failure_detail=darwin_failure),
+    )
 
 
 def _windows_paste_specs() -> Sequence[PasteSpec]:
-    def build_commands(_which: Which, _info: SessionInfo) -> list[list[str]]:
-        return [[]]
-
     def capability(_which: Which, _info: SessionInfo, _runner: Runner):
         from .paste import PasteCapability
 
         return PasteCapability(True, "Win32 SendInput Ctrl+V paste available", SENDINPUT_PASTE_BACKEND)
 
-    return (PasteSpec(SENDINPUT_PASTE_BACKEND, build_commands, capability, invoker=_win32_sendinput_paste),)
+    def failure(_details: list[str]) -> str:
+        return "Win32 SendInput paste unavailable"
+
+    return (
+        PasteSpec(
+            SENDINPUT_PASTE_BACKEND,
+            capability,
+            execute_native=_win32_sendinput_paste,
+            failure_detail=failure,
+        ),
+    )
 
 
 def _wayland_paste_specs() -> Sequence[PasteSpec]:
@@ -183,9 +196,14 @@ def _wayland_paste_specs() -> Sequence[PasteSpec]:
             )
         return None
 
+    def wayland_failure(details: list[str]) -> str:
+        if not details:
+            return "Wayland paste injection requires wtype or ydotool; apt: wtype ydotool"
+        return "; ".join(details) + "; fallback requires ydotool with ydotoold/uinput permissions"
+
     return (
-        PasteSpec("wtype", wtype_commands, wtype_capability),
-        PasteSpec("ydotool", ydotool_commands, ydotool_capability),
+        PasteSpec("wtype", wtype_capability, build_commands=wtype_commands),
+        PasteSpec("ydotool", ydotool_capability, build_commands=ydotool_commands, failure_detail=wayland_failure),
     )
 
 
@@ -223,10 +241,15 @@ def _x11_paste_specs() -> Sequence[PasteSpec]:
             )
         return None
 
+    def x11_failure(details: list[str]) -> str:
+        if details:
+            return details[-1]
+        return "requires wtype, xdotool, or ydotool; apt: xdotool ydotool"
+
     return (
-        PasteSpec("xdotool", xdotool_commands, xdotool_capability),
-        PasteSpec("ydotool", ydotool_commands, ydotool_capability),
-        PasteSpec("wtype", wtype_commands, wtype_capability),
+        PasteSpec("xdotool", xdotool_capability, build_commands=xdotool_commands),
+        PasteSpec("ydotool", ydotool_capability, build_commands=ydotool_commands),
+        PasteSpec("wtype", wtype_capability, build_commands=wtype_commands, failure_detail=x11_failure),
     )
 
 
@@ -267,6 +290,8 @@ def resolve_clipboard_capability(
             spec.backend,
             list(spec.read_command),
             list(spec.write_command),
+            read_fn=spec.read_fn,
+            write_fn=spec.write_fn,
         )
     if failures:
         return ClipboardCapability(False, failures[0])
@@ -278,6 +303,11 @@ def resolve_paste_commands(which: Which, info: SessionInfo) -> list[PasteCommand
 
     commands: list[PasteCommand] = []
     for spec in paste_specs(info):
+        if spec.execute_native is not None:
+            commands.append(PasteCommand(spec.backend, [], native=spec.execute_native))
+            continue
+        if spec.build_commands is None:
+            continue
         for command in spec.build_commands(which, info):
             commands.append(PasteCommand(spec.backend, command))
     return commands
@@ -290,43 +320,16 @@ def resolve_paste_capability(
 ) -> PasteCapability:
     from .paste import PasteCapability
 
+    specs = paste_specs(info)
     details: list[str] = []
-    for spec in paste_specs(info):
+    for spec in specs:
         result = spec.capability(which, info, runner)
         if result is None:
             continue
         if result.ok:
             return result
         details.append(result.detail)
-    if info.system == "Darwin":
-        return PasteCapability(False, "requires osascript and Accessibility permission")
-    if info.system == "Windows":
-        return PasteCapability(False, "Win32 SendInput paste unavailable")
-    if info.session == "wayland":
-        if not details:
-            return PasteCapability(False, "Wayland paste injection requires wtype or ydotool; apt: wtype ydotool")
-        return PasteCapability(
-            False,
-            "; ".join(details) + "; fallback requires ydotool with ydotoold/uinput permissions",
-        )
-    if details:
-        return PasteCapability(False, details[-1])
-    return PasteCapability(False, "requires wtype, xdotool, or ydotool; apt: xdotool ydotool")
-
-
-def paste_invoker(backend: str) -> Callable[[], None] | None:
-    for spec in (
-        *_windows_paste_specs(),
-        *_darwin_paste_specs(),
-        *_wayland_paste_specs(),
-        *_x11_paste_specs(),
-    ):
-        if spec.backend == backend:
-            return spec.invoker
-    return None
-
-
-def clipboard_callables(backend: str) -> tuple[Callable[[], str] | None, Callable[[str], None] | None]:
-    if backend == "win32":
-        return _win32_read_clipboard, _win32_write_clipboard
-    return None, None
+    for spec in specs:
+        if spec.failure_detail is not None:
+            return PasteCapability(False, spec.failure_detail(details))
+    return PasteCapability(False, "paste injection unavailable")

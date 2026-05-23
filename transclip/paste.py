@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from .paste_platform import (
-    clipboard_callables,
-    paste_invoker,
     resolve_clipboard_capability,
     resolve_paste_capability,
     resolve_paste_commands,
@@ -46,12 +44,15 @@ class ClipboardCapability:
     backend: str | None = None
     read_command: list[str] | None = None
     write_command: list[str] | None = None
+    read_fn: Callable[[], str] | None = None
+    write_fn: Callable[[str], None] | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class PasteCommand:
     backend: str
     command: list[str]
+    native: Callable[[], None] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +92,7 @@ class SystemPasteInjector:
     def paste(self) -> bool:
         self.errors.clear()
         self.backend_name = None
-        return any(self._try(command.backend, command.command) for command in paste_commands(runtime=self.runtime))
+        return any(self._try(command) for command in paste_commands(runtime=self.runtime))
 
     def available_backend(self) -> str | None:
         return available_paste_backend(runtime=self.runtime)
@@ -99,19 +100,18 @@ class SystemPasteInjector:
     def error_detail(self) -> str:
         return "; ".join(self.errors)
 
-    def _try(self, backend_name: str, command: list[str]) -> bool:
-        invoker = paste_invoker(backend_name)
-        if invoker is not None:
+    def _try(self, paste_command: PasteCommand) -> bool:
+        if paste_command.native is not None:
             try:
-                invoker()
+                paste_command.native()
             except Exception as exc:
-                self.errors.append(f"{backend_name} paste failed: {exc}")
+                self.errors.append(f"{paste_command.backend} paste failed: {exc}")
                 return False
-            self.backend_name = backend_name
+            self.backend_name = paste_command.backend
             return True
-        error = run_paste_command(command, runtime=self.runtime)
+        error = run_paste_command(paste_command.command, runtime=self.runtime)
         if error is None:
-            self.backend_name = backend_name
+            self.backend_name = paste_command.backend
             return True
         self.errors.append(error)
         return False
@@ -268,5 +268,10 @@ def detect_clipboard_backend(runtime: PlatformRuntime | None = None) -> Clipboar
     assert capability.backend
     read_command = capability.read_command or []
     write_command = capability.write_command or []
-    read_fn, write_fn = clipboard_callables(capability.backend)
-    return ClipboardBackend(capability.backend, read_command, write_command, read_fn=read_fn, write_fn=write_fn)
+    return ClipboardBackend(
+        capability.backend,
+        read_command,
+        write_command,
+        read_fn=capability.read_fn,
+        write_fn=capability.write_fn,
+    )

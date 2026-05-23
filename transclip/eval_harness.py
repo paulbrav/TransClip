@@ -11,6 +11,28 @@ from typing import Any
 from .service import InferenceEngine
 
 
+def _manifest_gate_thresholds(thresholds: dict[str, Any]) -> tuple[float, float, float, float, float]:
+    if "mean_release_to_ready_max_ms" in thresholds:
+        mean_max_ms = float(thresholds["mean_release_to_ready_max_ms"])
+        worst_max_ms = float(thresholds.get("worst_release_to_ready_max_ms", mean_max_ms))
+    elif "release_to_ready_p95_ms" in thresholds:
+        mean_max_ms = float(thresholds["release_to_ready_p95_ms"])
+        worst_max_ms = float(thresholds.get("worst_release_to_ready_max_ms", mean_max_ms))
+    else:
+        raise ValueError("manifest thresholds require mean_release_to_ready_max_ms")
+    if "under_700_min_ratio" in thresholds:
+        under_700_ratio = float(thresholds["under_700_min_ratio"])
+    else:
+        under_700_ratio = 0.0 if mean_max_ms > 700.0 else 0.8
+    return (
+        mean_max_ms,
+        worst_max_ms,
+        under_700_ratio,
+        float(thresholds["keyword_preservation_min"]),
+        float(thresholds["wer_max"]),
+    )
+
+
 @dataclass(slots=True)
 class EvalCaseResult:
     audio_path: str
@@ -51,15 +73,15 @@ class EvalGatePolicy:
         if not isinstance(cases, list) or not cases:
             raise ValueError("manifest must include at least one measured case")
         case_count = len(cases)
-        release_p95_ms = float(thresholds["release_to_ready_p95_ms"])
+        mean_max_ms, worst_max_ms, under_700_ratio, keyword_min, wer_max = _manifest_gate_thresholds(thresholds)
         return cls(
             min_cases=case_count,
             max_cases=case_count,
-            max_mean_latency_ms=release_p95_ms,
-            max_latency_ms=release_p95_ms,
-            min_under_700_ratio=0.0 if release_p95_ms > 700.0 else 0.8,
-            min_keyword_preservation=float(thresholds["keyword_preservation_min"]),
-            max_mean_wer=float(thresholds["wer_max"]),
+            max_mean_latency_ms=mean_max_ms,
+            max_latency_ms=worst_max_ms,
+            min_under_700_ratio=under_700_ratio,
+            min_keyword_preservation=keyword_min,
+            max_mean_wer=wer_max,
         )
 
     def check_results(self, payload: dict[str, Any]) -> dict[str, Any]:

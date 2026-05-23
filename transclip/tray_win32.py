@@ -178,14 +178,12 @@ def run_windows_tray(
     def update_menu() -> None:
         if icon_holder["icon"] is None:
             return
-        session.refresh_health()
         apply_tray_menu_update(
             session,
             menu_view,
             model_items=menu_refs.get(MODEL_ITEMS_REF, []),
         )
         refresh_history_menu()
-        menu_view.set_health_icon(session.health.icon)
 
     def refresh_history_menu(force: bool = False) -> None:
         refresh_shared_history(session, history_state, menu_view, force=force)
@@ -204,6 +202,7 @@ def run_windows_tray(
     def setup(_icon) -> None:
         restart_hotkey()
         _icon.visible = True
+        session.refresh_health()
         refresh_history_menu(force=True)
         update_menu()
 

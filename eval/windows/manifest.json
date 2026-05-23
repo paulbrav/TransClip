@@ -15,8 +15,9 @@
     }
   ],
   "thresholds": {
-    "warm_transcribe_p95_ms": 4500,
-    "release_to_ready_p95_ms": 6000,
+    "mean_release_to_ready_max_ms": 6000,
+    "worst_release_to_ready_max_ms": 6000,
+    "under_700_min_ratio": 0.0,
     "wer_max": 0.18,
     "keyword_preservation_min": 0.95
   },

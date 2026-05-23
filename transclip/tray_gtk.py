@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from .gnome_shortcut import install_shortcut
-from .history import history_file_signature
 from .platform_runtime import open_path
 from .product import APP_ID, DISPLAY_NAME, IMPORT_PACKAGE
 from .settings import Settings, patch_settings, settings_path
@@ -266,10 +265,6 @@ def _append_separator(menu) -> None:
     from gi.repository import Gtk
 
     menu.append(Gtk.SeparatorMenuItem())
-
-
-def _history_file_signature(path: Path | None = None) -> int | None:
-    return history_file_signature(path)
 
 
 def _reexec_with_system_python(explicit_settings_path: Path | None) -> int:

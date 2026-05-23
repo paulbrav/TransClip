@@ -6,7 +6,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .daemon_common import CommandResult, ServiceState, repo_root, run_command, service_command
-from .hotkey_windows import install_hotkey
 from .platform_runtime import PlatformRuntime, get_runtime, user_log_dir
 from .product import DISPLAY_NAME, LOG_DIR_NAME, TASK_SCHEDULER_NAME
 from .settings import Settings, load_settings
@@ -88,8 +87,6 @@ def install_windows_daemon(
     )
     results.append(run_command(["schtasks", "/Run", "/TN", TASK_SCHEDULER_NAME], runner))
     settings = settings or load_settings(settings_path, runtime=platform_runtime)
-    ok, hotkey_detail = install_hotkey()
-    results.append(CommandResult(ok, hotkey_detail))
     results.append(
         CommandResult(
             True,

@@ -255,6 +255,17 @@ class PasteTests(unittest.TestCase):
         self.assertTrue(capability.ok)
         self.assertEqual(capability.backend, "xdotool")
 
+    def test_wayland_paste_registry_prefers_wtype_before_ydotool(self):
+        def which(name):
+            return f"/usr/bin/{name}"
+
+        info = session_info(environ={"XDG_SESSION_TYPE": "wayland"}, system="Linux")
+        backends = [spec.backend for spec in paste_specs(info)]
+        self.assertEqual(backends, ["wtype", "ydotool"])
+
+        commands = paste_commands(which=which, info=info)
+        self.assertEqual(commands[0].backend, "wtype")
+
 
 
 if __name__ == "__main__":
