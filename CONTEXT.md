@@ -57,7 +57,13 @@ list files`.
 **Model cleanup**: The Qwen-backed cleanup path used for explicit cleanup
 triggers and for normal dictation when `voice_model_cleanup_always_on` is
 enabled. It is separate from the conservative rule cleanup that remains the
-default for normal dictation.
+default for normal dictation. Rule cleanup is heuristic punctuation and
+capitalization; it does not use a separate cleanup model setting.
+
+**Direct cleanup API**: The `POST /cleanup` route and CLI `cleanup` command clean
+already-written text through the dictation cleanup policy only. They do not
+parse voice-mode triggers; they apply rule cleanup by default and use the Qwen
+`text_model` when `voice_model_cleanup_always_on` is enabled.
 
 **Shell command generation**: The voice mode that turns a spoken task into Bash
 text using the shared Qwen text model. It validates syntax without execution and

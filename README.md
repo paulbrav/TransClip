@@ -175,7 +175,9 @@ the current `gfx1151` workstation, model downloads should use:
 
 Voice mode routing runs after ASR and keyword restoration. Ordinary dictation
 keeps the existing cleanup behavior unless a leading trigger phrase is spoken or
-the tray setting enables model cleanup for all dictation. Shell mode validates
+the tray setting enables model cleanup for all dictation. The CLI `cleanup`
+command and `POST /cleanup` route follow that same dictation cleanup policy on
+already-written text; they do not parse spoken trigger phrases. Shell mode validates
 generated Bash with `bash -n -c <command>` when Bash is available and also uses
 ShellCheck when installed and enabled. The shell prompt includes the user's
 default shell from `$SHELL`, falling back to the login shell, while still asking
