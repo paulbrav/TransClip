@@ -10,7 +10,15 @@ from transclip.desktop.paste import (
     paste_commands,
     paste_transcript,
 )
-from transclip.desktop.paste.platform import paste_specs
+from transclip.desktop.paste.platform import (
+    GUI_PASTE_SHORTCUT,
+    TERMINAL_PASTE_SHORTCUT,
+    WTYPE_TERMINAL_PASTE_COMMAND,
+    YDOTOOL_TERMINAL_SEQUENTIAL_COMMAND,
+    build_paste_commands_for_backend,
+    paste_specs,
+    resolve_paste_shortcut,
+)
 from transclip.platform.capabilities import session_info
 from transclip.settings import Settings
 
@@ -47,6 +55,7 @@ class PasteTests(unittest.TestCase):
 
         self.assertTrue(result.copied)
         self.assertTrue(result.pasted)
+        self.assertTrue(result.injected)
         self.assertTrue(result.restored)
         self.assertEqual(clipboard.value, "prior")
         self.assertEqual(result.clipboard_backend, "fake-clipboard")
@@ -58,6 +67,7 @@ class PasteTests(unittest.TestCase):
         result = paste_transcript("transcript", settings, clipboard, FakeInjector(False))
 
         self.assertFalse(result.pasted)
+        self.assertFalse(result.injected)
         self.assertFalse(result.restored)
         self.assertEqual(clipboard.value, "transcript")
 
@@ -67,6 +77,7 @@ class PasteTests(unittest.TestCase):
 
         self.assertFalse(result.copied)
         self.assertFalse(result.pasted)
+        self.assertFalse(result.injected)
         self.assertEqual(result.clipboard_backend, "unavailable")
         self.assertIn("missing clipboard", result.error_detail)
 
@@ -92,6 +103,7 @@ class PasteTests(unittest.TestCase):
 
         self.assertTrue(result.copied)
         self.assertTrue(result.pasted)
+        self.assertTrue(result.injected)
         self.assertFalse(result.restored)
         self.assertTrue(result.transcript_left_on_clipboard)
         self.assertEqual(clipboard.value, "transcript")
@@ -109,6 +121,7 @@ class PasteTests(unittest.TestCase):
         result = paste_transcript("transcript", settings, clipboard, ErrorInjector())
 
         self.assertFalse(result.pasted)
+        self.assertFalse(result.injected)
         self.assertIn("virtual keyboard", result.error_detail)
 
     def test_injector_exception_is_structured_failure(self):
@@ -122,6 +135,7 @@ class PasteTests(unittest.TestCase):
 
         self.assertTrue(result.copied)
         self.assertFalse(result.pasted)
+        self.assertFalse(result.injected)
         self.assertIn("paste exploded", result.error_detail)
 
     def test_system_injector_reports_selected_xdotool_backend(self):
@@ -135,7 +149,7 @@ class PasteTests(unittest.TestCase):
             available={"wtype": "/usr/bin/wtype", "xdotool": "/usr/bin/xdotool"},
             run_func=run,
         )
-        injector = SystemPasteInjector(runtime)
+        injector = SystemPasteInjector(runtime, shortcut=TERMINAL_PASTE_SHORTCUT)
         self.assertTrue(injector.paste())
 
         self.assertEqual(injector.backend_name, "xdotool")
@@ -155,7 +169,7 @@ class PasteTests(unittest.TestCase):
             },
             run_func=run,
         )
-        injector = SystemPasteInjector(runtime)
+        injector = SystemPasteInjector(runtime, shortcut=TERMINAL_PASTE_SHORTCUT)
         self.assertTrue(injector.paste())
 
         self.assertEqual(injector.backend_name, "ydotool")
@@ -170,8 +184,51 @@ class PasteTests(unittest.TestCase):
         wayland_commands = paste_commands(which=which, info=wayland_info)
         x11_commands = paste_commands(which=which, info=x11_info)
 
-        self.assertIn(["ydotool", "key", "ctrl+shift+v"], [command.command for command in wayland_commands])
+        self.assertIn(["ydotool", "key", "--delay", "50", "ctrl+shift+v"], [command.command for command in wayland_commands])
+        self.assertIn(list(YDOTOOL_TERMINAL_SEQUENTIAL_COMMAND), [command.command for command in wayland_commands])
         self.assertIn(["xdotool", "key", "ctrl+shift+v"], [command.command for command in x11_commands])
+
+    def test_wayland_wtype_command_uses_key_event_for_terminal_text_paste(self):
+        command = build_paste_commands_for_backend("wtype", TERMINAL_PASTE_SHORTCUT)[0]
+        self.assertEqual(command, list(WTYPE_TERMINAL_PASTE_COMMAND))
+
+    def test_build_paste_command_ydotool_uses_resolved_shortcut(self):
+        terminal_commands = build_paste_commands_for_backend("ydotool", TERMINAL_PASTE_SHORTCUT)
+        gui_commands = build_paste_commands_for_backend("ydotool", GUI_PASTE_SHORTCUT)
+        self.assertEqual(terminal_commands[0], ["ydotool", "key", "--delay", "50", "ctrl+shift+v"])
+        self.assertEqual(gui_commands, [["ydotool", "key", "--delay", "50", "ctrl+v"]])
+        self.assertEqual(terminal_commands[1], list(YDOTOOL_TERMINAL_SEQUENTIAL_COMMAND))
+
+    def test_resolve_paste_shortcut_uses_gui_for_linux_gui_focus(self):
+        info = session_info(environ={"XDG_SESSION_TYPE": "wayland"}, system="Linux")
+        self.assertEqual(resolve_paste_shortcut(info, "gui"), GUI_PASTE_SHORTCUT)
+        self.assertEqual(resolve_paste_shortcut(info, "terminal"), TERMINAL_PASTE_SHORTCUT)
+        self.assertEqual(resolve_paste_shortcut(info, "unknown"), TERMINAL_PASTE_SHORTCUT)
+
+    def test_clipboard_only_skips_injector_but_copies_transcript(self):
+        settings = Settings(text_delivery_mode="clipboard_only", clipboard_restore_delay_ms=0)
+        clipboard = FakeClipboard("prior")
+        injector = FakeInjector(False)
+        with patch("transclip.desktop.paste.detect_focused_app") as detect_focus:
+            result = paste_transcript("transcript", settings, clipboard, injector)
+
+        detect_focus.assert_not_called()
+        self.assertTrue(result.copied)
+        self.assertTrue(result.pasted)
+        self.assertEqual(result.delivery, "clipboard_only")
+        self.assertFalse(result.injected)
+        self.assertIsNone(result.paste_backend)
+        self.assertFalse(injector.paste())
+
+    def test_paste_result_includes_delivery_metadata(self):
+        settings = Settings(clipboard_restore_delay_ms=0, focus_aware_paste=False)
+        clipboard = FakeClipboard("prior")
+        result = paste_transcript("transcript", settings, clipboard, FakeInjector())
+
+        self.assertEqual(result.delivery, "inject")
+        self.assertTrue(result.injected)
+        self.assertEqual(result.paste_shortcut, "Ctrl+Shift+V")
+        self.assertIsNone(result.focused_app_kind)
 
     def test_system_injector_reports_runtime_failure(self):
         def run(_command, **_kwargs):
@@ -181,7 +238,7 @@ class PasteTests(unittest.TestCase):
             available={"wtype": "/usr/bin/wtype"},
             run_func=run,
         )
-        injector = SystemPasteInjector(runtime)
+        injector = SystemPasteInjector(runtime, shortcut=TERMINAL_PASTE_SHORTCUT)
         self.assertFalse(injector.paste())
         self.assertIn("virtual keyboard unsupported", injector.error_detail())
 
@@ -225,7 +282,7 @@ class PasteTests(unittest.TestCase):
     def test_windows_paste_uses_sendinput_backend(self):
         runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
         with patch("transclip.desktop.paste.win32.send_ctrl_v_paste") as send_paste:
-            injector = SystemPasteInjector(runtime)
+            injector = SystemPasteInjector(runtime, shortcut=GUI_PASTE_SHORTCUT)
             self.assertTrue(injector.paste())
 
         send_paste.assert_called_once()

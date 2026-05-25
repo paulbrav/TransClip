@@ -20,6 +20,7 @@ class ToggleOutcome:
     service_url: str
     error_message: str = ""
     paste_failed_message: str = ""
+    paste_notice_message: str = ""
 
     @property
     def latest_transcript(self) -> str:
@@ -29,7 +30,7 @@ class ToggleOutcome:
 
     @property
     def notification_message(self) -> str:
-        return self.error_message or self.paste_failed_message
+        return self.error_message or self.paste_failed_message or self.paste_notice_message
 
 
 def toggle_recording(
@@ -52,10 +53,13 @@ def toggle_recording(
 
     result["service_url"] = service_url
     paste_failed_message = ""
+    paste_notice_message = ""
     if paste and result.get("action") == "stopped" and result.get("text"):
         paste_result = paste_transcript(str(result["text"]), settings)
         result["paste"] = asdict(paste_result)
-        if not paste_result.pasted:
+        if paste_result.delivery == "clipboard_only":
+            paste_notice_message = "Transcript copied to clipboard. Paste manually."
+        elif not paste_result.pasted:
             detail = f" {paste_result.error_detail}" if paste_result.error_detail else ""
             paste_failed_message = "Paste failed. The transcript is still on the clipboard." + detail
     if "timestamp" not in result:
@@ -63,7 +67,13 @@ def toggle_recording(
     log_error = _append_toggle_log(result)
     if log_error:
         result["log_error"] = log_error
-    return ToggleOutcome(True, result, service_url, paste_failed_message=paste_failed_message)
+    return ToggleOutcome(
+        True,
+        result,
+        service_url,
+        paste_failed_message=paste_failed_message,
+        paste_notice_message=paste_notice_message,
+    )
 
 
 def _log_toggle_error(message: str, service_url: str) -> None:

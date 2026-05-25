@@ -11,8 +11,10 @@ from transclip.desktop.hotkey import get_gnome_shortcut_status
 from transclip.desktop.paste import (
     SystemClipboard,
     SystemPasteInjector,
+    available_paste_backend,
     clipboard_capability,
     paste_capability,
+    plan_paste_delivery,
 )
 from transclip.platform.runtime import PlatformRuntime, get_runtime
 from transclip.product import SERVICE_NAME
@@ -216,16 +218,26 @@ def run_smoke_test(
         )
 
     if paste:
+        plan = plan_paste_delivery(settings, runtime=platform_runtime)
+        backend = available_paste_backend(runtime=platform_runtime)
+        print(
+            f"Paste smoke: shortcut={plan.label} "
+            f"backend={backend or 'unavailable'} "
+            f"focused_app_kind={plan.focused_app_kind or 'unknown'}"
+        )
         input("Focus a text editor, then press Enter to paste known smoke-test text...")
         try:
-            clipboard = SystemClipboard()
+            clipboard = SystemClipboard(runtime=platform_runtime)
             clipboard.write("transclip interactive paste smoke")
-            pasted = SystemPasteInjector().paste()
+            injector = SystemPasteInjector(runtime=platform_runtime, shortcut=plan.shortcut)
+            pasted = injector.paste()
             answer = input("Did the text appear in the focused app? [y/N] ").strip().lower()
             results.append(
                 CommandResult(
                     pasted and answer == "y",
-                    f"interactive paste command={pasted} user_confirmed={answer == 'y'}",
+                    f"interactive paste shortcut={plan.label} "
+                    f"backend={injector.backend_name or backend or 'unknown'} "
+                    f"command={pasted} user_confirmed={answer == 'y'}",
                 )
             )
         except Exception as exc:

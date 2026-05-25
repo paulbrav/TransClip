@@ -53,6 +53,8 @@ class ServiceHealthTests(unittest.TestCase):
         self.assertTrue(payload["voice_model_cleanup_always_on"])
         self.assertIn("hotkey", payload)
         self.assertIn("paste_shortcut", payload)
+        self.assertEqual(payload["text_delivery_mode"], "inject")
+        self.assertTrue(payload["focus_aware_paste"])
 
     def test_build_health_status_returns_flat_dict(self):
         with patch_linux_gpu_runtime():

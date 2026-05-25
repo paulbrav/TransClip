@@ -21,10 +21,14 @@ relies on, including macOS versus Linux versus Windows behavior, Wayland versus
 X11, environment variables, user paths, executable discovery, and subprocess
 command execution.
 
-**Paste capability**: The current ability to place transcript text on the
-clipboard and inject a paste action into the focused application. Capability is
-determined by the platform runtime, available clipboard tools, available input
-injection tools, and any desktop permissions those tools require.
+**Paste capability**: Text delivery after dictation via clipboard write and optional
+shortcut injection into the focused application. On Linux terminals and AI CLIs
+(Codex, Cursor CLI), injection uses `Ctrl+Shift+V` so the terminal emits
+bracketed paste; bare `Ctrl+V` in Codex triggers image paste and fails for text.
+When `focus_aware_paste` is enabled, GUI fields receive `Ctrl+V` instead.
+Set `text_delivery_mode = "clipboard_only"` to copy without injecting keys.
+Capability is determined by the platform runtime, available clipboard tools,
+available input injection tools, and any desktop permissions those tools require.
 
 **Shortcut readiness**: Whether the native desktop shortcut used to trigger
 interactive dictation is installed, points at the expected command, uses the

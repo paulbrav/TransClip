@@ -127,6 +127,8 @@ class DoctorTests(unittest.TestCase):
 
         self.assertTrue(check.ok)
         self.assertIn("ydotool", check.detail)
+        self.assertIn("Linux terminal shortcut=Ctrl+Shift+V", check.detail)
+        self.assertIn("GUI shortcut=Ctrl+V", check.detail)
 
     def test_gnome_hotkey_check_reports_installed_shortcut(self):
         status = GnomeShortcutStatus(

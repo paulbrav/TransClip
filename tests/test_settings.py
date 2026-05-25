@@ -2,13 +2,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from transclip.desktop.paste import plan_paste_delivery
 from transclip.settings import (
     DEFAULT_HOTKEY_LINUX,
     Settings,
     active_hotkey,
     coerce_setting_value,
     load_settings,
-    paste_shortcut,
     patch_settings,
     set_setting,
     write_default_settings,
@@ -69,20 +69,20 @@ class SettingsTests(unittest.TestCase):
         runtime = FakeRuntime(system="Linux", home=Path("/home/user"))
         settings = Settings()
         self.assertIn("XF86TouchpadOff", active_hotkey(settings, runtime))
-        self.assertIn("V", paste_shortcut(settings, runtime))
+        self.assertIn("V", plan_paste_delivery(settings, runtime=runtime).label)
 
     def test_active_hotkey_uses_macos_binding_on_darwin(self):
         runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"))
         settings = Settings()
         self.assertEqual(active_hotkey(settings, runtime), "Option+Space")
         self.assertNotIn("XF86TouchpadOff", active_hotkey(settings, runtime))
-        self.assertEqual(paste_shortcut(settings, runtime), "Command+V")
+        self.assertEqual(plan_paste_delivery(settings, runtime=runtime).label, "Command+V")
 
     def test_active_hotkey_uses_windows_binding(self):
         runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
         settings = Settings()
         self.assertEqual(active_hotkey(settings, runtime), "ctrl+shift+space")
-        self.assertEqual(paste_shortcut(settings, runtime), "Ctrl+V")
+        self.assertEqual(plan_paste_delivery(settings, runtime=runtime).label, "Ctrl+V")
 
     def test_patch_settings_returns_new_object_without_mutating_original(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -111,11 +111,21 @@ class SettingsTests(unittest.TestCase):
         self.assertIs(coerce_setting_value("cleanup_enabled", "false"), False)
         self.assertIs(coerce_setting_value("voice_model_cleanup_always_on", "on"), True)
         self.assertEqual(coerce_setting_value("sample_rate", "22050"), 22050)
+        self.assertEqual(coerce_setting_value("text_delivery_mode", "clipboard_only"), "clipboard_only")
+        with self.assertRaises(ValueError):
+            coerce_setting_value("text_delivery_mode", "bogus")
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "settings.toml"
             write_default_settings(path)
             with self.assertRaises(ValueError):
                 set_setting(path, "wat", "true")
+
+    def test_invalid_text_delivery_mode_is_rejected_on_load(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "settings.toml"
+            path.write_text('text_delivery_mode = "bogus"\n', encoding="utf-8")
+            with self.assertRaises(ValueError):
+                load_settings(path)
 
 
 if __name__ == "__main__":

@@ -22,6 +22,9 @@ class ServiceHealthResponse(TypedDict, total=False):
     toggle_cooldown_ms: int
     clipboard_restore_delay_ms: int
     restore_clipboard_after_paste: bool
+    text_delivery_mode: str
+    focus_aware_paste: bool
+    terminal_wm_class_patterns: str
 
 
 class RecordSessionResponse(TypedDict, total=False):

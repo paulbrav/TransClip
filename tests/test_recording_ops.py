@@ -24,11 +24,15 @@ class FakeClient:
 class FakePasteResult:
     copied: bool = True
     pasted: bool = False
+    injected: bool = False
     restored: bool = False
     transcript_left_on_clipboard: bool = True
     clipboard_backend: str = "fake-clipboard"
     paste_backend: str | None = None
     error_detail: str = "fake paste failed"
+    paste_shortcut: str = "Ctrl+Shift+V"
+    delivery: str = "inject"
+    focused_app_kind: str | None = None
 
 
 class RecordingOpsTests(unittest.TestCase):
@@ -76,6 +80,48 @@ class RecordingOpsTests(unittest.TestCase):
         self.assertEqual(outcome.latest_transcript, "Hello.")
         self.assertIn("still on the clipboard", outcome.notification_message)
         self.assertFalse(outcome.payload["paste"]["pasted"])
+
+    def test_stopped_paste_logs_delivery_metadata(self):
+        paste_result = FakePasteResult(
+            pasted=True,
+            injected=True,
+            paste_shortcut="Ctrl+Shift+V",
+            delivery="inject",
+            focused_app_kind="terminal",
+            error_detail="",
+        )
+        with (
+            patch("transclip.recording_ops.paste_transcript", return_value=paste_result),
+            patch("transclip.recording_ops._append_toggle_log") as append_log,
+        ):
+            toggle_recording(
+                Settings(),
+                paste=True,
+                client=FakeClient({"action": "stopped", "status": "ready", "text": "Hello."}),
+            )
+
+        logged = append_log.call_args[0][0]
+        self.assertEqual(logged["paste"]["paste_shortcut"], "Ctrl+Shift+V")
+        self.assertEqual(logged["paste"]["delivery"], "inject")
+        self.assertEqual(logged["paste"]["focused_app_kind"], "terminal")
+
+    def test_clipboard_only_paste_sets_notice_message(self):
+        paste_result = FakePasteResult(
+            pasted=True,
+            injected=False,
+            delivery="clipboard_only",
+            paste_backend=None,
+            error_detail="",
+        )
+        with patch("transclip.recording_ops.paste_transcript", return_value=paste_result):
+            outcome = toggle_recording(
+                Settings(text_delivery_mode="clipboard_only"),
+                paste=True,
+                client=FakeClient({"action": "stopped", "status": "ready", "text": "Hello."}),
+            )
+
+        self.assertEqual(outcome.paste_notice_message, "Transcript copied to clipboard. Paste manually.")
+        self.assertEqual(outcome.notification_message, outcome.paste_notice_message)
 
 
 if __name__ == "__main__":

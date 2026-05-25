@@ -334,8 +334,31 @@ Linux GNOME sessions use the native custom shortcut installed above. No
 
 On GNOME Wayland, clipboard copy/read requires `wl-clipboard` (`wl-copy` and
 `wl-paste`). Paste injection uses `wtype` when the compositor supports the
-virtual keyboard protocol, then `ydotool` if configured. `xclip`/`xdotool` are
+virtual keyboard protocol, then `ydotool` if configured. GNOME typically requires
+`ydotool` because it does not support the virtual keyboard protocol. `xclip`/`xdotool` are
 X11-only fallbacks.
+
+### Text delivery
+
+After dictation, TransClip writes the transcript to the clipboard and injects a
+paste shortcut into the focused app:
+
+| Focus | Linux shortcut | Notes |
+|---|---|---|
+| Terminal / AI CLI | `Ctrl+Shift+V` | Triggers terminal bracketed paste; required for Codex CLI text |
+| GUI text field | `Ctrl+V` | When `focus_aware_paste = true` (default) |
+
+Codex CLI binds `Ctrl+V` to image paste only. If injection mis-delivers `Ctrl+V`,
+you will see `Failed to paste image: no image on clipboard` even though the
+transcript is on the clipboard.
+
+Settings:
+
+- `text_delivery_mode = "inject"` (default) or `"clipboard_only"`
+- `focus_aware_paste = true` (default)
+- `terminal_wm_class_patterns = ""` — optional comma-separated WM class regex overrides
+
+Toggle logs record `paste_shortcut`, `delivery`, and `focused_app_kind` for diagnosis.
 
 ## Eval Harness
 
