@@ -21,17 +21,20 @@ from transclip.daemon.windows import build_task_scheduler_xml, install_windows_d
 from transclip.desktop.hotkey import build_toggle_invocation, windows_hotkey_setup_message
 from transclip.paths import service_settings_path
 from transclip.product import TASK_SCHEDULER_NAME
-from transclip.settings import Settings
+from transclip.settings import Settings, write_settings
 
 from tests.service_helpers import FakeRuntime, normalize_path_text
 
 
 class DaemonTests(unittest.TestCase):
     def test_systemd_unit_uses_current_python_and_cli_serve(self):
-        unit = build_systemd_unit(Path("/tmp/settings.toml"))
+        with tempfile.TemporaryDirectory() as tmp:
+            settings_path = Path(tmp) / "settings.toml"
+            write_settings(Settings(asr_backend="granite_nar"), settings_path)
+            unit = build_systemd_unit(settings_path)
 
         self.assertIn("Description=TransClip dictation service", unit)
-        settings_path = normalize_path_text(service_settings_path(Path("/tmp/settings.toml")))
+        settings_path = normalize_path_text(service_settings_path(settings_path))
         normalized_unit = normalize_path_text(unit).replace("'", "")
         self.assertIn(f"-m transclip.cli --settings {settings_path} serve", normalized_unit)
         self.assertIn("Restart=on-failure", unit)
