@@ -33,7 +33,6 @@ class Settings:
     model_cache_dir: str = ""
     restore_clipboard_after_paste: bool = False
     clipboard_restore_delay_ms: int = 500
-    max_recording_seconds: int = 60
     min_recording_ms: int = 250
     toggle_cooldown_ms: int = 500
     debug_capture: bool = False
@@ -87,6 +86,7 @@ def load_settings(path: Path | None = None, runtime: PlatformRuntime | None = No
     if not path.exists():
         return default_settings(runtime)
     data = tomllib.loads(path.read_text(encoding="utf-8"))
+    data.pop("max_recording_seconds", None)  # removed; tolerate legacy configs
     allowed = {field.name for field in fields(Settings)}
     unknown = sorted(set(data) - allowed)
     if unknown:
@@ -117,7 +117,7 @@ def settings_to_toml(settings: Settings) -> str:
             "model_cache_dir",
         ),
         ("restore_clipboard_after_paste", "clipboard_restore_delay_ms"),
-        ("max_recording_seconds", "min_recording_ms", "toggle_cooldown_ms"),
+        ("min_recording_ms", "toggle_cooldown_ms"),
         ("debug_capture", "debug_capture_dir"),
         ("asr_backend", "asr_device", "sample_rate", "host", "port"),
     ]

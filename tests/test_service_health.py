@@ -12,7 +12,7 @@ from transclip.service.client_health import (
 from transclip.service.types import ServiceHealthResponse
 from transclip.settings import Settings
 
-from tests.service_helpers import FakeRuntime, patch_linux_gpu_runtime
+from tests.service_helpers import FakeRuntime, normalize_path_text, patch_linux_gpu_runtime
 
 
 class ServiceHealthTests(unittest.TestCase):
@@ -92,8 +92,8 @@ class GtkTrayReexecTests(unittest.TestCase):
             result = _reexec_with_system_python(None)
 
         self.assertEqual(result, 0)
-        self.assertTrue(captured["pythonpath"].startswith("/repo/root"))
-        self.assertEqual(captured["cwd"], "/repo/root")
+        self.assertTrue(normalize_path_text(captured["pythonpath"]).startswith("/repo/root"))
+        self.assertEqual(normalize_path_text(captured["cwd"]), "/repo/root")
 
 
 if __name__ == "__main__":
