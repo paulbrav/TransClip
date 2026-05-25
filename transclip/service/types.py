@@ -18,7 +18,6 @@ class ServiceHealthResponse(TypedDict, total=False):
     text_model_runtime: str
     text_model: str
     language: str
-    max_recording_seconds: int
     min_recording_ms: int
     toggle_cooldown_ms: int
     clipboard_restore_delay_ms: int

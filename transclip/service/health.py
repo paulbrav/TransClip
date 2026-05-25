@@ -14,7 +14,6 @@ _SETTINGS_HEALTH_FIELDS = (
     "text_model_runtime",
     "text_model",
     "language",
-    "max_recording_seconds",
     "min_recording_ms",
     "toggle_cooldown_ms",
     "clipboard_restore_delay_ms",

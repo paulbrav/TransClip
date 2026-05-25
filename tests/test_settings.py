@@ -12,6 +12,7 @@ from transclip.settings import (
     patch_settings,
     set_setting,
     write_default_settings,
+    write_settings,
 )
 
 from tests.service_helpers import FakeRuntime, linux_gpu_runtime, patch_linux_gpu_runtime
@@ -27,7 +28,6 @@ class SettingsTests(unittest.TestCase):
             settings = load_settings(settings_file, runtime=runtime)
 
             self.assertEqual(settings.hotkey_linux, DEFAULT_HOTKEY_LINUX)
-            self.assertEqual(settings.max_recording_seconds, 60)
             self.assertEqual(settings.toggle_cooldown_ms, 500)
             self.assertEqual(settings.asr_backend, "granite_nar")
             self.assertEqual(settings.asr_model, "ibm-granite/granite-speech-4.1-2b-nar")
@@ -47,6 +47,23 @@ class SettingsTests(unittest.TestCase):
             path.write_text('hotkey_linux = "Ctrl+Space"\nwat = true\n', encoding="utf-8")
             with self.assertRaises(ValueError):
                 load_settings(path)
+
+    def test_removed_setting_is_stripped_when_settings_are_rewritten(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "settings.toml"
+            path.write_text(
+                'hotkey_linux = "<Super><Shift>XF86TouchpadOff"\nmax_recording_seconds = 60\n',
+                encoding="utf-8",
+            )
+            write_settings(load_settings(path), path)
+            self.assertNotIn("max_recording_seconds", path.read_text(encoding="utf-8"))
+
+    def test_set_setting_rejects_removed_max_recording_seconds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "settings.toml"
+            write_default_settings(path)
+            with self.assertRaises(ValueError):
+                set_setting(path, "max_recording_seconds", "60")
 
     def test_platform_helpers_have_defaults(self):
         runtime = FakeRuntime(system="Linux", home=Path("/home/user"))
