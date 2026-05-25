@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 from transclip.platform.runtime import PlatformRuntime, get_runtime
-from transclip.settings import Settings, load_settings, write_default_settings
+from transclip.settings import load_settings, write_default_settings
 
 from . import linux as linux_daemon
 from . import macos as macos_daemon
