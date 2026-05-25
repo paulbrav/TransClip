@@ -183,10 +183,12 @@ class PasteTests(unittest.TestCase):
 
         wayland_commands = paste_commands(which=which, info=wayland_info)
         x11_commands = paste_commands(which=which, info=x11_info)
+        wayland_argv = [command.command for command in wayland_commands]
+        x11_argv = [command.command for command in x11_commands]
 
-        self.assertIn(["ydotool", "key", "--delay", "50", "ctrl+shift+v"], [command.command for command in wayland_commands])
-        self.assertIn(list(YDOTOOL_TERMINAL_SEQUENTIAL_COMMAND), [command.command for command in wayland_commands])
-        self.assertIn(["xdotool", "key", "ctrl+shift+v"], [command.command for command in x11_commands])
+        self.assertIn(["ydotool", "key", "--delay", "50", "ctrl+shift+v"], wayland_argv)
+        self.assertIn(list(YDOTOOL_TERMINAL_SEQUENTIAL_COMMAND), wayland_argv)
+        self.assertIn(["xdotool", "key", "ctrl+shift+v"], x11_argv)
 
     def test_wayland_wtype_command_uses_key_event_for_terminal_text_paste(self):
         command = build_paste_commands_for_backend("wtype", TERMINAL_PASTE_SHORTCUT)[0]
