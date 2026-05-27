@@ -8,21 +8,17 @@ from typing import Protocol
 
 from transclip.platform.capabilities import SessionInfo, session_info
 from transclip.platform.runtime import PlatformRuntime, get_runtime
-from transclip.settings import Settings, TextDeliveryMode
+from transclip.settings import Settings
 
-from .focus import detect_focused_app, parse_terminal_wm_class_patterns
 from .platform import (
-    GUI_PASTE_SHORTCUT,
-    TERMINAL_PASTE_SHORTCUT,
-    paste_shortcut_label,
-    paste_tools_detail,
     resolve_clipboard_capability,
     resolve_paste_capability,
     resolve_paste_commands,
-    resolve_paste_shortcut,
 )
 
 Which = Callable[[str], str | None]
+
+PASTE_COMMAND_TIMEOUT_SECONDS = 5.0
 
 
 class Clipboard(Protocol):
@@ -91,32 +87,15 @@ class SystemClipboard:
 
 
 class SystemPasteInjector:
-    def __init__(
-        self,
-        runtime: PlatformRuntime | None = None,
-        *,
-        shortcut: str | None = None,
-    ) -> None:
+    def __init__(self, runtime: PlatformRuntime | None = None) -> None:
         self.runtime = get_runtime(runtime)
-        self.shortcut = shortcut
         self.backend_name: str | None = None
         self.errors: list[str] = []
 
     def paste(self) -> bool:
         self.errors.clear()
         self.backend_name = None
-        if not self.shortcut:
-            self.errors.append("paste shortcut not configured")
-            return False
-        commands = self._paste_commands()
-        return any(self._try(command) for command in commands)
-
-    def _paste_commands(self) -> list[PasteCommand]:
-        return resolve_paste_commands(
-            self.runtime.which,
-            session_info(runtime=self.runtime),
-            shortcut=self.shortcut,
-        )
+        return any(self._try(command) for command in paste_commands(runtime=self.runtime))
 
     def available_backend(self) -> str | None:
         return available_paste_backend(runtime=self.runtime)
@@ -141,65 +120,15 @@ class SystemPasteInjector:
         return False
 
 
-@dataclass(frozen=True, slots=True)
-class PasteDeliveryPlan:
-    shortcut: str
-    label: str
-    focused_app_kind: str | None = None
-
-
 @dataclass(slots=True)
 class PasteResult:
     copied: bool
     pasted: bool
-    injected: bool
     restored: bool
     transcript_left_on_clipboard: bool
     clipboard_backend: str
     paste_backend: str | None
     error_detail: str = ""
-    paste_shortcut: str = ""
-    delivery: TextDeliveryMode = "inject"
-    focused_app_kind: str | None = None
-
-
-def _resolve_paste_runtime(
-    clipboard: Clipboard | None,
-    injector: PasteInjector | None,
-) -> PlatformRuntime | None:
-    runtime = getattr(injector, "runtime", None)
-    if runtime is not None:
-        return runtime
-    return getattr(clipboard, "runtime", None)
-
-
-def plan_paste_delivery(
-    settings: Settings,
-    runtime: PlatformRuntime | None = None,
-    *,
-    probe_focus: bool = True,
-) -> PasteDeliveryPlan:
-    platform_runtime = get_runtime(runtime)
-    info = session_info(runtime=platform_runtime)
-    focused_kind: str | None = None
-    if info.system == "Linux" and settings.focus_aware_paste and probe_focus:
-        focused = detect_focused_app(
-            platform_runtime,
-            terminal_patterns=parse_terminal_wm_class_patterns(settings.terminal_wm_class_patterns),
-        )
-        focused_kind = focused.kind
-        shortcut = resolve_paste_shortcut(info, focused.kind)
-    elif info.system == "Linux":
-        shortcut = TERMINAL_PASTE_SHORTCUT
-    elif info.system == "Windows":
-        shortcut = GUI_PASTE_SHORTCUT
-    else:
-        shortcut = "command+v"
-    return PasteDeliveryPlan(
-        shortcut=shortcut,
-        label=paste_shortcut_label(shortcut),
-        focused_app_kind=focused_kind,
-    )
 
 
 def paste_transcript(
@@ -208,29 +137,19 @@ def paste_transcript(
     clipboard: Clipboard | None = None,
     injector: PasteInjector | None = None,
 ) -> PasteResult:
-    platform_runtime = get_runtime(_resolve_paste_runtime(clipboard, injector))
     try:
-        clipboard = clipboard or SystemClipboard(runtime=platform_runtime)
+        clipboard = clipboard or SystemClipboard()
     except Exception as exc:
         return PasteResult(
             copied=False,
             pasted=False,
-            injected=False,
             restored=False,
             transcript_left_on_clipboard=False,
             clipboard_backend="unavailable",
             paste_backend=None,
             error_detail=str(exc),
         )
-    plan = plan_paste_delivery(
-        settings,
-        runtime=platform_runtime,
-        probe_focus=settings.text_delivery_mode != "clipboard_only",
-    )
-    if injector is None:
-        injector = SystemPasteInjector(runtime=platform_runtime, shortcut=plan.shortcut)
-    elif isinstance(injector, SystemPasteInjector):
-        injector.shortcut = plan.shortcut
+    injector = injector or SystemPasteInjector()
     clipboard_backend = getattr(clipboard, "backend_name", clipboard.__class__.__name__)
     prior = ""
     prior_read_ok = False
@@ -245,7 +164,6 @@ def paste_transcript(
         return PasteResult(
             copied=False,
             pasted=False,
-            injected=False,
             restored=False,
             transcript_left_on_clipboard=False,
             clipboard_backend=str(clipboard_backend),
@@ -253,19 +171,6 @@ def paste_transcript(
             error_detail=str(exc),
         )
     copied = True
-    if settings.text_delivery_mode == "clipboard_only":
-        return PasteResult(
-            copied=copied,
-            pasted=True,
-            injected=False,
-            restored=False,
-            transcript_left_on_clipboard=True,
-            clipboard_backend=str(clipboard_backend),
-            paste_backend=None,
-            paste_shortcut=plan.label,
-            delivery="clipboard_only",
-            focused_app_kind=plan.focused_app_kind,
-        )
     injector_exception = ""
     try:
         pasted = injector.paste()
@@ -286,15 +191,11 @@ def paste_transcript(
     return PasteResult(
         copied=copied,
         pasted=pasted,
-        injected=pasted,
         restored=restored,
         transcript_left_on_clipboard=not restored,
         clipboard_backend=str(clipboard_backend),
         paste_backend=paste_backend,
         error_detail=error_detail,
-        paste_shortcut=plan.label,
-        delivery="inject",
-        focused_app_kind=plan.focused_app_kind,
     )
 
 
@@ -313,13 +214,11 @@ def paste_commands(
     which: Which | None = None,
     info: SessionInfo | None = None,
     runtime: PlatformRuntime | None = None,
-    *,
-    shortcut: str | None = None,
 ) -> list[PasteCommand]:
     platform_runtime = get_runtime(runtime)
     which = which or platform_runtime.which
     info = info or session_info(runtime=platform_runtime)
-    return resolve_paste_commands(which, info, shortcut=shortcut)
+    return resolve_paste_commands(which, info)
 
 
 def available_paste_backend(
@@ -341,24 +240,24 @@ def paste_capability(
     runner = runner or platform_runtime.run
     which = which or platform_runtime.which
     info = info or session_info(runtime=platform_runtime)
-    capability = resolve_paste_capability(which, info, runner)
-    if capability.ok:
-        return PasteCapability(
-            capability.ok,
-            paste_tools_detail(info, capability),
-            capability.backend,
-        )
-    return capability
+    return resolve_paste_capability(which, info, runner)
 
 
 def run_paste_command(command: list[str], runtime: PlatformRuntime | None = None) -> str | None:
-    result = get_runtime(runtime).run(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        check=False,
-    )
+    try:
+        result = get_runtime(runtime).run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=False,
+            timeout=PASTE_COMMAND_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return (
+            f"{command[0]} paste command timed out after "
+            f"{PASTE_COMMAND_TIMEOUT_SECONDS:g}s"
+        )
     if result.returncode == 0:
         return None
     detail = result.stdout.strip() or f"exit status {result.returncode}"

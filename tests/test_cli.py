@@ -36,7 +36,6 @@ def fake_paste_transcript(transcript: str, settings, **kwargs) -> PasteResult:
     return PasteResult(
         copied=True,
         pasted=True,
-        injected=True,
         restored=False,
         transcript_left_on_clipboard=True,
         clipboard_backend="fake-clipboard",

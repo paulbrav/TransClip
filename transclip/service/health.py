@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from transclip.cleanup import CleanupPlan
-from transclip.desktop.paste import plan_paste_delivery
 from transclip.platform.runtime import PlatformRuntime, get_runtime
-from transclip.settings import Settings, active_hotkey
+from transclip.settings import Settings, active_hotkey, paste_shortcut
 
 from .types import ServiceHealthResponse
 
@@ -19,9 +18,6 @@ _SETTINGS_HEALTH_FIELDS = (
     "toggle_cooldown_ms",
     "clipboard_restore_delay_ms",
     "restore_clipboard_after_paste",
-    "text_delivery_mode",
-    "focus_aware_paste",
-    "terminal_wm_class_patterns",
 )
 
 
@@ -33,7 +29,7 @@ def settings_health_payload(
     for field in _SETTINGS_HEALTH_FIELDS:
         payload[field] = getattr(settings, field)  # type: ignore[literal-required]
     payload["hotkey"] = active_hotkey(settings, runtime)
-    payload["paste_shortcut"] = plan_paste_delivery(settings, runtime).label
+    payload["paste_shortcut"] = paste_shortcut(settings, runtime)
     return payload
 
 

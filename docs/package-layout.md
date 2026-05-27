@@ -15,9 +15,8 @@ transclip/
     profiles.py
   desktop/
     paste/                 # Clipboard + paste injection
-      __init__.py          # SystemClipboard, paste_capability, paste_transcript, …
-      platform.py          # Backend registry / selection, shortcut builders
-      focus.py             # GNOME focused-app detection for focus-aware paste
+      __init__.py          # SystemClipboard, paste_capability, …
+      platform.py          # Backend registry / selection
       win32.py
     hotkey/                # Shortcut install + toggle command builders
       __init__.py          # Public router (lazy Linux imports)

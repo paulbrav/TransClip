@@ -19,7 +19,7 @@ def handle_toggle_record(args: argparse.Namespace, settings: Settings) -> int:
             print(outcome.error_message, file=sys.stderr)
         notify(DISPLAY_NAME, outcome.notification_message)
         return 1
-    if outcome.paste_failed_message or outcome.paste_notice_message:
+    if outcome.paste_failed_message:
         notify(DISPLAY_NAME, outcome.notification_message)
     print(json.dumps(outcome.payload))
     return 0

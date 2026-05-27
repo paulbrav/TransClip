@@ -3,7 +3,7 @@ from __future__ import annotations
 import tomllib
 from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
-from typing import Any, Literal, get_args, get_origin, get_type_hints
+from typing import Any, get_type_hints
 
 from transclip.platform.profiles import detect_runtime_profile
 from transclip.platform.runtime import PlatformRuntime, get_runtime, user_config_dir
@@ -12,8 +12,6 @@ from .product import CONFIG_DIR_NAME
 
 DEFAULT_HOTKEY_LINUX = "<Super><Shift>XF86TouchpadOff"
 DEFAULT_HOTKEY_WINDOWS = "ctrl+shift+space"
-
-TextDeliveryMode = Literal["inject", "clipboard_only"]
 
 
 @dataclass(slots=True)
@@ -35,9 +33,6 @@ class Settings:
     model_cache_dir: str = ""
     restore_clipboard_after_paste: bool = False
     clipboard_restore_delay_ms: int = 500
-    text_delivery_mode: TextDeliveryMode = "inject"
-    focus_aware_paste: bool = True
-    terminal_wm_class_patterns: str = ""
     min_recording_ms: int = 250
     toggle_cooldown_ms: int = 500
     debug_capture: bool = False
@@ -57,6 +52,16 @@ def active_hotkey(settings: Settings, runtime: PlatformRuntime | None = None) ->
     if system == "Windows":
         return settings.hotkey_windows
     return settings.hotkey_linux
+
+
+def paste_shortcut(settings: Settings, runtime: PlatformRuntime | None = None) -> str:
+    platform_runtime = get_runtime(runtime)
+    system = platform_runtime.system()
+    if system == "Darwin":
+        return "Command+V"
+    if system == "Windows":
+        return "Ctrl+V"
+    return "Ctrl+Shift+V"
 
 
 def default_settings(runtime: PlatformRuntime | None = None) -> Settings:
@@ -87,11 +92,6 @@ def load_settings(path: Path | None = None, runtime: PlatformRuntime | None = No
     if unknown:
         raise ValueError(f"Unknown settings field(s): {', '.join(unknown)}")
     settings = Settings(**data)
-    if settings.text_delivery_mode not in get_args(TextDeliveryMode):
-        raise ValueError(
-            f"text_delivery_mode expects {' or '.join(get_args(TextDeliveryMode))}, "
-            f"got {settings.text_delivery_mode!r}"
-        )
     return settings
 
 
@@ -117,7 +117,6 @@ def settings_to_toml(settings: Settings) -> str:
             "model_cache_dir",
         ),
         ("restore_clipboard_after_paste", "clipboard_restore_delay_ms"),
-        ("text_delivery_mode", "focus_aware_paste", "terminal_wm_class_patterns"),
         ("min_recording_ms", "toggle_cooldown_ms"),
         ("debug_capture", "debug_capture_dir"),
         ("asr_backend", "asr_device", "sample_rate", "host", "port"),
@@ -169,12 +168,6 @@ def write_settings(settings: Settings, path: Path | None = None) -> Path:
 def coerce_setting_value(field_name: str, raw_value: str) -> Any:
     type_hints = get_type_hints(Settings)
     expected = type_hints[field_name]
-    if get_origin(expected) is Literal:
-        normalized = raw_value.strip().lower()
-        allowed = get_args(expected)
-        if normalized not in allowed:
-            raise ValueError(f"{field_name} expects {' or '.join(allowed)}")
-        return normalized
     if expected is bool:
         normalized = raw_value.strip().lower()
         if normalized in {"true", "1", "yes", "on"}:

@@ -14,7 +14,6 @@ Which = Callable[[str], str | None]
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
 TERMINAL_PASTE_SHORTCUT = "ctrl+shift+v"
-GUI_PASTE_SHORTCUT = "ctrl+v"
 WTYPE_TERMINAL_PASTE_COMMAND = (
     "wtype",
     "-s",
@@ -30,60 +29,9 @@ WTYPE_TERMINAL_PASTE_COMMAND = (
     "-m",
     "ctrl",
 )
-WTYPE_GUI_PASTE_COMMAND = ("wtype", "-s", "50", "-M", "ctrl", "-k", "v", "-m", "ctrl")
 SENDINPUT_PASTE_BACKEND = "sendinput"
-YDOTOOL_TERMINAL_SEQUENTIAL_COMMAND = (
-    "ydotool",
-    "key",
-    "--delay",
-    "50",
-    "ctrl:1",
-    "shift:1",
-    "v:1",
-    "shift:0",
-    "ctrl:0",
-)
-
-
-def normalize_paste_shortcut(shortcut: str) -> str:
-    return shortcut.strip().lower().replace(" ", "")
-
-
-def resolve_paste_shortcut(info: SessionInfo, focused_kind: str) -> str:
-    if info.system != "Linux":
-        return GUI_PASTE_SHORTCUT
-    if focused_kind == "gui":
-        return GUI_PASTE_SHORTCUT
-    return TERMINAL_PASTE_SHORTCUT
-
-
-def paste_shortcut_label(shortcut: str) -> str:
-    normalized = normalize_paste_shortcut(shortcut)
-    if normalized == TERMINAL_PASTE_SHORTCUT:
-        return "Ctrl+Shift+V"
-    if normalized == GUI_PASTE_SHORTCUT:
-        return "Ctrl+V"
-    if normalized == "command+v":
-        return "Command+V"
-    return shortcut
-
-
-def build_paste_commands_for_backend(backend: str, shortcut: str) -> list[list[str]]:
-    normalized = normalize_paste_shortcut(shortcut)
-    if backend == "wtype":
-        if normalized == TERMINAL_PASTE_SHORTCUT:
-            return [list(WTYPE_TERMINAL_PASTE_COMMAND)]
-        if normalized == GUI_PASTE_SHORTCUT:
-            return [list(WTYPE_GUI_PASTE_COMMAND)]
-        raise ValueError(f"unsupported wtype shortcut: {shortcut}")
-    if backend == "ydotool":
-        commands = [["ydotool", "key", "--delay", "50", normalized]]
-        if normalized == TERMINAL_PASTE_SHORTCUT:
-            commands.append(list(YDOTOOL_TERMINAL_SEQUENTIAL_COMMAND))
-        return commands
-    if backend == "xdotool":
-        return [["xdotool", "key", normalized]]
-    return []
+WTYPE_PROBE_COMMAND = ("wtype", "-M", "ctrl", "-m", "ctrl")
+WTYPE_PROBE_TIMEOUT_SECONDS = 2.0
 
 
 def _win32_read_clipboard() -> str:
@@ -229,6 +177,14 @@ def _windows_paste_specs() -> Sequence[PasteSpec]:
     )
 
 
+def _wtype_paste_commands(which: Which, _info: SessionInfo) -> list[list[str]]:
+    return [list(WTYPE_TERMINAL_PASTE_COMMAND)] if which("wtype") else []
+
+
+def _ydotool_paste_commands(which: Which, _info: SessionInfo) -> list[list[str]]:
+    return [["ydotool", "key", TERMINAL_PASTE_SHORTCUT]] if which("ydotool") else []
+
+
 def _ydotool_found_capability(which: Which, _info: SessionInfo, _runner: Runner):
     from transclip.desktop.paste import PasteCapability
 
@@ -243,13 +199,17 @@ def _wayland_paste_specs() -> Sequence[PasteSpec]:
 
         if not which("wtype"):
             return None
-        result = runner(
-            ["wtype", "-M", "ctrl", "-m", "ctrl"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            check=False,
-        )
+        try:
+            result = runner(
+                list(WTYPE_PROBE_COMMAND),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                check=False,
+                timeout=WTYPE_PROBE_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            return PasteCapability(False, "wtype probe timed out")
         if result.returncode == 0:
             return PasteCapability(True, "wtype found and compositor accepts virtual keyboard events", "wtype")
         detail = result.stdout.strip() or f"exit status {result.returncode}"
@@ -272,16 +232,20 @@ def _wayland_paste_specs() -> Sequence[PasteSpec]:
         return "; ".join(details) + "; fallback requires ydotool with ydotoold/uinput permissions"
 
     return (
-        PasteSpec("wtype", wtype_capability),
+        PasteSpec("wtype", wtype_capability, build_commands=_wtype_paste_commands),
         PasteSpec(
             "ydotool",
             ydotool_capability,
+            build_commands=_ydotool_paste_commands,
             failure_detail=wayland_failure,
         ),
     )
 
 
 def _x11_paste_specs() -> Sequence[PasteSpec]:
+    def xdotool_commands(which: Which, _info: SessionInfo) -> list[list[str]]:
+        return [["xdotool", "key", TERMINAL_PASTE_SHORTCUT]] if which("xdotool") else []
+
     def xdotool_capability(which: Which, _info: SessionInfo, _runner: Runner):
         from transclip.desktop.paste import PasteCapability
 
@@ -305,9 +269,9 @@ def _x11_paste_specs() -> Sequence[PasteSpec]:
         return "requires wtype, xdotool, or ydotool; apt: xdotool ydotool"
 
     return (
-        PasteSpec("xdotool", xdotool_capability),
-        PasteSpec("ydotool", _ydotool_found_capability),
-        PasteSpec("wtype", wtype_capability, failure_detail=x11_failure),
+        PasteSpec("xdotool", xdotool_capability, build_commands=xdotool_commands),
+        PasteSpec("ydotool", _ydotool_found_capability, build_commands=_ydotool_paste_commands),
+        PasteSpec("wtype", wtype_capability, build_commands=_wtype_paste_commands, failure_detail=x11_failure),
     )
 
 
@@ -356,47 +320,19 @@ def resolve_clipboard_capability(
     return ClipboardCapability(False, "No supported clipboard reader/writer found")
 
 
-def resolve_paste_commands(
-    which: Which,
-    info: SessionInfo,
-    *,
-    shortcut: str | None = None,
-) -> list[PasteCommand]:
+def resolve_paste_commands(which: Which, info: SessionInfo) -> list[PasteCommand]:
     from transclip.desktop.paste import PasteCommand
 
-    resolved = normalize_paste_shortcut(shortcut or TERMINAL_PASTE_SHORTCUT)
     commands: list[PasteCommand] = []
     for spec in paste_specs(info):
         if spec.execute_native is not None:
             commands.append(PasteCommand(spec.backend, [], native=spec.execute_native))
             continue
-        if spec.backend == "osascript" and spec.build_commands is not None:
-            for command in spec.build_commands(which, info):
-                commands.append(PasteCommand(spec.backend, command))
+        if spec.build_commands is None:
             continue
-        if spec.backend not in {"wtype", "ydotool", "xdotool"}:
-            continue
-        if spec.backend == "wtype" and not which("wtype"):
-            continue
-        if spec.backend == "ydotool" and not which("ydotool"):
-            continue
-        if spec.backend == "xdotool" and not which("xdotool"):
-            continue
-        for command in build_paste_commands_for_backend(spec.backend, resolved):
+        for command in spec.build_commands(which, info):
             commands.append(PasteCommand(spec.backend, command))
     return commands
-
-
-def paste_tools_detail(info: SessionInfo, capability: PasteCapability) -> str:
-    if not capability.ok:
-        return capability.detail
-    if info.system != "Linux":
-        return capability.detail
-    terminal = paste_shortcut_label(TERMINAL_PASTE_SHORTCUT)
-    gui = paste_shortcut_label(GUI_PASTE_SHORTCUT)
-    return (
-        f"{capability.detail}; Linux terminal shortcut={terminal}; GUI shortcut={gui}"
-    )
 
 
 def resolve_paste_capability(
