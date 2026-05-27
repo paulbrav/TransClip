@@ -109,19 +109,22 @@ class DoctorTests(unittest.TestCase):
         self.assertIn("wtype", check.detail)
 
     def test_wayland_paste_check_accepts_ydotool_fallback(self):
-        completed = type(
-            "Completed",
-            (),
-            {
-                "returncode": 1,
-                "stdout": "Compositor does not support the virtual keyboard protocol\n",
-            },
-        )()
+        def run(command, **_kwargs):
+            if command[0] == "wtype":
+                return type(
+                    "Completed",
+                    (),
+                    {
+                        "returncode": 1,
+                        "stdout": "Compositor does not support the virtual keyboard protocol\n",
+                    },
+                )()
+            self.fail(f"paste tool check should not inject with {command[0]}")
 
         runtime = FakeRuntime(
             env={"XDG_SESSION_TYPE": "wayland"},
             available={"wtype": "/usr/bin/wtype", "ydotool": "/usr/bin/ydotool"},
-            run_func=lambda _command, **_kwargs: completed,
+            run_func=run,
         )
         check = check_paste_tools(runtime)
 

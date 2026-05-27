@@ -1,3 +1,4 @@
+import subprocess
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -9,8 +10,12 @@ from transclip.desktop.paste import (
     paste_capability,
     paste_commands,
     paste_transcript,
+    run_paste_command,
 )
-from transclip.desktop.paste.platform import paste_specs
+from transclip.desktop.paste.platform import (
+    WTYPE_TERMINAL_PASTE_COMMAND,
+    paste_specs,
+)
 from transclip.platform.capabilities import session_info
 from transclip.settings import Settings
 
@@ -160,6 +165,25 @@ class PasteTests(unittest.TestCase):
 
         self.assertEqual(injector.backend_name, "ydotool")
 
+    def test_wayland_system_injector_falls_back_to_ydotool_when_wtype_paste_fails(self):
+        def run(command, **_kwargs):
+            if command[0] == "wtype":
+                return type("Completed", (), {"returncode": 1, "stdout": "wtype paste failed"})()
+            return type("Completed", (), {"returncode": 0, "stdout": ""})()
+
+        runtime = FakeRuntime(
+            env={"XDG_SESSION_TYPE": "wayland"},
+            available={
+                "wtype": "/usr/bin/wtype",
+                "ydotool": "/usr/bin/ydotool",
+            },
+            run_func=run,
+        )
+        injector = SystemPasteInjector(runtime)
+        self.assertTrue(injector.paste())
+
+        self.assertEqual(injector.backend_name, "ydotool")
+
     def test_linux_paste_commands_use_terminal_text_paste_shortcut(self):
         def which(name):
             return f"/usr/bin/{name}"
@@ -172,6 +196,26 @@ class PasteTests(unittest.TestCase):
 
         self.assertIn(["ydotool", "key", "ctrl+shift+v"], [command.command for command in wayland_commands])
         self.assertIn(["xdotool", "key", "ctrl+shift+v"], [command.command for command in x11_commands])
+
+    def test_wayland_wtype_command_uses_key_event_for_terminal_text_paste(self):
+        def which(name):
+            return f"/usr/bin/{name}"
+
+        info = session_info(environ={"XDG_SESSION_TYPE": "wayland"}, system="Linux")
+        command = paste_commands(which=which, info=info)[0].command
+
+        self.assertEqual(command, list(WTYPE_TERMINAL_PASTE_COMMAND))
+
+    def test_ydotool_uses_shortcut_chord_not_raw_key_events(self):
+        def which(name):
+            return f"/usr/bin/{name}" if name == "ydotool" else None
+
+        info = session_info(environ={"XDG_SESSION_TYPE": "wayland"}, system="Linux")
+        commands = [command.command for command in paste_commands(which=which, info=info)]
+
+        self.assertEqual(commands, [["ydotool", "key", "ctrl+shift+v"]])
+        self.assertFalse(any(":" in token for command in commands for token in command))
+        self.assertFalse(any("--delay" in command for command in commands))
 
     def test_system_injector_reports_runtime_failure(self):
         def run(_command, **_kwargs):
@@ -265,6 +309,16 @@ class PasteTests(unittest.TestCase):
 
         commands = paste_commands(which=which, info=info)
         self.assertEqual(commands[0].backend, "wtype")
+
+    def test_run_paste_command_reports_timeout(self):
+        def run(command, **_kwargs):
+            raise subprocess.TimeoutExpired(command, 5)
+
+        runtime = FakeRuntime(run_func=run)
+
+        error = run_paste_command(["wtype", "-k", "v"], runtime=runtime)
+
+        self.assertEqual(error, "wtype paste command timed out after 5s")
 
 
 

@@ -22,7 +22,9 @@ X11, environment variables, user paths, executable discovery, and subprocess
 command execution.
 
 **Paste capability**: The current ability to place transcript text on the
-clipboard and inject a paste action into the focused application. Capability is
+clipboard and inject a paste action into the focused application. Linux
+terminal paste uses `Ctrl+Shift+V`; Wayland tries `wtype` first and falls back
+to `ydotool` when the compositor rejects virtual keyboard events. Capability is
 determined by the platform runtime, available clipboard tools, available input
 injection tools, and any desktop permissions those tools require.
 

@@ -14,8 +14,24 @@ Which = Callable[[str], str | None]
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
 TERMINAL_PASTE_SHORTCUT = "ctrl+shift+v"
-WTYPE_TERMINAL_PASTE_COMMAND = ("wtype", "-M", "ctrl", "-M", "shift", "v", "-m", "shift", "-m", "ctrl")
+WTYPE_TERMINAL_PASTE_COMMAND = (
+    "wtype",
+    "-s",
+    "50",
+    "-M",
+    "ctrl",
+    "-M",
+    "shift",
+    "-k",
+    "v",
+    "-m",
+    "shift",
+    "-m",
+    "ctrl",
+)
 SENDINPUT_PASTE_BACKEND = "sendinput"
+WTYPE_PROBE_COMMAND = ("wtype", "-M", "ctrl", "-m", "ctrl")
+WTYPE_PROBE_TIMEOUT_SECONDS = 2.0
 
 
 def _win32_read_clipboard() -> str:
@@ -183,13 +199,17 @@ def _wayland_paste_specs() -> Sequence[PasteSpec]:
 
         if not which("wtype"):
             return None
-        result = runner(
-            ["wtype", "-M", "ctrl", "-m", "ctrl"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            check=False,
-        )
+        try:
+            result = runner(
+                list(WTYPE_PROBE_COMMAND),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                check=False,
+                timeout=WTYPE_PROBE_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            return PasteCapability(False, "wtype probe timed out")
         if result.returncode == 0:
             return PasteCapability(True, "wtype found and compositor accepts virtual keyboard events", "wtype")
         detail = result.stdout.strip() or f"exit status {result.returncode}"

@@ -18,6 +18,8 @@ from .platform import (
 
 Which = Callable[[str], str | None]
 
+PASTE_COMMAND_TIMEOUT_SECONDS = 5.0
+
 
 class Clipboard(Protocol):
     def read(self) -> str: ...
@@ -242,13 +244,20 @@ def paste_capability(
 
 
 def run_paste_command(command: list[str], runtime: PlatformRuntime | None = None) -> str | None:
-    result = get_runtime(runtime).run(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        check=False,
-    )
+    try:
+        result = get_runtime(runtime).run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=False,
+            timeout=PASTE_COMMAND_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return (
+            f"{command[0]} paste command timed out after "
+            f"{PASTE_COMMAND_TIMEOUT_SECONDS:g}s"
+        )
     if result.returncode == 0:
         return None
     detail = result.stdout.strip() or f"exit status {result.returncode}"
