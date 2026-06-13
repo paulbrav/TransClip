@@ -4,6 +4,7 @@ import ctypes
 import functools
 import platform
 import time
+from collections.abc import Callable
 from ctypes import wintypes
 
 CF_UNICODETEXT = 13
@@ -12,6 +13,13 @@ INPUT_KEYBOARD = 1
 KEYEVENTF_KEYUP = 0x0002
 VK_CONTROL = 0x11
 VK_V = 0x56
+
+# The clipboard is a single global resource that another process (a clipboard
+# manager, browser, Office, RDP) can hold open for a few milliseconds, making
+# OpenClipboard fail transiently. Retry a bounded number of times before giving
+# up rather than failing the paste outright.
+_OPEN_CLIPBOARD_ATTEMPTS = 10
+_OPEN_CLIPBOARD_RETRY_DELAY_S = 0.015
 
 
 class KEYBDINPUT(ctypes.Structure):
@@ -107,11 +115,25 @@ def _win32_libraries() -> tuple[ctypes.WinDLL, ctypes.WinDLL]:
     return user32, kernel32
 
 
+def _open_clipboard(
+    user32: ctypes.WinDLL,
+    *,
+    attempts: int = _OPEN_CLIPBOARD_ATTEMPTS,
+    sleep: Callable[[float], object] = time.sleep,
+) -> None:
+    """Open the clipboard, retrying transient contention before failing."""
+    for attempt in range(attempts):
+        if user32.OpenClipboard(None):
+            return
+        if attempt + 1 < attempts:
+            sleep(_OPEN_CLIPBOARD_RETRY_DELAY_S)
+    raise RuntimeError(f"OpenClipboard failed after {attempts} attempts")
+
+
 def read_clipboard_text() -> str:
     _require_windows()
     user32, kernel32 = _win32_libraries()
-    if not user32.OpenClipboard(None):
-        raise RuntimeError("OpenClipboard failed")
+    _open_clipboard(user32)
     try:
         handle = user32.GetClipboardData(CF_UNICODETEXT)
         if not handle:
@@ -130,8 +152,7 @@ def read_clipboard_text() -> str:
 def write_clipboard_text(text: str) -> None:
     _require_windows()
     user32, kernel32 = _win32_libraries()
-    if not user32.OpenClipboard(None):
-        raise RuntimeError("OpenClipboard failed")
+    _open_clipboard(user32)
     try:
         if not user32.EmptyClipboard():
             raise RuntimeError("EmptyClipboard failed")
