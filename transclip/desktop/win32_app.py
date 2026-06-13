@@ -12,13 +12,34 @@ unconditionally.
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
+import functools
 from collections.abc import Callable
 from ctypes import wintypes
 
 # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 is a sentinel HANDLE value (-4).
 _PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
 _PROCESS_PER_MONITOR_DPI_AWARE = 2  # shcore PROCESS_DPI_AWARENESS
+_ERROR_ALREADY_EXISTS = 183
+
+# Per-session (Local namespace) mutex name; one interactive tray per login.
+SINGLE_INSTANCE_MUTEX = "TransClip-tray-singleton"
+
+
+@functools.cache
+def _kernel32() -> ctypes.WinDLL:
+    """Private kernel32 handle with use_last_error so get_last_error is reliable.
+
+    Raises AttributeError off Windows (ctypes.WinDLL does not exist there), which
+    the callers catch and degrade to a no-op.
+    """
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+    kernel32.CreateMutexW.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    return kernel32
 
 
 def _set_dpi_context() -> bool:
@@ -67,3 +88,31 @@ def set_dpi_awareness(
     if set_legacy():
         return "system"
     return "unaware"
+
+
+def acquire_single_instance(name: str = SINGLE_INSTANCE_MUTEX) -> int | None:
+    """Acquire a named mutex; return its handle, or None if already held.
+
+    A second ``transclip tray`` would otherwise install a second low-level
+    keyboard hook and make the toggle hotkey fire twice. The handle must be kept
+    alive for the process lifetime (the mutex releases when it is closed or the
+    process exits). Returns None off Windows, where there is nothing to guard.
+    """
+    try:
+        kernel32 = _kernel32()
+    except (AttributeError, OSError):
+        return None
+    handle = kernel32.CreateMutexW(None, False, name)
+    if not handle:
+        return None
+    if ctypes.get_last_error() == _ERROR_ALREADY_EXISTS:
+        kernel32.CloseHandle(handle)
+        return None
+    return handle
+
+
+def release_single_instance(handle: int | None) -> None:
+    if not handle:
+        return
+    with contextlib.suppress(AttributeError, OSError):
+        _kernel32().CloseHandle(handle)
