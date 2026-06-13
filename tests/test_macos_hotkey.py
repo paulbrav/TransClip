@@ -195,6 +195,52 @@ esac
         self.assertIn("event tap re-enabled", source)
         self.assertIn("event tap listening for Option+Space", source)
 
+    def test_hotkey_source_consumes_shortcut_gesture_without_repeating(self):
+        source = build_macos_hotkey_source(
+            Path("/Users/test/bin/transclip-toggle"),
+            Path("/Users/test/Library/Logs/transclip/hotkey.log"),
+            Path("/Users/test/Library/Logs/transclip/hotkey-state.tsv"),
+        )
+
+        self.assertIn(
+            'process.executableURL = URL(fileURLWithPath: wrapperPath)',
+            source,
+        )
+        self.assertNotIn('process.executableURL = URL(fileURLWithPath: "/bin/sh")', source)
+        self.assertNotIn('process.arguments = ["-lc", wrapperPath]', source)
+        self.assertIn(
+            """CGEventMask(1 << CGEventType.keyDown.rawValue) |
+    CGEventMask(1 << CGEventType.keyUp.rawValue)""",
+            source,
+        )
+        self.assertIn(
+            """if type == .keyUp && keyCode == spaceKeyCode && shortcutIsActive {
+        shortcutIsActive = false
+        return nil
+    }""",
+            source,
+        )
+        self.assertIn(
+            """if keyCode == spaceKeyCode && shortcutIsActive {
+        return nil
+    }""",
+            source,
+        )
+        self.assertIn(
+            """shortcutIsActive = false
+    CGEvent.tapEnable(tap: tap, enable: true)""",
+            source,
+        )
+        self.assertIn(
+            """if isAutoRepeat {
+            return nil
+        }
+        shortcutIsActive = true
+        log("Option+Space detected")
+        runWrapper()""",
+            source,
+        )
+
     def test_installer_writes_helper_app_launch_agent_and_wrapper(self):
         calls = []
 

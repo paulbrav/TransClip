@@ -120,6 +120,27 @@ class ASRTests(unittest.TestCase):
         self.assertIn("audio_prepare", second.timings_ms)
         self.assertIn("generate_write", second.timings_ms)
 
+    def test_mlx_audio_preserves_empty_structured_transcript(self):
+        backend = MlxAudioASRBackend(
+            "mlx-community/example",
+            Settings(language="en"),
+            local_files_only=False,
+        )
+        backend.audio_preparer = SimpleNamespace(
+            prepare=lambda path: SimpleNamespace(wav_path=path, sample_rate=16000, temporary=False)
+        )
+
+        with (
+            patch("transclip.asr.load_mlx_model", return_value=object()),
+            patch(
+                "transclip.asr.generate_transcription",
+                return_value=SimpleNamespace(text=""),
+            ),
+        ):
+            result = backend.transcribe(Path("silent.wav"))
+
+        self.assertEqual(result.text, "")
+
     def test_non_granite_model_is_rejected(self):
         with self.assertRaises(ValueError):
             build_asr_backend(Settings(asr_model="openai/whisper-tiny"))

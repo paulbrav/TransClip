@@ -38,7 +38,11 @@ jobs:
       - name: Unit tests
         run: uv run python -m tests
       - name: MLX import smoke
-        run: uv run python -c "import platform, mlx; from mlx_audio.stt.generate import generate_transcription; print(platform.machine(), generate_transcription)"
+        run: uv run python -c "import platform, mlx; import mlx_audio.stt.models.granite_speech_nar; from mlx_audio.stt.generate import generate_transcription; print(platform.machine(), generate_transcription)"
+      - name: macOS hotkey Swift typecheck
+        run: |
+          uv run python -c "from pathlib import Path; from transclip.desktop.hotkey.macos import build_macos_hotkey_source; Path('/tmp/TransClipHotkey.swift').write_text(build_macos_hotkey_source(Path('/tmp/transclip-toggle'), Path('/tmp/hotkey.log'), Path('/tmp/hotkey-state.tsv')), encoding='utf-8')"
+          xcrun swiftc -typecheck /tmp/TransClipHotkey.swift
 
   windows:
     runs-on: windows-latest

@@ -367,7 +367,8 @@ class MlxAudioASRBackend:
                             output_stem,
                             language=self.settings.language if self.settings else None,
                         )
-                    text = getattr(result, "text", None) or str(result)
+                    result_text = getattr(result, "text", None)
+                    text = str(result) if result_text is None else str(result_text)
             finally:
                 if audio is not None and getattr(audio, "temporary", False):
                     audio.wav_path.unlink(missing_ok=True)
