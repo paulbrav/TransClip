@@ -18,6 +18,8 @@ import functools
 from collections.abc import Callable
 from ctypes import wintypes
 
+from transclip.product import APP_USER_MODEL_ID
+
 # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 is a sentinel HANDLE value (-4).
 _PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
 _PROCESS_PER_MONITOR_DPI_AWARE = 2  # shcore PROCESS_DPI_AWARENESS
@@ -88,6 +90,23 @@ def set_dpi_awareness(
     if set_legacy():
         return "system"
     return "unaware"
+
+
+def set_app_user_model_id(aumid: str = APP_USER_MODEL_ID) -> bool:
+    """Give the process an explicit AppUserModelID for the Windows shell.
+
+    Without one, the shell derives an implicit identity from the host
+    executable (python.exe/pythonw.exe), which groups TransClip under Python on
+    the taskbar and misattributes notifications. Must be called before any
+    window is created. Returns True on success (S_OK).
+    """
+    try:
+        shell32 = ctypes.windll.shell32
+        shell32.SetCurrentProcessExplicitAppUserModelID.argtypes = [wintypes.LPCWSTR]
+        shell32.SetCurrentProcessExplicitAppUserModelID.restype = ctypes.c_long  # HRESULT
+        return shell32.SetCurrentProcessExplicitAppUserModelID(aumid) == 0
+    except (AttributeError, OSError):
+        return False
 
 
 def acquire_single_instance(name: str = SINGLE_INSTANCE_MUTEX) -> int | None:

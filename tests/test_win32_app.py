@@ -48,14 +48,39 @@ class DpiAwarenessLiveTests(unittest.TestCase):
         self.assertEqual(awareness, 2)
 
 
-@unittest.skipIf(sys.platform == "win32", "CreateMutexW only exists on Windows")
-class SingleInstanceOffWindowsTests(unittest.TestCase):
+@unittest.skipIf(sys.platform == "win32", "Win32-only APIs")
+class Win32AppOffWindowsTests(unittest.TestCase):
     def test_acquire_is_noop_off_windows(self) -> None:
         from transclip.desktop.win32_app import acquire_single_instance
 
         # Single-instance is only enforced on Windows; elsewhere it degrades to
         # None so it never blocks a non-Windows caller.
         self.assertIsNone(acquire_single_instance("anything"))
+
+    def test_set_app_user_model_id_is_noop_off_windows(self) -> None:
+        from transclip.desktop.win32_app import set_app_user_model_id
+
+        self.assertFalse(set_app_user_model_id("com.example.Test"))
+
+
+@unittest.skipUnless(sys.platform == "win32", "exercises the real shell32 AUMID API")
+class AppUserModelIdLiveTests(unittest.TestCase):
+    def test_sets_explicit_app_user_model_id(self) -> None:
+        import ctypes
+        from ctypes import wintypes
+
+        from transclip.desktop.win32_app import set_app_user_model_id
+
+        aumid = "com.paulbrav.TransClip.Test"
+        self.assertTrue(set_app_user_model_id(aumid))
+
+        shell32 = ctypes.windll.shell32
+        shell32.GetCurrentProcessExplicitAppUserModelID.argtypes = [ctypes.POINTER(wintypes.LPWSTR)]
+        shell32.GetCurrentProcessExplicitAppUserModelID.restype = ctypes.c_long
+        ptr = wintypes.LPWSTR()
+        hr = shell32.GetCurrentProcessExplicitAppUserModelID(ctypes.byref(ptr))
+        self.assertEqual(hr, 0)
+        self.assertEqual(ptr.value, aumid)
 
 
 @unittest.skipUnless(sys.platform == "win32", "exercises the real named mutex")
