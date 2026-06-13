@@ -15,25 +15,34 @@ class RefDrivenMenuView:
         set_item_enabled: Callable[[Any, bool], None],
         rebuild_history: Callable[[Sequence[tuple[str, str]]], None],
         set_health_icon: Callable[[str], None],
+        on_updated: Callable[[], None] | None = None,
     ) -> None:
         self._menu_refs = menu_refs
         self._set_item_label = set_item_label
         self._set_item_enabled = set_item_enabled
         self._rebuild_history = rebuild_history
         self._set_health_icon = set_health_icon
+        # Mutating-in-place updates the live menu on GTK/macOS, but pystray menu
+        # items are immutable: the win32 adapter updates backing state and must
+        # repaint via this hook (icon.update_menu()). Defaults to a no-op.
+        self._on_updated = on_updated or (lambda: None)
 
     def set_label(self, ref: str, text: str) -> None:
         self._set_item_label(self._menu_refs[ref], text)
+        self._on_updated()
 
     def set_enabled(self, ref: str, enabled: bool) -> None:
         self._set_item_enabled(self._menu_refs[ref], enabled)
+        self._on_updated()
 
     def set_model_labels(self, rows: Sequence[tuple[Any, str]]) -> None:
         for item, label in rows:
             self._set_item_label(item, label)
+        self._on_updated()
 
     def rebuild_history(self, entries: Sequence[tuple[str, str]]) -> None:
         self._rebuild_history(entries)
+        self._on_updated()
 
     def set_health_icon(self, icon: str) -> None:
         self._set_health_icon(icon)

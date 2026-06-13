@@ -93,12 +93,20 @@ def run_windows_tray(
         if icon_obj is not None:
             icon_obj.icon = build_image(icon)
 
+    def refresh_menu_display() -> None:
+        # pystray items are immutable; the setters above update backing state,
+        # so the menu must be repainted for the new labels/enabled to show.
+        icon_obj = icon_holder["icon"]
+        if icon_obj is not None:
+            icon_obj.update_menu()
+
     menu_view = RefDrivenMenuView(
         menu_refs,
         set_item_label=lambda item, text: setattr(item, "text", text),
         set_item_enabled=lambda item, enabled: setattr(item, "enabled", enabled),
         rebuild_history=rebuild_history,
         set_health_icon=set_health_icon,
+        on_updated=refresh_menu_display,
     )
     controller = TrayController(
         session,

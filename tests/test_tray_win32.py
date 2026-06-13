@@ -112,6 +112,27 @@ class PystrayMenuSinkActionTests(unittest.TestCase):
 
         self.assertIsNotNone(menu)
 
+    def test_status_label_is_updatable_after_creation(self) -> None:
+        # pystray MenuItem.text is read-only; the menu refresh updates the
+        # backing state and the item must re-read it.
+        sink, items, refs = self._sink()
+        sink.status_label("status_item", "Service: starting")
+
+        self.assertEqual(items[0].text, "Service: starting")
+        refs["status_item"].text = "Service: ready"  # what the view's setter does
+        self.assertEqual(items[0].text, "Service: ready")
+
+    def test_action_item_label_and_enabled_are_updatable(self) -> None:
+        sink, items, refs = self._sink()
+        sink.action("toggle_item", "Record", None, enabled=True, callback=lambda *_: None)
+
+        self.assertEqual(items[0].text, "Record")
+        self.assertTrue(items[0].enabled)
+        refs["toggle_item"].text = "Stop + paste"
+        refs["toggle_item"].enabled = False
+        self.assertEqual(items[0].text, "Stop + paste")
+        self.assertFalse(items[0].enabled)
+
 
 if __name__ == "__main__":
     unittest.main()
