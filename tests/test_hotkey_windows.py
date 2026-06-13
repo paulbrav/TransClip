@@ -35,6 +35,28 @@ class HotkeyWindowsTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "only available on Windows"):
             start_windows_hotkey(lambda: None, Settings(), runtime)
 
+    def test_is_valid_hotkey_accepts_parseable_and_rejects_garbage(self):
+        keyboard = types.ModuleType("keyboard")
+
+        def parse_hotkey(binding):
+            if not binding or "!" in binding:
+                raise ValueError(f"unparseable hotkey {binding!r}")
+            return [[(29, "ctrl")]]
+
+        keyboard.parse_hotkey = parse_hotkey
+        with patch.dict(sys.modules, {"keyboard": keyboard}):
+            from transclip.desktop.hotkey.windows import is_valid_hotkey
+
+            self.assertTrue(is_valid_hotkey("ctrl+shift+space"))
+            self.assertFalse(is_valid_hotkey("definitely not a hotkey!!"))
+            self.assertFalse(is_valid_hotkey(""))
+
+    def test_is_valid_hotkey_false_when_keyboard_missing(self):
+        with patch.dict(sys.modules, {"keyboard": None}):
+            from transclip.desktop.hotkey.windows import is_valid_hotkey
+
+            self.assertFalse(is_valid_hotkey("ctrl+shift+space"))
+
 
 if __name__ == "__main__":
     unittest.main()
