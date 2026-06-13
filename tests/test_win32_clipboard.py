@@ -36,7 +36,7 @@ class Win32ClipboardTests(unittest.TestCase):
         user32.GetClipboardData.return_value = 42
         kernel32.GlobalLock.return_value = ctypes.c_wchar_p("hello clipboard").value
 
-        with patch.object(ctypes, "windll", MagicMock(user32=user32, kernel32=kernel32), create=True):
+        with patch("transclip.desktop.paste.win32._win32_libraries", return_value=(user32, kernel32)):
             text = read_clipboard_text()
 
         self.assertEqual(text, "hello clipboard")
@@ -52,7 +52,7 @@ class Win32ClipboardTests(unittest.TestCase):
         kernel32.GlobalAlloc.return_value = 99
         kernel32.GlobalLock.return_value = ctypes.create_string_buffer(64)
 
-        with patch.object(ctypes, "windll", MagicMock(user32=user32, kernel32=kernel32), create=True):
+        with patch("transclip.desktop.paste.win32._win32_libraries", return_value=(user32, kernel32)):
             write_clipboard_text("saved")
 
         user32.SetClipboardData.assert_called_once()
@@ -64,7 +64,7 @@ class Win32ClipboardTests(unittest.TestCase):
         user32 = MagicMock()
         user32.SendInput.return_value = 4
 
-        with patch.object(ctypes, "windll", MagicMock(user32=user32), create=True):
+        with patch("transclip.desktop.paste.win32._win32_libraries", return_value=(user32, MagicMock())):
             send_ctrl_v_paste()
 
         user32.SendInput.assert_called_once()
@@ -96,6 +96,20 @@ class Win32ClipboardLiveTests(unittest.TestCase):
     def test_empty_string_round_trip(self) -> None:
         write_clipboard_text("")
         self.assertEqual(read_clipboard_text(), "")
+
+    def test_clipboard_calls_do_not_mutate_global_windll(self) -> None:
+        # ctypes.windll caches one function object per name for the whole
+        # process; other libraries depend on its default configuration. Our
+        # prototype setup must live on a private handle, not mutate this one.
+        fn = ctypes.windll.user32.GetClipboardData
+        original = fn.restype
+        fn.restype = ctypes.c_int
+        try:
+            write_clipboard_text("hygiene check")
+            read_clipboard_text()
+            self.assertIs(fn.restype, ctypes.c_int)
+        finally:
+            fn.restype = original
 
 
 class Win32InputStructTests(unittest.TestCase):

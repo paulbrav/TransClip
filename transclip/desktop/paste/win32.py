@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import ctypes
+import functools
 import platform
 import time
 from ctypes import wintypes
-
-if not hasattr(wintypes, "WWORD"):
-    wintypes.WWORD = wintypes.WORD
 
 CF_UNICODETEXT = 13
 GMEM_MOVEABLE = 0x0002
@@ -19,7 +17,7 @@ VK_V = 0x56
 class KEYBDINPUT(ctypes.Structure):
     _fields_ = [
         ("wVk", wintypes.WORD),
-        ("wScan", wintypes.WWORD),
+        ("wScan", wintypes.WORD),
         ("dwFlags", wintypes.DWORD),
         ("time", wintypes.DWORD),
         ("dwExtraInfo", ctypes.c_ulonglong),
@@ -65,14 +63,13 @@ def _require_windows() -> None:
         raise RuntimeError("Win32 clipboard APIs are only available on Windows")
 
 
-def _configure_clipboard_prototypes(user32: ctypes.WinDLL, kernel32: ctypes.WinDLL) -> None:
-    """Declare 64-bit-safe argument and return types for the clipboard calls.
+def _configure_prototypes(user32: ctypes.WinDLL, kernel32: ctypes.WinDLL) -> None:
+    """Declare 64-bit-safe argument and return types for the Win32 calls.
 
     Without an explicit ``restype``, ctypes assumes a 32-bit ``int`` return and
     truncates the 64-bit ``HANDLE``/pointer values these functions return. The
     truncated pointer then faults when dereferenced (``GlobalLock`` ->
-    ``wstring_at``). Assignment is idempotent, so configuring per call is cheap
-    and keeps the functions easy to mock.
+    ``wstring_at``).
     """
     user32.OpenClipboard.argtypes = [wintypes.HWND]
     user32.OpenClipboard.restype = wintypes.BOOL
@@ -84,6 +81,8 @@ def _configure_clipboard_prototypes(user32: ctypes.WinDLL, kernel32: ctypes.WinD
     user32.GetClipboardData.restype = wintypes.HANDLE
     user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
     user32.SetClipboardData.restype = wintypes.HANDLE
+    user32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
+    user32.SendInput.restype = wintypes.UINT
     kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
     kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
     kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
@@ -94,11 +93,23 @@ def _configure_clipboard_prototypes(user32: ctypes.WinDLL, kernel32: ctypes.WinD
     kernel32.GlobalFree.restype = wintypes.HGLOBAL
 
 
+@functools.cache
+def _win32_libraries() -> tuple[ctypes.WinDLL, ctypes.WinDLL]:
+    """Bind private ``user32``/``kernel32`` handles with configured prototypes.
+
+    A private ``WinDLL`` keeps our argtypes/restype declarations off the
+    process-global ``ctypes.windll`` cache, whose function objects are shared
+    with any other code in the process that imports them.
+    """
+    user32 = ctypes.WinDLL("user32")
+    kernel32 = ctypes.WinDLL("kernel32")
+    _configure_prototypes(user32, kernel32)
+    return user32, kernel32
+
+
 def read_clipboard_text() -> str:
     _require_windows()
-    user32 = ctypes.windll.user32
-    kernel32 = ctypes.windll.kernel32
-    _configure_clipboard_prototypes(user32, kernel32)
+    user32, kernel32 = _win32_libraries()
     if not user32.OpenClipboard(None):
         raise RuntimeError("OpenClipboard failed")
     try:
@@ -118,9 +129,7 @@ def read_clipboard_text() -> str:
 
 def write_clipboard_text(text: str) -> None:
     _require_windows()
-    user32 = ctypes.windll.user32
-    kernel32 = ctypes.windll.kernel32
-    _configure_clipboard_prototypes(user32, kernel32)
+    user32, kernel32 = _win32_libraries()
     if not user32.OpenClipboard(None):
         raise RuntimeError("OpenClipboard failed")
     try:
@@ -153,7 +162,7 @@ def _keyboard_input(vk: int, *, key_up: bool = False) -> INPUT:
 
 def send_ctrl_v_paste() -> None:
     _require_windows()
-    user32 = ctypes.windll.user32
+    user32, _kernel32 = _win32_libraries()
     inputs = (
         _keyboard_input(VK_CONTROL),
         _keyboard_input(VK_V),
