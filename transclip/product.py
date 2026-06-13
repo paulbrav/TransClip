@@ -17,3 +17,6 @@ LEGACY_SHORTCUT_PATH = "/org/gnome/settings-daemon/plugins/media-keys/custom-key
 FALLBACK_HOTKEY_LINUX = "XF86TouchpadOff"
 TASK_SCHEDULER_NAME = DISPLAY_NAME
 IMPORT_PACKAGE = "transclip"
+# Windows AppUserModelID: shell identity for taskbar grouping and notification
+# attribution. Reverse-DNS style, no spaces, <= 128 chars.
+APP_USER_MODEL_ID = "com.paulbrav.TransClip"

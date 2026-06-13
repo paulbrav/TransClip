@@ -6,7 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from transclip.desktop.hotkey.windows import is_valid_hotkey, start_windows_hotkey
-from transclip.desktop.win32_app import acquire_single_instance, set_dpi_awareness
+from transclip.desktop.win32_app import (
+    acquire_single_instance,
+    set_app_user_model_id,
+    set_dpi_awareness,
+)
 from transclip.platform.runtime import PlatformRuntime
 from transclip.product import DISPLAY_NAME
 from transclip.settings import Settings, patch_settings, settings_path
@@ -38,6 +42,9 @@ def run_windows_tray(
     # Opt into per-monitor-v2 DPI awareness before any window is created so the
     # tray dialog is not bitmap-stretched (blurry) on high-DPI displays.
     set_dpi_awareness()
+    # Identify the process to the shell so the taskbar groups it as TransClip
+    # and notifications are attributed correctly (rather than to python).
+    set_app_user_model_id()
     # A second tray would install a second global hotkey hook and double-fire
     # the toggle. The mutex is held for the life of this process (released on
     # exit), so a plain acquire-and-check is enough.
