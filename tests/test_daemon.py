@@ -1,3 +1,4 @@
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -37,6 +38,25 @@ class DaemonTests(unittest.TestCase):
         self.assertIn(f"-m transclip.cli --settings {settings_path} serve", normalized_unit)
         self.assertIn("Restart=on-failure", unit)
         self.assertIn("FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE", unit)
+
+    @unittest.skipUnless(sys.platform == "win32", "pythonw swap is Windows-only")
+    def test_service_command_uses_pythonw_on_windows(self):
+        from transclip.daemon.common import service_command
+
+        # The logon Task Scheduler service must not flash a console window;
+        # python.exe is a console-subsystem binary, pythonw.exe is not.
+        self.assertEqual(Path(service_command()[0]).name.lower(), "pythonw.exe")
+
+    def test_service_command_keeps_executable_off_windows(self):
+        from transclip.daemon import common
+
+        # The pythonw swap is Windows-only: systemd/launchd want the real
+        # interpreter and have no console-window problem.
+        with (
+            patch.object(common.sys, "platform", "linux"),
+            patch.object(common.sys, "executable", "/usr/bin/python3"),
+        ):
+            self.assertEqual(common.service_command()[0], "/usr/bin/python3")
 
     def test_linux_install_writes_unit_runs_systemctl_and_installs_shortcut(self):
         calls = []
