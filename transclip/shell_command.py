@@ -15,6 +15,10 @@ from .text_generation import TextGenerationBackend
 
 SHELL_SYNTAX_ERROR_CODES = ("SC107", "SC108")
 SHELL_VALIDATION_TIMEOUT_SECONDS = 2.0
+# bash exits 2 from `bash -n` only for an actual syntax error. Any other
+# nonzero means bash could not run the check (e.g. the Windows WSL launcher
+# relaying into a distro with no /bin/bash) - not a verdict on the command.
+BASH_SYNTAX_ERROR_RETURNCODE = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,9 +186,15 @@ def validate_shell_command(
         metadata["bash_returncode"] = completed.returncode
         if completed.stderr.strip():
             metadata["bash_stderr"] = completed.stderr.strip()
-        if completed.returncode != 0:
+        if completed.returncode == BASH_SYNTAX_ERROR_RETURNCODE:
             diagnostics.append(_single_line(completed.stderr) or "bash syntax check failed")
             return ShellValidationResult(False, diagnostics, metadata)
+        if completed.returncode != 0:
+            # bash is present but could not run the check (e.g. the Windows WSL
+            # launcher relaying into a distro with no /bin/bash). We cannot
+            # validate, so skip rather than reject a possibly-valid command -
+            # mirroring the behaviour when bash is not found at all.
+            metadata["bash_nonfunctional"] = True
 
     shellcheck = platform_runtime.which("shellcheck") if settings.shellcheck_enabled else None
     metadata["shellcheck_available"] = bool(shellcheck)

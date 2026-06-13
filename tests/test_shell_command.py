@@ -54,6 +54,23 @@ class ShellCommandTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertIn("syntax error", result.diagnostics[0])
 
+    def test_nonfunctional_bash_skips_validation_instead_of_failing(self):
+        # bash is on PATH but cannot run, e.g. the Windows WSL launcher
+        # (System32\bash.exe) relaying into a distro with no /bin/bash. That
+        # exits 1 (not the syntax-error code 2), so we cannot validate and must
+        # not report a possibly-valid command as invalid Bash.
+        runtime = FakeRuntime(
+            available={"bash": "/usr/bin/bash"},
+            run_func=lambda _command, **_kwargs: completed(
+                1, stderr="<3>WSL (10 - Relay) ERROR: CreateProcessCommon:800: execvpe(/bin/bash) failed"
+            ),
+        )
+
+        result = validate_shell_command("ls -la", Settings(), runtime=runtime)
+
+        self.assertTrue(result.ok)
+        self.assertTrue(result.metadata["bash_nonfunctional"])
+
     def test_shellcheck_syntax_errors_block_but_warnings_do_not(self):
         results = iter(
             [
