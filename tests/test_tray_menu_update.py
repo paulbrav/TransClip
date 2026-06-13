@@ -1,9 +1,11 @@
+import contextlib
 import unittest
 from typing import Any
 from unittest.mock import patch
 
 from transclip.desktop.tray.menu_update import (
     HistoryMenuState,
+    TrayMenuSnapshot,
     after_tray_action,
     apply_menu_snapshot,
     compute_tray_menu_snapshot,
@@ -24,6 +26,12 @@ class RecordingMenuView:
         self.model_labels: list[tuple[Any, str]] = []
         self.history: list[tuple[str, str]] = []
         self.icon: str = ""
+        self.batches = 0
+
+    @contextlib.contextmanager
+    def batch(self):
+        self.batches += 1
+        yield
 
     def set_label(self, ref: str, text: str) -> None:
         self.labels[ref] = text
@@ -39,6 +47,62 @@ class RecordingMenuView:
 
     def set_health_icon(self, icon: str) -> None:
         self.icon = icon
+
+
+class RefDrivenMenuViewBatchTests(unittest.TestCase):
+    def _view(self, repaints):
+        from types import SimpleNamespace
+
+        from transclip.desktop.tray.views import RefDrivenMenuView
+
+        refs = {"status_item": SimpleNamespace(text=""), "partial_item": SimpleNamespace(enabled=True)}
+        view = RefDrivenMenuView(
+            refs,
+            set_item_label=lambda h, t: setattr(h, "text", t),
+            set_item_enabled=lambda h, e: setattr(h, "enabled", e),
+            rebuild_history=lambda _e: None,
+            set_health_icon=lambda _i: None,
+            on_updated=lambda: repaints.append(1),
+        )
+        return view, refs
+
+    def test_batch_coalesces_updates_to_one_repaint(self):
+        repaints: list[int] = []
+        view, refs = self._view(repaints)
+
+        with view.batch():
+            view.set_label("status_item", "a")
+            view.set_label("status_item", "b")
+            view.set_enabled("partial_item", False)
+
+        self.assertEqual(refs["status_item"].text, "b")
+        self.assertFalse(refs["partial_item"].enabled)
+        self.assertEqual(repaints, [1])  # one repaint for the whole batch, not three
+
+    def test_updates_outside_batch_repaint_each_time(self):
+        repaints: list[int] = []
+        view, _ = self._view(repaints)
+
+        view.set_label("status_item", "a")
+        view.set_label("status_item", "b")
+
+        self.assertEqual(repaints, [1, 1])
+
+    def test_apply_menu_snapshot_applies_updates_in_one_batch(self):
+        view = RecordingMenuView()
+        snapshot = TrayMenuSnapshot(
+            status_label="Service: ready",
+            toggle_label="Record",
+            partial_enabled=False,
+            latest_enabled=False,
+            model_cleanup_label="Model cleanup: off",
+            health_icon="ready",
+        )
+
+        apply_menu_snapshot(snapshot, view, model_rows=[])
+
+        self.assertEqual(view.batches, 1)
+        self.assertEqual(view.labels["status_item"], "Service: ready")
 
 
 class TrayMenuUpdateTests(unittest.TestCase):

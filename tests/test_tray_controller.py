@@ -1,3 +1,4 @@
+import contextlib
 import unittest
 from unittest.mock import MagicMock
 
@@ -15,6 +16,10 @@ from tests.service_helpers import FakeRuntime, patch_linux_gpu_runtime
 class RecordingView:
     def __init__(self) -> None:
         self.history: list[tuple[str, str]] = []
+
+    @contextlib.contextmanager
+    def batch(self):
+        yield
 
     def set_label(self, ref: str, text: str) -> None:
         del ref, text
