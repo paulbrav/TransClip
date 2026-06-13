@@ -72,6 +72,31 @@ class Win32ClipboardTests(unittest.TestCase):
         self.assertEqual(sent_count, 4)
 
 
+class OpenClipboardRetryTests(unittest.TestCase):
+    def test_retries_transient_contention_until_success(self) -> None:
+        from transclip.desktop.paste.win32 import _open_clipboard
+
+        user32 = MagicMock()
+        user32.OpenClipboard.side_effect = [0, 0, 1]  # busy, busy, then opened
+        sleeps: list[float] = []
+
+        _open_clipboard(user32, sleep=sleeps.append)
+
+        self.assertEqual(user32.OpenClipboard.call_count, 3)
+        self.assertEqual(len(sleeps), 2)  # slept only between the failed attempts
+
+    def test_raises_after_exhausting_attempts(self) -> None:
+        from transclip.desktop.paste.win32 import _open_clipboard
+
+        user32 = MagicMock()
+        user32.OpenClipboard.return_value = 0  # always busy
+
+        with self.assertRaisesRegex(RuntimeError, "OpenClipboard failed"):
+            _open_clipboard(user32, attempts=4, sleep=lambda _s: None)
+
+        self.assertEqual(user32.OpenClipboard.call_count, 4)
+
+
 @unittest.skipUnless(sys.platform == "win32", "exercises the real Win32 clipboard")
 class Win32ClipboardLiveTests(unittest.TestCase):
     """Round-trip against the real OS clipboard.
