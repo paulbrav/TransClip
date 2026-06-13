@@ -41,12 +41,16 @@ class TrayWin32HotkeyTests(unittest.TestCase):
             patch.object(win32, "is_valid_hotkey", return_value=True),
             patch.object(win32, "patch_settings") as patch_settings_mock,
             patch.object(win32, "settings_path", return_value="cfg"),
+            patch.object(win32, "windows_toast") as toast_mock,
         ):
             win32._apply_hotkey_selection(session, "ctrl+alt+t", restart)
 
         patch_settings_mock.assert_called_once()
         self.assertEqual(patch_settings_mock.call_args.kwargs["hotkey_windows"], "ctrl+alt+t")
         restart.assert_called_once()
+        # The new binding is confirmed with a toast.
+        toast_mock.assert_called_once()
+        self.assertIn("ctrl+alt+t", toast_mock.call_args.args[1])
 
 
 @unittest.skipUnless(sys.platform == "win32", "tray win32 adapter requires pystray/Pillow")
