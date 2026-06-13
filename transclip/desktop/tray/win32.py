@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from transclip.desktop.hotkey.windows import start_windows_hotkey
+from transclip.desktop.hotkey.windows import is_valid_hotkey, start_windows_hotkey
 from transclip.platform.runtime import PlatformRuntime
 from transclip.product import DISPLAY_NAME
 from transclip.settings import Settings, patch_settings, settings_path
@@ -17,6 +17,16 @@ from .menu_update import HistoryMenuState
 from .session import TraySession
 from .sinks.win32 import PystrayMenuSink
 from .views import RefDrivenMenuView
+
+
+def health_icon_color(name: str) -> str:
+    """Tray icon fill for a health state, with a safe fallback.
+
+    build_image runs inside the pystray event loop, so a KeyError here (e.g. a
+    health state added later that this map does not know) would crash the tray
+    rather than just show the wrong color.
+    """
+    return {"recording": "red", "ready": "green", "offline": "orange"}.get(name, "gray")
 
 
 def run_windows_tray(
@@ -42,8 +52,7 @@ def run_windows_tray(
     history_state = HistoryMenuState(signature=object())
 
     def build_image(icon_name: str):
-        color = {"recording": "red", "ready": "green", "offline": "orange"}[icon_name]
-        image = Image.new("RGB", (64, 64), color)
+        image = Image.new("RGB", (64, 64), health_icon_color(icon_name))
         draw = ImageDraw.Draw(image)
         draw.ellipse((16, 16, 48, 48), fill="white")
         return image
@@ -150,11 +159,24 @@ def _set_hotkey_dialog(session: TraySession, restart_hotkey: Callable[[], None])
         parent=root,
     )
     root.destroy()
-    if not value:
+    _apply_hotkey_selection(session, value, restart_hotkey)
+
+
+def _apply_hotkey_selection(
+    session: TraySession,
+    candidate: str | None,
+    restart_hotkey: Callable[[], None],
+) -> None:
+    if not candidate or not candidate.strip():
         session.set_detail("Hotkey was not changed")
         return
+    binding = candidate.strip()
+    if not is_valid_hotkey(binding):
+        # Reject before persisting: an unparseable binding would otherwise be
+        # saved and then crash keyboard.add_hotkey on the next registration.
+        session.set_detail(f"Invalid hotkey {binding!r}; keeping {session.settings.hotkey_windows!r}")
+        return
     path = session.explicit_settings_path or settings_path()
-    binding = value.strip()
     session.settings = patch_settings(path, hotkey_windows=binding)
     restart_hotkey()
     session.set_detail(f"Hotkey set to {binding}")
