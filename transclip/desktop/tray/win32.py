@@ -6,8 +6,10 @@ from pathlib import Path
 from typing import Any
 
 from transclip.desktop.hotkey.windows import is_valid_hotkey, start_windows_hotkey
+from transclip.desktop.notifications import register_toast_app_id, windows_toast
 from transclip.desktop.win32_app import (
     acquire_single_instance,
+    release_single_instance,
     set_app_user_model_id,
     set_dpi_awareness,
 )
@@ -45,10 +47,12 @@ def run_windows_tray(
     # Identify the process to the shell so the taskbar groups it as TransClip
     # and notifications are attributed correctly (rather than to python).
     set_app_user_model_id()
+    register_toast_app_id()
     # A second tray would install a second global hotkey hook and double-fire
-    # the toggle. The mutex is held for the life of this process (released on
-    # exit), so a plain acquire-and-check is enough.
-    if acquire_single_instance() is None:
+    # the toggle. Hold the mutex for the lifetime of this run and release it on
+    # every exit path so the guard is re-entrant across runs.
+    instance = acquire_single_instance()
+    if instance is None:
         print("TransClip tray is already running.", file=sys.stderr)
         return 0
     try:
@@ -60,6 +64,7 @@ def run_windows_tray(
             "uv sync --extra windows-ui or pip install 'transclip[windows-ui]'",
             file=sys.stderr,
         )
+        release_single_instance(instance)
         return 1
 
     session = TraySession(settings, explicit_settings_path, runtime)
@@ -157,6 +162,7 @@ def run_windows_tray(
         stop = hotkey_holder["stop"]
         if stop is not None:
             stop()
+        release_single_instance(instance)
     return 0
 
 
@@ -197,3 +203,4 @@ def _apply_hotkey_selection(
     session.settings = patch_settings(path, hotkey_windows=binding)
     restart_hotkey()
     session.set_detail(f"Hotkey set to {binding}")
+    windows_toast(DISPLAY_NAME, f"Hotkey set to {binding}")
