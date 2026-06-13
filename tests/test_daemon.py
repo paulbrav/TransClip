@@ -277,18 +277,38 @@ class DaemonTests(unittest.TestCase):
             self.assertTrue(any("ctrl+shift+space" in result.detail for result in results))
             self.assertTrue(any("prefetch" in result.detail for result in results))
 
-    def test_windows_service_state_reports_running_task(self):
+    def test_windows_service_state_detects_running_task_in_any_locale(self):
         runtime = FakeRuntime(
             system="Windows",
             home=Path("C:/Users/test"),
             env={"LOCALAPPDATA": "C:/Users/test/AppData/Local"},
         )
 
-        def running(_command, **_kwargs):
-            return type("Completed", (), {"returncode": 0, "stdout": "Status: Running"})()
+        def runner(command, **_kwargs):
+            if command and "powershell" in command[0].lower():
+                # MSFT_ScheduledTask.State enum is numeric: Running == 4.
+                return type("Completed", (), {"returncode": 0, "stdout": "4"})()
+            # schtasks prints a localized status on non-English Windows; relying
+            # on it would report the task inactive even while it is running.
+            return type("Completed", (), {"returncode": 0, "stdout": "Status: Wird ausgeführt"})()
 
-        state = service_state(runner=running, runtime=runtime)
-        self.assertTrue(state.active)
+        self.assertTrue(service_state(runner=runner, runtime=runtime).active)
+
+    def test_windows_service_state_reports_ready_task_as_inactive(self):
+        runtime = FakeRuntime(
+            system="Windows",
+            home=Path("C:/Users/test"),
+            env={"LOCALAPPDATA": "C:/Users/test/AppData/Local"},
+        )
+
+        def runner(command, **_kwargs):
+            if command and "powershell" in command[0].lower():
+                return type("Completed", (), {"returncode": 0, "stdout": "3"})()  # Ready, not Running
+            return type("Completed", (), {"returncode": 0, "stdout": "TaskName: \\TransClip"})()
+
+        state = service_state(runner=runner, runtime=runtime)
+        self.assertTrue(state.installed)
+        self.assertFalse(state.active)
 
     def test_windows_service_action_runs_schtasks(self):
         calls = []
@@ -330,11 +350,17 @@ class DaemonTests(unittest.TestCase):
             [normalize_path_text(str(part)) for part in command],
         )
 
-    def test_windows_service_state_ignores_running_substring_without_status_line(self):
-        from transclip.daemon.windows import _windows_task_reports_running
+    def test_windows_task_state_parses_numeric_enum(self):
+        from transclip.daemon.windows import _windows_task_state
 
-        self.assertFalse(_windows_task_reports_running("Last Result: Running tasks only"))
-        self.assertTrue(_windows_task_reports_running("Status: Running"))
+        def running(_command, **_kwargs):
+            return type("Completed", (), {"returncode": 0, "stdout": "4\n"})()
+
+        def missing(_command, **_kwargs):
+            return type("Completed", (), {"returncode": 1, "stdout": ""})()
+
+        self.assertEqual(_windows_task_state(running), 4)
+        self.assertIsNone(_windows_task_state(missing))
 
     def test_install_daemon_passes_settings_to_platform_backend(self):
         from transclip.daemon.common import CommandResult
