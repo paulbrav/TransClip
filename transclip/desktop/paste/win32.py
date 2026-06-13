@@ -42,10 +42,40 @@ def _require_windows() -> None:
         raise RuntimeError("Win32 clipboard APIs are only available on Windows")
 
 
+def _configure_clipboard_prototypes(user32: ctypes.WinDLL, kernel32: ctypes.WinDLL) -> None:
+    """Declare 64-bit-safe argument and return types for the clipboard calls.
+
+    Without an explicit ``restype``, ctypes assumes a 32-bit ``int`` return and
+    truncates the 64-bit ``HANDLE``/pointer values these functions return. The
+    truncated pointer then faults when dereferenced (``GlobalLock`` ->
+    ``wstring_at``). Assignment is idempotent, so configuring per call is cheap
+    and keeps the functions easy to mock.
+    """
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.OpenClipboard.restype = wintypes.BOOL
+    user32.CloseClipboard.argtypes = []
+    user32.CloseClipboard.restype = wintypes.BOOL
+    user32.EmptyClipboard.argtypes = []
+    user32.EmptyClipboard.restype = wintypes.BOOL
+    user32.GetClipboardData.argtypes = [wintypes.UINT]
+    user32.GetClipboardData.restype = wintypes.HANDLE
+    user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+    user32.SetClipboardData.restype = wintypes.HANDLE
+    kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+    kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalLock.restype = wintypes.LPVOID
+    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalUnlock.restype = wintypes.BOOL
+    kernel32.GlobalFree.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalFree.restype = wintypes.HGLOBAL
+
+
 def read_clipboard_text() -> str:
     _require_windows()
     user32 = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
+    _configure_clipboard_prototypes(user32, kernel32)
     if not user32.OpenClipboard(None):
         raise RuntimeError("OpenClipboard failed")
     try:
@@ -67,6 +97,7 @@ def write_clipboard_text(text: str) -> None:
     _require_windows()
     user32 = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
+    _configure_clipboard_prototypes(user32, kernel32)
     if not user32.OpenClipboard(None):
         raise RuntimeError("OpenClipboard failed")
     try:
