@@ -455,8 +455,7 @@ Timer.scheduledTimer(
 func runWrapper() {
     hotkeyStatus.setStatus("shortcut", "Shortcut received")
     let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/bin/sh")
-    process.arguments = ["-lc", wrapperPath]
+    process.executableURL = URL(fileURLWithPath: wrapperPath)
     do {
         try process.run()
         log("launched wrapper pid=\\(process.processIdentifier)")
@@ -473,6 +472,7 @@ if !trusted {
 }
 
 var activeEventTap: CFMachPort?
+var shortcutIsActive = false
 
 func reenableEventTap() {
     guard let tap = activeEventTap else {
@@ -480,6 +480,7 @@ func reenableEventTap() {
         return
     }
 
+    shortcutIsActive = false
     CGEvent.tapEnable(tap: tap, enable: true)
     log("event tap re-enabled")
 }
@@ -491,17 +492,37 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
         return Unmanaged.passUnretained(event)
     }
 
-    guard type == .keyDown else {
+    guard type == .keyDown || type == .keyUp else {
         return Unmanaged.passUnretained(event)
     }
 
     let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+
+    if type == .keyUp && keyCode == spaceKeyCode && shortcutIsActive {
+        shortcutIsActive = false
+        return nil
+    }
+
+    guard type == .keyDown else {
+        return Unmanaged.passUnretained(event)
+    }
+
+    let isAutoRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+
+    if keyCode == spaceKeyCode && shortcutIsActive {
+        return nil
+    }
+
     let flags = event.flags
     let hasOption = flags.contains(.maskAlternate)
     let hasCommand = flags.contains(.maskCommand)
     let hasControl = flags.contains(.maskControl)
 
     if keyCode == spaceKeyCode && hasOption && !hasCommand && !hasControl {
+        if isAutoRepeat {
+            return nil
+        }
+        shortcutIsActive = true
         log("Option+Space detected")
         runWrapper()
         return nil
@@ -510,7 +531,8 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
     return Unmanaged.passUnretained(event)
 }
 
-let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
+let mask = CGEventMask(1 << CGEventType.keyDown.rawValue) |
+    CGEventMask(1 << CGEventType.keyUp.rawValue)
 guard let eventTap = CGEvent.tapCreate(
     tap: .cgSessionEventTap,
     place: .headInsertEventTap,
