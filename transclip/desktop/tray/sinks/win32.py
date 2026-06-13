@@ -48,12 +48,16 @@ class PystrayMenuSink:
             if not full_text:
                 submenu_items.append(self._pystray.MenuItem(preview, None, enabled=False))
                 continue
-
-            def copy_history(_icon, _item, value=full_text):
-                self._on_copy_history(value)
-
-            submenu_items.append(self._pystray.MenuItem(preview, copy_history))
+            submenu_items.append(self._pystray.MenuItem(preview, self._copy_history_action(full_text)))
         return self._pystray.Menu(*submenu_items)
+
+    def _copy_history_action(self, value: str) -> Callable[[Any, Any], None]:
+        # A factory so `value` is bound here and the handler takes only
+        # (icon, item): pystray rejects actions with > 2 positional parameters.
+        def handler(_icon: Any, _item: Any) -> None:
+            self._on_copy_history(value)
+
+        return handler
 
     def history_submenu(self, ref: str, title: str, on_open=None) -> None:
         del ref
@@ -72,11 +76,15 @@ class PystrayMenuSink:
         submenu_items: list = []
         self._menu_refs[MODEL_ITEMS_REF] = []
         for label, row in choices:
-
-            def set_model(_icon, _item, model_id=row.model_id, backend=row.backend):
-                self._after_action(lambda: self._set_model(model_id, backend))
-
-            model_item = self._pystray.MenuItem(label, set_model)
+            model_item = self._pystray.MenuItem(label, self._set_model_action(row.model_id, row.backend))
             submenu_items.append(model_item)
             self._menu_refs[MODEL_ITEMS_REF].append((model_item, row))
         self._items.append(self._pystray.MenuItem(title, self._pystray.Menu(*submenu_items)))
+
+    def _set_model_action(self, model_id: str, backend: str) -> Callable[[Any, Any], None]:
+        # Bind the per-row values in this factory scope so the handler takes
+        # only (icon, item): pystray rejects actions with > 2 positional args.
+        def handler(_icon: Any, _item: Any) -> None:
+            self._after_action(lambda: self._set_model(model_id, backend))
+
+        return handler

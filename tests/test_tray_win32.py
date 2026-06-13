@@ -1,5 +1,6 @@
 import sys
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 
@@ -68,6 +69,48 @@ class TrayWin32IconTests(unittest.TestCase):
         # A new health state must not raise KeyError: build_image runs inside
         # the pystray event loop, so an unmapped name would crash the tray.
         self.assertEqual(health_icon_color("busy"), "gray")
+
+
+@unittest.skipUnless(sys.platform == "win32", "real pystray validates menu actions")
+class PystrayMenuSinkActionTests(unittest.TestCase):
+    """The real pystray rejects menu actions taking >2 positional args.
+
+    The other tray tests inject a fake pystray that does not enforce this, so a
+    closure with a default-arg binding (which inflates co_argcount) passes them
+    but crashes the live tray. These build the menus with the real pystray.
+    """
+
+    def _sink(self):
+        import pystray
+        from transclip.desktop.tray.sinks.win32 import PystrayMenuSink
+
+        items: list = []
+        refs: dict = {}
+        sink = PystrayMenuSink(
+            items,
+            refs,
+            pystray=pystray,
+            after_action=lambda fn: fn(),
+            set_model=lambda model_id, backend: None,
+            on_copy_history=lambda value: None,
+        )
+        return sink, items, refs
+
+    def test_model_submenu_actions_are_accepted_by_pystray(self) -> None:
+        sink, items, _ = self._sink()
+        choices = [("Granite AR", SimpleNamespace(model_id="ibm-granite/x", backend="granite"))]
+
+        sink.model_submenu("models", "ASR model", choices)  # raises ValueError pre-fix
+
+        self.assertEqual(len(items), 1)
+
+    def test_history_submenu_actions_are_accepted_by_pystray(self) -> None:
+        sink, _, refs = self._sink()
+        refs["_history_entries"] = [("preview", "full transcript text")]
+
+        menu = sink._build_history_menu()  # raises ValueError pre-fix
+
+        self.assertIsNotNone(menu)
 
 
 if __name__ == "__main__":
