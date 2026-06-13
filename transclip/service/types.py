@@ -45,7 +45,7 @@ class RecordSessionResponse(TypedDict, total=False):
     voice_mode: str
     voice_trigger: str
     voice_literal: bool
-    shell: dict[str, Any]
+    shell: dict[str, Any] | None
     timings_ms: dict[str, float]
     debug_capture_dir: str
 
@@ -63,8 +63,14 @@ class CleanupTextResponse(TypedDict, total=False):
 JsonPayload = dict[str, object]
 
 
-class TranscribeResponse(RecordSessionResponse):
+# /transcribe responses carry every record-session field plus ASR-specific
+# detail. Keys are optional (total=False) because the serializer omits cleanup,
+# voice_trigger, and debug_capture_dir when the pipeline does not produce them.
+class TranscribeResponse(RecordSessionResponse, total=False):
     raw_asr: str
     cleanup: dict[str, Any]
     cleanup_enabled: bool
     submit: bool | None
+    asr_backend: str
+    asr_model: str
+    cleanup_backend: str
