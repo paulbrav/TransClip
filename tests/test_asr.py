@@ -11,6 +11,7 @@ from transclip.asr import (
     GraniteSpeechNarTransformersBackend,
     GraniteSpeechTransformersBackend,
     MlxAudioASRBackend,
+    PathAudioPreparer,
     _configure_rocm_nar_attention_env,
     _granite_nar_dtype,
     _pad_nar_waveform_to_bucket,
@@ -81,17 +82,23 @@ class ASRTests(unittest.TestCase):
         self.assertIsInstance(backend, MlxAudioASRBackend)
 
     def test_mlx_audio_reuses_loaded_model_object_across_transcriptions(self):
-        loaded_model = object()
+        loaded_model = SimpleNamespace(dims=SimpleNamespace(n_text_ctx=448))
         load_calls = []
         generated_models = []
-        generated_languages = []
+        generated_options = []
+        prepared_durations = iter((2.0, 16.0))
         backend = MlxAudioASRBackend(
             "mlx-community/example",
             Settings(language="en"),
             local_files_only=False,
         )
         backend.audio_preparer = SimpleNamespace(
-            prepare=lambda path: SimpleNamespace(wav_path=path, sample_rate=16000, temporary=False)
+            prepare=lambda path: SimpleNamespace(
+                wav_path=path,
+                sample_rate=16000,
+                duration_seconds=next(prepared_durations),
+                temporary=False,
+            )
         )
 
         def fake_load_model(model_path):
@@ -101,7 +108,7 @@ class ASRTests(unittest.TestCase):
         def fake_generate(model, audio_path, output_stem, **kwargs):
             del audio_path, output_stem
             generated_models.append(model)
-            generated_languages.append(kwargs["language"])
+            generated_options.append(kwargs)
             return SimpleNamespace(text=f"transcript {len(generated_models)}")
 
         with (
@@ -113,12 +120,47 @@ class ASRTests(unittest.TestCase):
 
         self.assertEqual(load_calls, ["mlx-community/example"])
         self.assertEqual(generated_models, [loaded_model, loaded_model])
-        self.assertEqual(generated_languages, ["en", "en"])
+        self.assertEqual([item["language"] for item in generated_options], ["en", "en"])
+        self.assertEqual([item["temperature"] for item in generated_options], [0.0, 0.0])
+        self.assertEqual([item["return_timestamps"] for item in generated_options], [False, False])
+        self.assertEqual([item["condition_on_previous_text"] for item in generated_options], [False, False])
+        self.assertEqual([item["sample_len"] for item in generated_options], [48, 128])
         self.assertEqual(first.text, "transcript 1")
         self.assertEqual(second.text, "transcript 2")
         self.assertIn("model_load", second.timings_ms)
         self.assertIn("audio_prepare", second.timings_ms)
         self.assertIn("generate_write", second.timings_ms)
+
+    def test_mlx_audio_uses_padded_duration_for_decode_shape(self):
+        loaded_model = SimpleNamespace(dims=SimpleNamespace(n_text_ctx=448))
+        generated_options = []
+        backend = MlxAudioASRBackend(
+            "mlx-community/example",
+            Settings(language="en"),
+            local_files_only=False,
+        )
+        backend.audio_preparer = SimpleNamespace(
+            prepare=lambda path: SimpleNamespace(
+                wav_path=path,
+                sample_rate=16000,
+                duration_seconds=27.3,
+                padded_duration_seconds=28.0,
+                temporary=False,
+            )
+        )
+
+        def fake_generate(model, audio_path, output_stem, **kwargs):
+            del model, audio_path, output_stem
+            generated_options.append(kwargs)
+            return SimpleNamespace(text="transcript")
+
+        with (
+            patch("transclip.asr.load_mlx_model", return_value=loaded_model),
+            patch("transclip.asr.generate_transcription", side_effect=fake_generate),
+        ):
+            backend.transcribe(Path("audio.wav"))
+
+        self.assertEqual(generated_options[0]["sample_len"], 200)
 
     def test_non_granite_model_is_rejected(self):
         with self.assertRaises(ValueError):
@@ -314,6 +356,103 @@ class ASRTests(unittest.TestCase):
         self.assertEqual(audio.sample_rate, 16000)
         np.testing.assert_allclose(audio.wav.data, np.array([[2.0, 6.0]], dtype=np.float32))
         self.assertEqual(resample_calls, [(8000, 16000)])
+
+    def test_path_audio_preparer_trims_edge_silence_before_writing_temp_wav(self):
+        samples = np.array([[0.0]] * 5 + [[0.1]] * 4 + [[0.0]] * 5, dtype=np.float32)
+        writes = []
+        fake_soundfile = SimpleNamespace(
+            read=lambda *_args, **_kwargs: (samples, 10),
+            write=lambda path, data, sample_rate: writes.append(
+                (Path(path), np.array(data), sample_rate)
+            ),
+        )
+
+        with patch.dict("sys.modules", {"soundfile": fake_soundfile}):
+            audio = PathAudioPreparer(target_sample_rate=10).prepare(Path("sample.wav"))
+
+        self.assertTrue(audio.temporary)
+        self.assertEqual(audio.sample_rate, 10)
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(writes[0][2], 10)
+        np.testing.assert_allclose(
+            writes[0][1],
+            np.array([0.0, 0.0, 0.1, 0.1, 0.1, 0.1, 0.0, 0.0], dtype=np.float32),
+        )
+
+    def test_path_audio_preparer_pads_to_stable_audio_bucket_without_extending_duration(self):
+        samples = np.array([[0.1]] * 25, dtype=np.float32)
+        writes = []
+        fake_soundfile = SimpleNamespace(
+            read=lambda *_args, **_kwargs: (samples, 10),
+            write=lambda path, data, sample_rate: writes.append(
+                (Path(path), np.array(data), sample_rate)
+            ),
+        )
+
+        with patch.dict("sys.modules", {"soundfile": fake_soundfile}):
+            audio = PathAudioPreparer(
+                target_sample_rate=10,
+                bucket_seconds=4.0,
+                minimum_seconds=4.0,
+            ).prepare(Path("sample.wav"))
+
+        self.assertTrue(audio.temporary)
+        self.assertEqual(audio.sample_rate, 10)
+        self.assertEqual(audio.duration_seconds, 2.5)
+        self.assertEqual(audio.padded_duration_seconds, 4.0)
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(writes[0][2], 10)
+        self.assertEqual(len(writes[0][1]), 40)
+        np.testing.assert_allclose(writes[0][1][:25], 0.1)
+        np.testing.assert_allclose(writes[0][1][25:], 0.0)
+
+    def test_path_audio_preparer_uses_one_second_buckets_for_short_audio(self):
+        samples = np.array([[0.1]] * 25, dtype=np.float32)
+        writes = []
+        fake_soundfile = SimpleNamespace(
+            read=lambda *_args, **_kwargs: (samples, 10),
+            write=lambda path, data, sample_rate: writes.append(
+                (Path(path), np.array(data), sample_rate)
+            ),
+        )
+
+        with patch.dict("sys.modules", {"soundfile": fake_soundfile}):
+            audio = PathAudioPreparer(
+                target_sample_rate=10,
+                bucket_seconds=4.0,
+                minimum_seconds=1.0,
+                short_bucket_seconds=1.0,
+                short_bucket_max_seconds=12.0,
+            ).prepare(Path("sample.wav"))
+
+        self.assertEqual(audio.duration_seconds, 2.5)
+        self.assertEqual(audio.padded_duration_seconds, 3.0)
+        self.assertEqual(len(writes[0][1]), 30)
+        np.testing.assert_allclose(writes[0][1][:25], 0.1)
+        np.testing.assert_allclose(writes[0][1][25:], 0.0)
+
+    def test_path_audio_preparer_uses_long_buckets_above_short_range(self):
+        samples = np.array([[0.1]] * 125, dtype=np.float32)
+        writes = []
+        fake_soundfile = SimpleNamespace(
+            read=lambda *_args, **_kwargs: (samples, 10),
+            write=lambda path, data, sample_rate: writes.append(
+                (Path(path), np.array(data), sample_rate)
+            ),
+        )
+
+        with patch.dict("sys.modules", {"soundfile": fake_soundfile}):
+            audio = PathAudioPreparer(
+                target_sample_rate=10,
+                bucket_seconds=4.0,
+                minimum_seconds=1.0,
+                short_bucket_seconds=1.0,
+                short_bucket_max_seconds=12.0,
+            ).prepare(Path("sample.wav"))
+
+        self.assertEqual(audio.duration_seconds, 12.5)
+        self.assertEqual(audio.padded_duration_seconds, 16.0)
+        self.assertEqual(len(writes[0][1]), 160)
 
 
 if __name__ == "__main__":

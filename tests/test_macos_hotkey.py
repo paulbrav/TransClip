@@ -117,15 +117,186 @@ esac
 
             self.assertEqual(result.returncode, 0, result.stderr)
             calls = calls_path.read_text(encoding="utf-8").splitlines()
-            self.assertEqual(len(calls), 2)
-            self.assertIn("/record/start", calls[0])
-            self.assertIn("/record/stop", calls[1])
-            self.assertNotIn("/health", "\n".join(calls))
+            self.assertGreaterEqual(len(calls), 2)
+            joined_calls = "\n".join(calls)
+            start_index = next(index for index, call in enumerate(calls) if "/record/start" in call)
+            stop_index = next(index for index, call in enumerate(calls) if "/record/stop" in call)
+            self.assertLess(start_index, stop_index)
+            self.assertIn("/health", joined_calls)
             self.assertEqual(paste_path.read_text(encoding="utf-8"), "hello pasted")
             self.assertIn(
                 "paste_requested\tPaste transcript",
                 macos_hotkey_state_path(runtime).read_text(encoding="utf-8"),
             )
+
+    @unittest.skipIf(os.name == "nt", "generated macOS shell wrapper requires a POSIX shell")
+    def test_toggle_wrapper_keeps_recording_state_until_stop_returns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runtime = FakeRuntime(system="Darwin", home=root / "home")
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            state_path = macos_hotkey_state_path(runtime)
+            calls_path = root / "curl-calls.txt"
+            paste_path = root / "paste.txt"
+            fake_curl = fake_bin / "curl"
+            fake_curl.write_text(
+                f"""#!/bin/sh
+printf '%s\\n' "$*" >> {calls_path}
+case "$*" in
+  */record/start*)
+    printf '%s\\n' '{{"status":"recording","already_recording":true}}'
+    ;;
+  */record/stop*)
+    if ! grep -q '	stopping	Stopping recording' {state_path}; then
+      printf 'unexpected state before stop returned: ' >&2
+      cat {state_path} >&2
+      exit 42
+    fi
+    printf '%s\\n' '{{"status":"ready","text":"hello pasted"}}'
+    ;;
+  *)
+    printf '%s\\n' '{{"error":"unexpected endpoint"}}'
+    exit 22
+    ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            fake_curl.chmod(0o755)
+            fake_pbcopy = fake_bin / "pbcopy"
+            fake_pbcopy.write_text(f"#!/bin/sh\ncat > {paste_path}\n", encoding="utf-8")
+            fake_pbcopy.chmod(0o755)
+            wrapper = root / "transclip-toggle"
+            script = build_macos_toggle_wrapper(Settings(host="127.0.0.1", port=8765), runtime=runtime)
+            script = script.replace("LOCK=/tmp/transclip-toggle.lock", f"LOCK={root / 'transclip-toggle.lock'}")
+            wrapper.write_text(script, encoding="utf-8")
+            wrapper.chmod(0o755)
+            env = {**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}"}
+
+            result = subprocess.run([str(wrapper)], env=env, capture_output=True, text=True, timeout=5, check=False)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(paste_path.read_text(encoding="utf-8"), "hello pasted")
+
+    @unittest.skipIf(os.name == "nt", "generated macOS shell wrapper requires a POSIX shell")
+    def test_toggle_wrapper_marks_transcribing_after_capture_stops(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runtime = FakeRuntime(system="Darwin", home=root / "home")
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            state_path = macos_hotkey_state_path(runtime)
+            calls_path = root / "curl-calls.txt"
+            paste_path = root / "paste.txt"
+            restart_path = root / "restart.txt"
+            stop_started = root / "stop-started"
+            fake_curl = fake_bin / "curl"
+            fake_curl.write_text(
+                f"""#!/bin/sh
+printf '%s\\n' "$*" >> {calls_path}
+case "$*" in
+  */record/start*)
+    printf '%s\\n' '{{"status":"recording","already_recording":true}}'
+    ;;
+  */record/stop*)
+    touch {stop_started}
+    sleep 1
+    if ! grep -q '	transcribing	Transcribing' {state_path}; then
+      printf 'expected transcribing before stop response: ' >&2
+      cat {state_path} >&2
+      exit 42
+    fi
+    printf '%s\\n' '{{"status":"ready","text":"hello pasted"}}'
+    ;;
+  */health*)
+    if [ -f {restart_path} ]; then
+      printf '%s\\n' '{{"status":"ready"}}'
+    elif [ -f {stop_started} ]; then
+      printf '%s\\n' '{{"status":"transcribing"}}'
+    else
+      printf '%s\\n' '{{"status":"recording"}}'
+    fi
+    ;;
+  *)
+    printf '%s\\n' '{{"error":"unexpected endpoint"}}'
+    exit 22
+    ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            fake_curl.chmod(0o755)
+            fake_pbcopy = fake_bin / "pbcopy"
+            fake_pbcopy.write_text(f"#!/bin/sh\ncat > {paste_path}\n", encoding="utf-8")
+            fake_pbcopy.chmod(0o755)
+            wrapper = root / "transclip-toggle"
+            script = build_macos_toggle_wrapper(
+                Settings(host="127.0.0.1", port=8765),
+                runtime=runtime,
+                restart_command=f"printf restarted > {restart_path}",
+            )
+            script = script.replace("LOCK=/tmp/transclip-toggle.lock", f"LOCK={root / 'transclip-toggle.lock'}")
+            wrapper.write_text(script, encoding="utf-8")
+            wrapper.chmod(0o755)
+            env = {**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}"}
+
+            result = subprocess.run([str(wrapper)], env=env, capture_output=True, text=True, timeout=5, check=False)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(paste_path.read_text(encoding="utf-8"), "hello pasted")
+            calls = calls_path.read_text(encoding="utf-8")
+            self.assertIn("/health", calls)
+
+    @unittest.skipIf(os.name == "nt", "generated macOS shell wrapper requires a POSIX shell")
+    def test_toggle_wrapper_timeout_recovers_to_ready_after_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runtime = FakeRuntime(system="Darwin", home=root / "home")
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            calls_path = root / "curl-calls.txt"
+            restart_path = root / "restart.txt"
+            fake_curl = fake_bin / "curl"
+            fake_curl.write_text(
+                f"""#!/bin/sh
+printf '%s\\n' "$*" >> {calls_path}
+case "$*" in
+  */record/start*)
+    printf '%s\\n' '{{"status":"recording","already_recording":true}}'
+    ;;
+  */record/stop*)
+    exit 28
+    ;;
+  */health*)
+    printf '%s\\n' '{{"status":"ready"}}'
+    ;;
+  *)
+    printf '%s\\n' '{{"error":"unexpected endpoint"}}'
+    exit 22
+    ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            fake_curl.chmod(0o755)
+            wrapper = root / "transclip-toggle"
+            script = build_macos_toggle_wrapper(
+                Settings(host="127.0.0.1", port=8765),
+                runtime=runtime,
+                restart_command=f"printf restarted > {restart_path}",
+            )
+            script = script.replace("LOCK=/tmp/transclip-toggle.lock", f"LOCK={root / 'transclip-toggle.lock'}")
+            wrapper.write_text(script, encoding="utf-8")
+            wrapper.chmod(0o755)
+            env = {**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}"}
+
+            result = subprocess.run([str(wrapper)], env=env, capture_output=True, text=True, timeout=5, check=False)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(restart_path.read_text(encoding="utf-8"), "restarted")
+            self.assertIn("/health", calls_path.read_text(encoding="utf-8"))
+            self.assertIn("ready\tReady", macos_hotkey_state_path(runtime).read_text(encoding="utf-8"))
 
     def test_toggle_wrapper_uses_explicit_start_stop_and_lock(self):
         runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"))
@@ -140,14 +311,20 @@ esac
         self.assertIn('write_state recovering "Clearing stale action"', script)
         self.assertIn("kill_process_tree", script)
         self.assertIn("STATE=/Users/test/Library/Logs/transclip/hotkey-state.tsv", script)
+        self.assertIn("STOP_POLL_SECONDS=0.05", script)
         self.assertIn('write_state shortcut "Starting recording"', script)
         self.assertIn('write_state listening "Recording"', script)
-        self.assertIn('write_state transcribing "Transcribing"', script)
+        self.assertIn('write_state stopping "Stopping recording"', script)
         self.assertIn('write_state paste_requested "Paste transcript"', script)
         self.assertIn('write_state finished "No transcript"', script)
-        self.assertIn('write_state error "Stop timed out; restarted"', script)
+        self.assertIn('write_state recovering "Restarting service"', script)
+        self.assertIn('write_state ready "Ready"', script)
+        self.assertIn('write_state error "Service restart failed"', script)
+        self.assertIn("wait_for_ready", script)
+        self.assertIn('if [ -f "$stop_status_file" ]; then', script)
+        self.assertIn('sleep "$STOP_POLL_SECONDS"', script)
         self.assertIn("already_recording", script)
-        self.assertNotIn("$BASE/health", script)
+        self.assertIn("$BASE/health", script)
         self.assertNotIn("osascript -e", script)
         self.assertIn("stop failed; restarting service", script)
 
@@ -181,6 +358,7 @@ esac
         self.assertIn('title = "TXT..."', source)
         self.assertIn('title = "PST..."', source)
         self.assertIn('case "listening":', source)
+        self.assertIn('case "stopping":', source)
         self.assertIn('case "recovering":', source)
         self.assertIn('case "transcribing":', source)
         self.assertIn('case "paste_requested":', source)
@@ -194,6 +372,7 @@ esac
         self.assertIn("CGEvent.tapEnable(tap: tap, enable: true)", source)
         self.assertIn("event tap re-enabled", source)
         self.assertIn("event tap listening for Option+Space", source)
+        self.assertIn('writeStateFile("ready", "Ready")', source)
 
     def test_installer_writes_helper_app_launch_agent_and_wrapper(self):
         calls = []

@@ -29,6 +29,7 @@ class Recorder(Protocol):
 RecorderFactory = Callable[[Settings], Recorder]
 Transcriber = Callable[[Path, bool | None, str], TranscribeResponse]
 Clock = Callable[[], float]
+PhaseCallback = Callable[[], None]
 
 
 class RecordingHandle(Protocol):
@@ -39,6 +40,7 @@ class RecordingHandle(Protocol):
         *,
         cleanup: bool | None,
         source: str,
+        before_transcribe: PhaseCallback | None = None,
     ) -> TranscribeResponse: ...
 
     def discard(self) -> None: ...
@@ -57,9 +59,12 @@ class BatchRecording:
         *,
         cleanup: bool | None,
         source: str,
+        before_transcribe: PhaseCallback | None = None,
     ) -> TranscribeResponse:
         with tempfile.TemporaryDirectory() as tmp:
             wav_path = self.recorder.stop_to_wav(Path(tmp) / "recording.wav")
+            if before_transcribe is not None:
+                before_transcribe()
             return self.transcribe(wav_path, cleanup, source)
 
     def discard(self) -> None:
@@ -84,12 +89,15 @@ class StreamingRecording:
         *,
         cleanup: bool | None,
         source: str,
+        before_transcribe: PhaseCallback | None = None,
     ) -> TranscribeResponse:
         self.adapter.detach_session(self.capture.session)
         try:
             if self.debug_capture:
                 with tempfile.TemporaryDirectory() as tmp:
                     wav_path = self.capture.recorder.stop_to_wav(Path(tmp) / "recording.wav")
+                    if before_transcribe is not None:
+                        before_transcribe()
                     return self.adapter.finish_session(
                         self.capture.session,
                         cleanup,
@@ -97,6 +105,8 @@ class StreamingRecording:
                         wav_path=wav_path,
                     )
             self.capture.recorder.stop_capture()
+            if before_transcribe is not None:
+                before_transcribe()
             return self.adapter.finish_session(self.capture.session, cleanup, source)
         except Exception:
             self.adapter.discard_session(self.capture.session)
@@ -131,11 +141,12 @@ class DictationSession:
         self._clock = clock
         self._lock = Lock()
         self._active: ActiveRecording | None = None
+        self._status = "ready"
         self._last_toggle_accepted_at = 0.0
 
     def status(self) -> str:
         with self._lock:
-            return "recording" if self._active else "ready"
+            return self._status
 
     def partial_text(self) -> PartialTranscript:
         if self._streaming is None:
@@ -149,6 +160,7 @@ class DictationSession:
             handle = self._create_recording()
             handle.start()
             self._active = ActiveRecording(handle, self._clock())
+            self._status = "recording"
         return {"status": "recording", "already_recording": False}
 
     def stop_recording(
@@ -189,6 +201,7 @@ class DictationSession:
                 handle = self._create_recording()
                 handle.start()
                 self._active = ActiveRecording(handle, now)
+                self._status = "recording"
                 return {"status": "recording", "action": "started", "already_recording": False}
 
             active = self._pop_active()
@@ -221,27 +234,46 @@ class DictationSession:
     ) -> RecordSessionResponse:
         duration_ms = round((self._clock() - active.started_at) * 1000, 3)
         if discard:
-            active.handle.discard()
-            result: RecordSessionResponse = {"status": "ready", "duration_ms": duration_ms, "discarded": True}
-            if discard_reason:
-                result["reason"] = discard_reason
-                result["max_recording_ms"] = self.settings.max_recording_ms
-            return result
-        result = dict(
-            active.handle.stop(
-                cleanup=cleanup,
-                source=source,
+            try:
+                active.handle.discard()
+                result: RecordSessionResponse = {"status": "ready", "duration_ms": duration_ms, "discarded": True}
+                if discard_reason:
+                    result["reason"] = discard_reason
+                    result["max_recording_ms"] = self.settings.max_recording_ms
+                return result
+            finally:
+                self._set_ready_if_no_active()
+
+        try:
+            result = dict(
+                active.handle.stop(
+                    cleanup=cleanup,
+                    source=source,
+                    before_transcribe=self._mark_transcribing,
+                )
             )
-        )
-        result["duration_ms"] = duration_ms
-        return result
+            result["duration_ms"] = duration_ms
+            return result
+        finally:
+            self._set_ready_if_no_active()
 
     def _pop_active(self) -> ActiveRecording:
         if self._active is None:
             raise RuntimeError("Recorder is not running")
         active = self._active
         self._active = None
+        self._status = "stopping"
         return active
+
+    def _mark_transcribing(self) -> None:
+        with self._lock:
+            if self._status == "stopping":
+                self._status = "transcribing"
+
+    def _set_ready_if_no_active(self) -> None:
+        with self._lock:
+            if self._active is None and self._status in {"stopping", "transcribing"}:
+                self._status = "ready"
 
     def _create_recording(self) -> RecordingHandle:
         if self._streaming is not None:

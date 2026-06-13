@@ -76,6 +76,7 @@ def build_macos_toggle_wrapper(
     *,
     stop_timeout_seconds: int = DEFAULT_STOP_TIMEOUT_SECONDS,
     stale_lock_seconds: int = STALE_LOCK_SECONDS,
+    restart_command: str | None = None,
 ) -> str:
     log_path = logs_dir(runtime) / "toggle-record.log"
     state_path = macos_hotkey_state_path(runtime)
@@ -84,7 +85,9 @@ def build_macos_toggle_wrapper(
     cli = f"{python} -m {shlex.quote(IMPORT_PACKAGE + '.cli')}"
     if settings_path:
         cli += f" --settings {shlex.quote(service_settings_path(settings_path))}"
-    restart_command = f'cd {shlex.quote(_macos_path_text(repo_root()))} && {cli} restart >> "$LOG" 2>&1'
+    restart_command_text = restart_command or (
+        f'cd {shlex.quote(_macos_path_text(repo_root()))} && {cli} restart >> "$LOG" 2>&1'
+    )
     return f"""#!/bin/sh
 set -u
 
@@ -93,6 +96,7 @@ STATE={shlex.quote(_macos_path_text(state_path))}
 BASE={shlex.quote(base_url)}
 MAX_SECONDS={int(stop_timeout_seconds)}
 STALE_LOCK_SECONDS={int(stale_lock_seconds)}
+STOP_POLL_SECONDS=0.05
 LOCK=/tmp/transclip-toggle.lock
 
 mkdir -p "$(dirname "$LOG")"
@@ -103,6 +107,51 @@ write_state() {{
   detail=$2
   printf '%s\\t%s\\t%s\\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$state" "$detail" > "$STATE"
   printf '%s\\n' "$(date '+%Y-%m-%dT%H:%M:%S%z') state=${{state}} ${{detail}}" >> "$LOG"
+}}
+
+restart_service() {{
+  {restart_command_text}
+}}
+
+wait_for_ready() {{
+  attempts=0
+  while [ "$attempts" -lt 30 ]; do
+    health=$(curl -sS --max-time 2 "$BASE/health" 2>>"$LOG" || true)
+    printf '%s\\n' "$health" >> "$LOG"
+    case "$health" in
+      *'"status": "ready"'*|*'"status":"ready"'*)
+        write_state ready "Ready"
+        return 0
+        ;;
+    esac
+    attempts=$((attempts + 1))
+    sleep 1
+  done
+  write_state error "Service restart failed"
+  return 1
+}}
+
+wait_for_stop_response() {{
+  stop_pid=$1
+  stop_status_file=$2
+  transcribing_written=0
+  while [ ! -f "$stop_status_file" ]; do
+    if [ "$transcribing_written" = "0" ]; then
+      health=$(curl -sS --max-time 2 "$BASE/health" 2>>"$LOG" || true)
+      printf '%s\\n' "$health" >> "$LOG"
+      case "$health" in
+        *'"status": "transcribing"'*|*'"status":"transcribing"'*|*'"status": "ready"'*|*'"status":"ready"'*)
+          write_state transcribing "Transcribing"
+          transcribing_written=1
+          ;;
+      esac
+    fi
+    if [ -f "$stop_status_file" ]; then
+      break
+    fi
+    sleep "$STOP_POLL_SECONDS"
+  done
+  wait "$stop_pid" 2>/dev/null || true
 }}
 
 kill_process_tree() {{
@@ -157,9 +206,10 @@ trap 'rm -rf "$LOCK"' EXIT HUP INT TERM
 
 response=$(curl -sS --max-time 10 -X POST "$BASE/record/start" \
   -H 'content-type: application/json' --data '{{}}' 2>>"$LOG") || {{
-  write_state error "Start failed"
+  write_state recovering "Restarting service"
   printf '%s\\n' "$(date '+%Y-%m-%dT%H:%M:%S%z') start failed; restarting service" >> "$LOG"
-  {restart_command}
+  restart_service
+  wait_for_ready || true
   exit 0
 }}
 printf '%s\\n' "$response" >> "$LOG"
@@ -174,14 +224,26 @@ esac
 printf '%s\\n' "$(date '+%Y-%m-%dT%H:%M:%S%z') start already_recording=${{already_recording}}" >> "$LOG"
 
 if [ "$already_recording" = "1" ]; then
-  write_state transcribing "Transcribing"
-  response=$(curl -sS --max-time "$MAX_SECONDS" -X POST "$BASE/record/stop" \
-    -H 'content-type: application/json' --data '{{}}' 2>>"$LOG") || {{
-    write_state error "Stop timed out; restarted"
+  write_state stopping "Stopping recording"
+  stop_response_file="$LOCK/stop-response.json"
+  stop_status_file="$LOCK/stop-status"
+  rm -f "$stop_response_file" "$stop_status_file"
+  (
+    curl -sS --max-time "$MAX_SECONDS" -X POST "$BASE/record/stop" \
+      -H 'content-type: application/json' --data '{{}}' > "$stop_response_file" 2>>"$LOG"
+    printf '%s\\n' "$?" > "$stop_status_file"
+  ) &
+  stop_pid=$!
+  wait_for_stop_response "$stop_pid" "$stop_status_file"
+  stop_status=$(cat "$stop_status_file" 2>/dev/null || printf '1')
+  if [ "$stop_status" != "0" ]; then
+    write_state recovering "Restarting service"
     printf '%s\\n' "$(date '+%Y-%m-%dT%H:%M:%S%z') stop failed; restarting service" >> "$LOG"
-    {restart_command}
+    restart_service
+    wait_for_ready || true
     exit 0
-  }}
+  fi
+  response=$(cat "$stop_response_file" 2>/dev/null || true)
   printf '%s\\n' "$response" >> "$LOG"
   text=$(printf '%s' "$response" | {python} -c \
     'import json,sys; print(json.load(sys.stdin).get("text", ""), end="")' 2>>"$LOG")
@@ -332,6 +394,9 @@ class HotkeyStatus: NSObject {
         case "listening":
             title = "REC"
             fallback = "Recording"
+        case "stopping":
+            title = "REC"
+            fallback = "Stopping recording"
         case "transcribing":
             title = "TXT..."
             fallback = "Transcribing"
@@ -377,7 +442,7 @@ class HotkeyStatus: NSObject {
         switch state {
         case "shortcut", "busy", "recovering":
             return .systemYellow
-        case "listening":
+        case "listening", "stopping":
             return .systemOrange
         case "transcribing":
             return .systemPurple
@@ -531,6 +596,7 @@ CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
 CGEvent.tapEnable(tap: eventTap, enable: true)
 log("event tap listening for Option+Space")
 if trusted {
+    writeStateFile("ready", "Ready")
     hotkeyStatus.setStatus("ready", "Ready")
 }
 app.run()

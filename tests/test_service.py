@@ -3,6 +3,7 @@ import json
 import tempfile
 import threading
 import unittest
+import wave
 from pathlib import Path
 from unittest.mock import patch
 
@@ -24,6 +25,22 @@ class FakeWaveformASR(FakeASR):
         self.waveform_lengths.append(len(waveform))
         self.waveform_sample_rates.append(sample_rate)
         return self.transcribe(Path("waveform.wav"), keywords=[])
+
+
+class FakeMlxASR(FakeASR):
+    name = "mlx-audio"
+
+    def __init__(self):
+        super().__init__()
+        self.durations = []
+        self.non_silent = []
+
+    def transcribe(self, wav_path: Path, keywords: list[str] | None = None):
+        with wave.open(str(wav_path), "rb") as wav:
+            frames = wav.readframes(wav.getnframes())
+            self.durations.append(wav.getnframes() / wav.getframerate())
+            self.non_silent.append(any(frames))
+        return super().transcribe(wav_path, keywords=keywords)
 
 
 class FakeStopEvent:
@@ -97,6 +114,62 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(len(warm_asr.calls), 1)
         self.assertEqual(warm_asr.keywords, [])
 
+    def test_engine_warm_asr_uses_non_silent_audio(self):
+        class InspectingASR(FakeASR):
+            def transcribe(self, wav_path: Path, keywords: list[str] | None = None):
+                with wave.open(str(wav_path), "rb") as wav:
+                    self.sample_rate = wav.getframerate()
+                    self.frames = wav.readframes(wav.getnframes())
+                return super().transcribe(wav_path, keywords=keywords)
+
+        asr = InspectingASR()
+        InferenceEngine(
+            Settings(sample_rate=8000),
+            asr_backend=asr,
+            cleanup_backend=FaithfulRuleCleanupBackend(),
+            warm_asr=True,
+        )
+
+        self.assertEqual(asr.sample_rate, 8000)
+        self.assertTrue(any(asr.frames))
+
+    def test_engine_warms_mlx_audio_buckets_from_1_to_12_seconds(self):
+        asr = FakeMlxASR()
+        InferenceEngine(
+            Settings(sample_rate=16000),
+            asr_backend=asr,
+            cleanup_backend=FaithfulRuleCleanupBackend(),
+            warm_asr=True,
+        )
+
+        self.assertEqual(asr.durations, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0])
+        self.assertEqual(asr.keywords, [])
+        self.assertTrue(all(asr.non_silent))
+
+    def test_engine_rewarms_speech_after_startup_mlx_audio_buckets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            speech_wav = Path(tmp) / "speech-warmup.wav"
+            _write_test_wav(speech_wav, seconds=1.0, sample_rate=16000)
+            asr = FakeMlxASR()
+
+            with patch(
+                "transclip.service.engine._mlx_speech_warmup_wav",
+                return_value=speech_wav,
+            ) as speech_warmup:
+                InferenceEngine(
+                    Settings(
+                        sample_rate=16000,
+                        asr_backend="mlx_audio_whisper",
+                    ),
+                    asr_backend=asr,
+                    cleanup_backend=FaithfulRuleCleanupBackend(),
+                    warm_asr=True,
+                )
+
+        speech_warmup.assert_called_once()
+        self.assertEqual(asr.calls[-1], speech_wav)
+        self.assertEqual(asr.durations, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 1.0])
+
     def test_engine_warms_remaining_bucket_shapes(self):
         asr = FakeWaveformASR()
         engine = InferenceEngine(
@@ -109,6 +182,48 @@ class ServiceTests(unittest.TestCase):
 
         self.assertEqual(asr.waveform_lengths, [64_000, 96_000, 128_000])
         self.assertEqual(asr.waveform_sample_rates, [16_000, 16_000, 16_000])
+
+    def test_engine_skips_background_mlx_audio_buckets_after_startup(self):
+        asr = FakeMlxASR()
+        engine = InferenceEngine(
+            Settings(sample_rate=16000),
+            asr_backend=asr,
+            cleanup_backend=FaithfulRuleCleanupBackend(),
+        )
+
+        engine.warm_bucket_shapes(threading.Event())
+
+        self.assertEqual(asr.durations, [])
+
+    def test_background_mlx_warmup_does_not_wait_while_dictation_is_busy(self):
+        asr = FakeMlxASR()
+        engine = InferenceEngine(
+            Settings(sample_rate=16000),
+            asr_backend=asr,
+            cleanup_backend=FaithfulRuleCleanupBackend(),
+        )
+        statuses = ["transcribing", "ready"]
+        engine.dictation_session.status = lambda: statuses.pop(0) if statuses else "ready"
+        stop_event = FakeStopEvent()
+
+        engine.warm_bucket_shapes(stop_event)
+
+        self.assertEqual(stop_event.wait_calls, 0)
+        self.assertEqual(asr.durations, [])
+
+    def test_background_mlx_warmup_exits_when_stopped(self):
+        asr = FakeMlxASR()
+        engine = InferenceEngine(
+            Settings(sample_rate=16000),
+            asr_backend=asr,
+            cleanup_backend=FaithfulRuleCleanupBackend(),
+        )
+        stop_event = threading.Event()
+        stop_event.set()
+
+        engine.warm_bucket_shapes(stop_event)
+
+        self.assertEqual(asr.durations, [])
 
     def test_bucket_warmup_waits_while_recording(self):
         asr = FakeWaveformASR()
@@ -296,6 +411,49 @@ class ServiceTests(unittest.TestCase):
             self.assertIn("duration_ms", stopped)
             self.assertTrue(asr.wav_path.name.endswith(".wav"))
         finally:
+            stop_server(server, thread)
+
+    def test_http_health_reports_transcribing_after_recording_stops(self):
+        transcribe_entered = threading.Event()
+        transcribe_release = threading.Event()
+
+        class BlockingASR(FakeASR):
+            def transcribe(self, wav_path: Path, keywords: list[str] | None = None):
+                transcribe_entered.set()
+                transcribe_release.wait(timeout=2)
+                return super().transcribe(wav_path, keywords=keywords)
+
+        settings = Settings(host="127.0.0.1", port=0)
+        asr = BlockingASR()
+        engine = InferenceEngine(
+            settings,
+            asr_backend=asr,
+            cleanup_backend=FaithfulRuleCleanupBackend(),
+        )
+        server, thread, host, port = serve_test_engine(settings, engine)
+        base_url = f"http://{host}:{port}"
+        try:
+            with patch("transclip.service.engine.AudioRecorder", FakeRecorder):
+                http_json("POST", f"{base_url}/record/start", {})
+                stopped = {}
+                stop_thread = threading.Thread(
+                    target=lambda: stopped.update(
+                        http_json("POST", f"{base_url}/record/stop", {"cleanup": True})
+                    )
+                )
+                stop_thread.start()
+                self.assertTrue(transcribe_entered.wait(timeout=2))
+
+                health = http_json("GET", f"{base_url}/health")
+                self.assertEqual(health["status"], "transcribing")
+
+                transcribe_release.set()
+                stop_thread.join(timeout=2)
+
+            self.assertEqual(stopped["text"], "Hello from ROCm.")
+            self.assertEqual(http_json("GET", f"{base_url}/health")["status"], "ready")
+        finally:
+            transcribe_release.set()
             stop_server(server, thread)
 
     def test_http_record_stop_can_discard_short_recording(self):
@@ -579,6 +737,15 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(metadata["voice_mode"], "shell")
             self.assertEqual(metadata["voice_trigger"], "shell command")
             self.assertEqual(metadata["shell"]["command"], "ls -la")
+
+def _write_test_wav(path: Path, *, seconds: float, sample_rate: int) -> None:
+    frame_count = int(seconds * sample_rate)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        wav.writeframes(b"\x01\x00" * frame_count)
 
 
 if __name__ == "__main__":

@@ -108,6 +108,49 @@ class DictationSessionTests(unittest.TestCase):
         self.assertEqual(result["duration_ms"], 250.0)
         self.assertEqual(calls[0][1:], (True, "/record/stop", True))
 
+    def test_status_moves_from_stopping_to_transcribing_while_stop_finishes(self):
+        stop_entered = Event()
+        stop_release = Event()
+        transcribe_entered = Event()
+        transcribe_release = Event()
+
+        class BlockingRecorder(FakeRecorder):
+            def stop_to_wav(self, output_path: Path):
+                stop_entered.set()
+                stop_release.wait(timeout=2)
+                return super().stop_to_wav(output_path)
+
+        def transcribe(wav_path: Path, cleanup, source):
+            del wav_path, cleanup, source
+            transcribe_entered.set()
+            transcribe_release.wait(timeout=2)
+            return {"text": "Hello.", "status": "ready"}
+
+        session = DictationSession(
+            Settings(min_recording_ms=0, toggle_cooldown_ms=0),
+            transcribe=transcribe,
+            recorder_factory=BlockingRecorder,
+            clock=lambda: 1.0,
+        )
+        session.start_recording()
+
+        stopped = {}
+        stop_thread = Thread(target=lambda: stopped.update(session.stop_recording()))
+        stop_thread.start()
+
+        self.assertTrue(stop_entered.wait(timeout=2))
+        self.assertEqual(session.status(), "stopping")
+
+        stop_release.set()
+        self.assertTrue(transcribe_entered.wait(timeout=2))
+        self.assertEqual(session.status(), "transcribing")
+
+        transcribe_release.set()
+        stop_thread.join(timeout=2)
+
+        self.assertEqual(stopped["text"], "Hello.")
+        self.assertEqual(session.status(), "ready")
+
     def test_streaming_finish_uses_adapter_instead_of_wav_transcriber(self):
         streaming = FakeStreamingASR(final_text="streamed final")
         factory = FakeStreamingSessionFactory(streaming)
