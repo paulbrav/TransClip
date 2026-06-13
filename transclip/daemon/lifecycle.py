@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from transclip.platform.runtime import PlatformRuntime, get_runtime
 from transclip.settings import load_settings, write_default_settings
+
+if TYPE_CHECKING:
+    from transclip.platform.runtime import SystemPlatform
 
 from . import linux as linux_daemon
 from . import macos as macos_daemon
@@ -21,7 +25,7 @@ __all__ = [
     "uninstall_daemon",
 ]
 
-_PLATFORM_BACKENDS: dict[str, PlatformDaemon] = {
+_PLATFORM_BACKENDS: dict[SystemPlatform, PlatformDaemon] = {
     "Linux": linux_daemon.platform_daemon,
     "Darwin": macos_daemon.platform_daemon,
     "Windows": windows_daemon.platform_daemon,

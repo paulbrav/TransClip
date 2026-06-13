@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from transclip.platform.runtime import open_path
 
 from .menu import MODEL_ITEMS_REF
+
+if TYPE_CHECKING:
+    from .menu import TrayAction
 from .menu_update import (
     HistoryMenuState,
     TrayMenuView,
@@ -116,8 +119,8 @@ def build_tray_action_callbacks(
     quit: Callable[[], Any],
     set_hotkey: Callable[[], Any] | None = None,
     copy_hotkey_setup: Callable[[], Any] | None = None,
-) -> dict[str, Callable[..., Any]]:
-    callbacks: dict[str, Callable[..., Any]] = {
+) -> dict[TrayAction, Callable[..., Any]]:
+    callbacks: dict[TrayAction, Callable[..., Any]] = {
         "toggle": lambda *_: controller.toggle_record(),
         "copy_partial": lambda *_: controller.copy_partial(),
         "copy_latest": lambda *_: controller.copy_latest(),

@@ -1,10 +1,29 @@
 from __future__ import annotations
 
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
+
+if TYPE_CHECKING:
+    from transclip.mode_routing import VoiceMode
+
+# Dictation lifecycle status reported by DictationSession.status() and echoed on
+# the /health and /record/* responses.
+DictationStatus = Literal["recording", "ready"]
+# The action a /record/toggle (or /record/stop) call resolved to.
+ToggleAction = Literal["started", "stopped", "discarded", "ignored"]
+# Why a recording was discarded / ignored.
+DiscardReason = Literal["toggle_cooldown", "max_recording_duration"]
+# The originating endpoint recorded for a record/transcribe session.
+RecordSource = Literal[
+    "/record/stop",
+    "/record/toggle",
+    "/transcribe",
+    "/cleanup/transcribe",
+    "/eval/incremental",
+]
 
 
 class ServiceHealthResponse(TypedDict, total=False):
-    status: str
+    status: DictationStatus
     asr_backend: str
     asr_model: str
     cleanup_backend: str
@@ -28,13 +47,13 @@ class ServiceHealthResponse(TypedDict, total=False):
 
 
 class RecordSessionResponse(TypedDict, total=False):
-    status: str
-    action: str
+    status: DictationStatus
+    action: ToggleAction
     text: str
     duration_ms: float
     discarded: bool
     already_recording: bool
-    reason: str
+    reason: DiscardReason
     cooldown_ms: int
     max_recording_ms: int
     history_error: str
@@ -42,7 +61,7 @@ class RecordSessionResponse(TypedDict, total=False):
     service_url: str
     paste: dict[str, Any]
     timestamp: str
-    voice_mode: str
+    voice_mode: VoiceMode
     voice_trigger: str
     voice_literal: bool
     shell: dict[str, Any]
@@ -54,7 +73,7 @@ class CleanupTextResponse(TypedDict, total=False):
     text: str
     backend: str
     timings_ms: dict[str, float]
-    voice_mode: str
+    voice_mode: VoiceMode
     voice_trigger: str
     voice_literal: bool
     cleanup_backend: str
@@ -63,8 +82,11 @@ class CleanupTextResponse(TypedDict, total=False):
 JsonPayload = dict[str, object]
 
 
-class TranscribeResponse(RecordSessionResponse):
+class TranscribeResponse(RecordSessionResponse, total=False):
     raw_asr: str
     cleanup: dict[str, Any]
     cleanup_enabled: bool
     submit: bool | None
+    asr_backend: str
+    asr_model: str
+    cleanup_backend: str

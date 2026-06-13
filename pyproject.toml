@@ -20,6 +20,7 @@ macos-ui = ["pyobjc-framework-Cocoa>=10; sys_platform == 'darwin'"]
 windows-ui = ["pystray>=0.19", "pillow>=10", "keyboard>=0.13.5; sys_platform == 'win32'"]
 dev = [
     "coverage[toml]>=7.10",
+    "mypy>=1.11",
     "pytest>=8.4",
     "ruff>=0.12.11",
     "ty>=0.0.1a19",
@@ -51,10 +52,41 @@ line-ending = "lf"
 python-version = "3.12"
 
 [tool.ty.rules]
+# NOTE: unresolved-import is silenced globally because optional/platform-specific
+# deps (AppKit, Foundation, mlx, pystray, keyboard, ...) are not installed in every
+# environment. Scoping this per-import is a larger follow-up change; keep as-is for now.
 unresolved-import = "ignore"
 
 [tool.ty.src]
+# Recommended follow-up: widen this to also check "scripts" and "tests". Both are
+# excluded for now because each carries an un-cleared diagnostic backlog beyond the
+# scope of this PR (measured 2026-06: +"scripts" ~= +7 diagnostics, +"tests" ~= +259).
 include = ["transclip"]
+
+[tool.mypy]
+# Informational / non-blocking lane. ty is the primary type checker; mypy is run only
+# to cover the ONE gap ty does not flag: typo-in-comparison (Literal/str overlap), via
+# strict_equality. Intentionally NOT --strict / disallow_untyped_defs (would flood).
+python_version = "3.12"
+files = ["transclip"]
+ignore_missing_imports = true
+strict_equality = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+# Silence the categories ty already reports (the pre-existing structural backlog) so
+# this lane is a clean GREEN tripwire whose sole job is to catch comparison-overlap.
+# Widening mypy (e.g. disallow_untyped_defs) is a separate follow-up; ty stays primary.
+disable_error_code = [
+    "arg-type",
+    "attr-defined",
+    "assignment",
+    "return-value",
+    "var-annotated",
+    "type-var",
+    "typeddict-item",
+    "func-returns-value",
+    "call-arg",
+]
 
 [tool.coverage.run]
 branch = true

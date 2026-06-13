@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
+
 from transclip.platform.profiles import detect_runtime_profile, is_apple_silicon, machine_architecture
 from transclip.platform.runtime import PlatformRuntime, get_runtime
 from transclip.settings import Settings, default_settings
 
 from .cache import cache_artifacts_present, model_cache_path
 from .types import GIB, ModelCatalogEntry, ModelRow
+
+if TYPE_CHECKING:
+    from .types import ASRBackendKind
 
 MODEL_CATALOG: tuple[ModelCatalogEntry, ...] = (
     ModelCatalogEntry(
@@ -140,11 +145,11 @@ def catalog_entry_for_backend(backend: str, model_id: str) -> ModelCatalogEntry:
     return entry
 
 
-def normalize_asr_backend(asr_backend: str) -> str:
+def normalize_asr_backend(asr_backend: str) -> ASRBackendKind:
     if asr_backend.startswith("file:"):
         return "file"
     try:
-        return ASR_BACKEND_ALIASES[asr_backend]
+        return cast("ASRBackendKind", ASR_BACKEND_ALIASES[asr_backend])
     except KeyError as exc:
         raise ValueError(f"Unsupported ASR backend: {asr_backend}") from exc
 
@@ -173,7 +178,7 @@ def validate_asr_model_backend(
     asr_backend: str,
     model_id: str,
     runtime: PlatformRuntime | None = None,
-) -> str:
+) -> ASRBackendKind:
     backend = normalize_asr_backend(asr_backend)
     if backend == "file":
         return backend

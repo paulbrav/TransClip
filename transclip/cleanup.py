@@ -8,6 +8,9 @@ from .settings import Settings
 from .text_generation import TextGenerationBackend
 from .timing import timed_ms
 
+# How dictation transcripts are cleaned: rule-based normalization or a text model.
+DictationCleanup = Literal["rule", "model"]
+
 MODEL_CLEANUP_SYSTEM_PROMPT = (
     "Clean this ASR transcript faithfully. Preserve meaning. Correct punctuation, "
     "capitalization, and paragraphing. Remove filler only when it is clearly filler. "
@@ -68,7 +71,7 @@ MODEL_CLEANUP_POLICY = CleanupPromptPolicy(MODEL_CLEANUP_SYSTEM_PROMPT)
 
 @dataclass(frozen=True, slots=True)
 class CleanupPlan:
-    dictation_mode: Literal["rule", "model"]
+    dictation_mode: DictationCleanup
     requires_text_model: bool
 
     @classmethod
