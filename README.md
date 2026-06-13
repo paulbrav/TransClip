@@ -296,6 +296,13 @@ biasing, so keyword hints are ignored on this backend.
 | Recording | Microphone | Settings > Privacy & security > Microphone |
 | Paste | Focused app | SendInput Ctrl+V; elevated apps may block injection (UIPI) |
 
+**Elevated (administrator) apps:** Windows UIPI blocks a normal-integrity
+process from injecting input into a window owned by a process running as
+administrator. If the transcript is copied to the clipboard but paste does
+nothing in an elevated app (some terminals, installers, or apps "Run as
+administrator"), either run that app without elevation or run TransClip at the
+same elevation. `transclip doctor` reports this under `windows_elevated_paste`.
+
 ## Linux CUDA / ROCm Quick Start
 
 For the portable CPU/CUDA path, install the model extras first:
