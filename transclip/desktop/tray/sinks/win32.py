@@ -6,6 +6,30 @@ from typing import Any
 from ..menu import MODEL_ITEMS_REF
 
 
+class _ItemState:
+    """Mutable label/enabled state behind a pystray MenuItem.
+
+    pystray MenuItems are immutable - ``text`` and ``enabled`` are read-only - so
+    dynamic items are backed by callables that re-read this state on each render.
+    The RefDrivenMenuView setters mutate this object and the tray repaints via
+    ``icon.update_menu()`` (GTK/macOS mutate their widgets directly instead).
+    """
+
+    __slots__ = ("enabled", "text")
+
+    def __init__(self, text: str, enabled: bool = True) -> None:
+        self.text = text
+        self.enabled = enabled
+
+
+def _label_of(state: _ItemState) -> Callable[[Any], str]:
+    return lambda _item: state.text
+
+
+def _enabled_of(state: _ItemState) -> Callable[[Any], bool]:
+    return lambda _item: state.enabled
+
+
 class PystrayMenuSink:
     def __init__(
         self,
@@ -28,15 +52,18 @@ class PystrayMenuSink:
         self._items.append(self._pystray.Menu.SEPARATOR)
 
     def status_label(self, ref: str, text: str) -> None:
-        item = self._pystray.MenuItem(text, None, enabled=False)
+        state = _ItemState(text, enabled=False)
+        item = self._pystray.MenuItem(_label_of(state), None, enabled=_enabled_of(state))
         self._items.append(item)
-        self._menu_refs[ref] = item
+        self._menu_refs[ref] = state
 
     def action(self, ref: str, label: str, action, *, enabled: bool = True, callback=None) -> None:
-        item = self._pystray.MenuItem(label, callback, enabled=enabled)
+        del action
+        state = _ItemState(label, enabled=enabled)
+        item = self._pystray.MenuItem(_label_of(state), callback, enabled=_enabled_of(state))
         self._items.append(item)
         if ref:
-            self._menu_refs[ref] = item
+            self._menu_refs[ref] = state
 
     def _build_history_menu(self) -> Any:
         entries = self._menu_refs.get(
@@ -76,9 +103,10 @@ class PystrayMenuSink:
         submenu_items: list = []
         self._menu_refs[MODEL_ITEMS_REF] = []
         for label, row in choices:
-            model_item = self._pystray.MenuItem(label, self._set_model_action(row.model_id, row.backend))
+            state = _ItemState(label)
+            model_item = self._pystray.MenuItem(_label_of(state), self._set_model_action(row.model_id, row.backend))
             submenu_items.append(model_item)
-            self._menu_refs[MODEL_ITEMS_REF].append((model_item, row))
+            self._menu_refs[MODEL_ITEMS_REF].append((state, row))
         self._items.append(self._pystray.MenuItem(title, self._pystray.Menu(*submenu_items)))
 
     def _set_model_action(self, model_id: str, backend: str) -> Callable[[Any, Any], None]:
