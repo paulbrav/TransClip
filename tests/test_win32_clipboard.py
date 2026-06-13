@@ -1,4 +1,5 @@
 import ctypes
+import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -68,6 +69,32 @@ class Win32ClipboardTests(unittest.TestCase):
         user32.SendInput.assert_called_once()
         sent_count, _array, _size = user32.SendInput.call_args.args
         self.assertEqual(sent_count, 4)
+
+
+@unittest.skipUnless(sys.platform == "win32", "exercises the real Win32 clipboard")
+class Win32ClipboardLiveTests(unittest.TestCase):
+    """Round-trip against the real OS clipboard.
+
+    The mocked tests above replace ctypes wholesale, so they cannot catch a
+    64-bit handle/pointer being truncated by a missing ``restype`` (the value
+    faults on dereference). Driving the real Win32 calls is the only way to
+    prove the clipboard actually works on a 64-bit Windows host.
+    """
+
+    def setUp(self) -> None:
+        self._prior = read_clipboard_text()
+
+    def tearDown(self) -> None:
+        write_clipboard_text(self._prior)
+
+    def test_unicode_round_trip(self) -> None:
+        sample = "TransClip 12345 ✓ 日本語"
+        write_clipboard_text(sample)
+        self.assertEqual(read_clipboard_text(), sample)
+
+    def test_empty_string_round_trip(self) -> None:
+        write_clipboard_text("")
+        self.assertEqual(read_clipboard_text(), "")
 
 
 if __name__ == "__main__":
