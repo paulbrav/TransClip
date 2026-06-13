@@ -29,6 +29,7 @@ from .platform import (
     check_hotkey_readiness,
     check_microphone_devices,
     check_tcc_permissions,
+    check_windows_elevated_paste,
     check_windows_version,
 )
 from .types import Check
@@ -69,6 +70,7 @@ def run_checks(
         check_session_type(platform_runtime),
         check_clipboard_tools(platform_runtime),
         check_paste_tools(platform_runtime),
+        check_windows_elevated_paste(platform_runtime),
         *build_backend_checks(settings, platform_runtime),
         check_hotkey_readiness(settings, platform_runtime),
         check_microphone_devices(settings, platform_runtime),

@@ -144,6 +144,21 @@ def check_windows_version(runtime: PlatformRuntime | None = None) -> Check:
     )
 
 
+def check_windows_elevated_paste(runtime: PlatformRuntime | None = None) -> Check:
+    platform_runtime = get_runtime(runtime)
+    if platform_runtime.system() != "Windows":
+        return Check("windows_elevated_paste", True, "not checked off Windows", required=False)
+    return Check(
+        "windows_elevated_paste",
+        True,
+        "paste uses SendInput; Windows UIPI silently blocks injection into a "
+        "window owned by a process running as administrator. If paste does "
+        "nothing in an elevated app, run that app without elevation (or run "
+        "TransClip at the same elevation).",
+        required=False,
+    )
+
+
 def check_tcc_permissions(runtime: PlatformRuntime | None = None) -> Check:
     platform_runtime = get_runtime(runtime)
     if platform_runtime.system() != "Darwin":
