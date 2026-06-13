@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from transclip.desktop.hotkey.windows import is_valid_hotkey, start_windows_hotkey
+from transclip.desktop.win32_app import set_dpi_awareness
 from transclip.platform.runtime import PlatformRuntime
 from transclip.product import DISPLAY_NAME
 from transclip.settings import Settings, patch_settings, settings_path
@@ -34,6 +35,9 @@ def run_windows_tray(
     explicit_settings_path: Path | None = None,
     runtime: PlatformRuntime | None = None,
 ) -> int:
+    # Opt into per-monitor-v2 DPI awareness before any window is created so the
+    # tray dialog is not bitmap-stretched (blurry) on high-DPI displays.
+    set_dpi_awareness()
     try:
         import pystray
         from PIL import Image, ImageDraw
