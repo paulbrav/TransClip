@@ -292,6 +292,9 @@ Selectable OpenVINO ASR models:
 drivers and is the way to test on any machine). Whisper does not support keyword
 biasing, so keyword hints are ignored on this backend.
 
+A future zero-download, on-device Windows speech backend is tracked in
+[docs/windows-roadmap.md](docs/windows-roadmap.md).
+
 ### Permissions (Windows)
 
 | Action | Permission | Notes |
