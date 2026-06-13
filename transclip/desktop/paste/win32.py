@@ -26,9 +26,32 @@ class KEYBDINPUT(ctypes.Structure):
     ]
 
 
+class MOUSEINPUT(ctypes.Structure):
+    _fields_ = [
+        ("dx", wintypes.LONG),
+        ("dy", wintypes.LONG),
+        ("mouseData", wintypes.DWORD),
+        ("dwFlags", wintypes.DWORD),
+        ("time", wintypes.DWORD),
+        ("dwExtraInfo", ctypes.c_ulonglong),
+    ]
+
+
+class HARDWAREINPUT(ctypes.Structure):
+    _fields_ = [
+        ("uMsg", wintypes.DWORD),
+        ("wParamL", wintypes.WORD),
+        ("wParamH", wintypes.WORD),
+    ]
+
+
 class INPUT(ctypes.Structure):
     class _INPUTUNION(ctypes.Union):
-        _fields_ = [("ki", KEYBDINPUT)]
+        # SendInput validates cbSize against the real Win32 INPUT (40 bytes on
+        # x64). MOUSEINPUT is the largest union member, so it must be present
+        # for sizeof(INPUT) to match even though we only ever send keystrokes;
+        # omitting it makes the struct 32 bytes and SendInput rejects the call.
+        _fields_ = [("mi", MOUSEINPUT), ("ki", KEYBDINPUT), ("hi", HARDWAREINPUT)]
 
     _anonymous_ = ("u",)
     _fields_ = [

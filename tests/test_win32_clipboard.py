@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from transclip.desktop.paste.win32 import (
+    INPUT,
     read_clipboard_text,
     send_ctrl_v_paste,
     write_clipboard_text,
@@ -95,6 +96,37 @@ class Win32ClipboardLiveTests(unittest.TestCase):
     def test_empty_string_round_trip(self) -> None:
         write_clipboard_text("")
         self.assertEqual(read_clipboard_text(), "")
+
+
+class Win32InputStructTests(unittest.TestCase):
+    @unittest.skipUnless(sys.maxsize > 2**32, "INPUT ABI layout assertion is for 64-bit")
+    def test_input_struct_matches_win32_abi_size(self) -> None:
+        # SendInput requires cbSize == sizeof(INPUT). On x64 the real INPUT is
+        # 40 bytes; if the union omits its largest member (MOUSEINPUT) the
+        # struct is too small, SendInput rejects every call with
+        # ERROR_INVALID_PARAMETER, and no keystroke is injected.
+        self.assertEqual(ctypes.sizeof(INPUT), 40)
+
+
+@unittest.skipUnless(sys.platform == "win32", "exercises the real Win32 SendInput")
+class Win32PasteLiveTests(unittest.TestCase):
+    """Drive the real SendInput path.
+
+    A wrong-sized INPUT struct passes every mocked test (SendInput is faked to
+    return 4) but is rejected by the OS at runtime. Only a real call proves the
+    struct the kernel sees is the size it expects.
+    """
+
+    def setUp(self) -> None:
+        self._prior = read_clipboard_text()
+        write_clipboard_text("")  # paste of empty clipboard is a no-op
+
+    def tearDown(self) -> None:
+        write_clipboard_text(self._prior)
+
+    def test_send_ctrl_v_paste_is_accepted_by_the_os(self) -> None:
+        # Raises "SendInput returned 0, expected 4" if the struct size is wrong.
+        send_ctrl_v_paste()
 
 
 if __name__ == "__main__":
