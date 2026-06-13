@@ -137,34 +137,56 @@ def windows_service_action(
     return run_command(commands[action], runner)
 
 
+TASK_STATE_RUNNING = 4
+
+
 def windows_service_state(
     runner: Runner = subprocess.run,
     runtime: PlatformRuntime | None = None,
 ) -> ServiceState:
     path = task_scheduler_xml_path(runtime)
-    result = runner(
-        ["schtasks", "/Query", "/TN", TASK_SCHEDULER_NAME, "/FO", "LIST", "/V"],
+    query = runner(
+        ["schtasks", "/Query", "/TN", TASK_SCHEDULER_NAME],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         check=False,
     )
-    installed = result.returncode == 0 or path.exists()
-    active = result.returncode == 0 and _windows_task_reports_running(result.stdout)
+    installed = query.returncode == 0 or path.exists()
+    active = installed and _windows_task_state(runner) == TASK_STATE_RUNNING
     return ServiceState(
         installed=installed,
         active=active,
-        detail=result.stdout.strip() or f"exit {result.returncode}",
+        detail=query.stdout.strip() or f"exit {query.returncode}",
     )
 
 
-def _windows_task_reports_running(output: str) -> bool:
-    for line in output.splitlines():
-        stripped = line.strip()
-        if stripped.lower().startswith("status:"):
-            status = stripped.split(":", 1)[1].strip().lower()
-            return status == "running"
-    return False
+def _windows_task_state(runner: Runner) -> int | None:
+    """Return the task's numeric MSFT_ScheduledTask.State, or None.
+
+    ``schtasks /Query`` prints a *localized* status string ("Running" only on
+    English Windows), so it cannot be parsed reliably. PowerShell's
+    ``Get-ScheduledTask`` exposes ``State`` as a numeric enum that is identical
+    in every display language: Ready == 3, Running == 4.
+    """
+    result = runner(
+        [
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            f"(Get-ScheduledTask -TaskName '{TASK_SCHEDULER_NAME}' "
+            "-ErrorAction SilentlyContinue).State.value__",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    text = result.stdout.strip()
+    return int(text) if text.isdigit() else None
 
 
 class WindowsPlatformDaemon:
