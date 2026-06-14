@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .cleanup import (
     CleanupBackend,
@@ -14,12 +14,15 @@ from .mode_routing import VoiceModeRoute
 from .settings import Settings
 from .shell_command import ShellCommandProcessor, ShellCommandResult
 
+if TYPE_CHECKING:
+    from .mode_routing import VoiceMode
+
 
 @dataclass(slots=True)
 class TranscriptOutcome:
     text: str
     raw_asr: str
-    voice_mode: str
+    voice_mode: VoiceMode
     voice_trigger: str | None
     voice_literal: bool
     cleanup: CleanupResult | None

@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from transclip.cleanup import CleanupPlan
 from transclip.platform.runtime import PlatformRuntime, get_runtime
 from transclip.settings import Settings, active_hotkey, paste_shortcut
 
 from .types import ServiceHealthResponse
+
+if TYPE_CHECKING:
+    from .types import DictationStatus
 
 _SETTINGS_HEALTH_FIELDS = (
     "cleanup_enabled",
@@ -37,7 +42,7 @@ def settings_health_payload(
 
 def build_health_status(
     *,
-    status: str,
+    status: DictationStatus,
     settings: Settings,
     asr_backend_name: str,
     asr_model: str,

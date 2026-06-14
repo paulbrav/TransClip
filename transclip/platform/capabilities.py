@@ -2,20 +2,24 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from .runtime import PlatformRuntime, get_runtime
+
+if TYPE_CHECKING:
+    from .runtime import SystemPlatform
 
 
 @dataclass(frozen=True, slots=True)
 class SessionInfo:
-    system: str
+    system: SystemPlatform
     session: str
     desktop: str
 
 
 def session_info(
     environ: Mapping[str, str] | None = None,
-    system: str | None = None,
+    system: SystemPlatform | None = None,
     runtime: PlatformRuntime | None = None,
 ) -> SessionInfo:
     platform_runtime = get_runtime(runtime)

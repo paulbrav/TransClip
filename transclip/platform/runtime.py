@@ -5,7 +5,10 @@ import platform
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, Literal, Protocol, cast
+
+# platform.system() returns one of these on every platform this app targets.
+SystemPlatform = Literal["Linux", "Darwin", "Windows"]
 
 SESSION_ENV_KEYS = (
     "XDG_SESSION_TYPE",
@@ -18,7 +21,7 @@ SESSION_ENV_KEYS = (
 
 
 class PlatformRuntime(Protocol):
-    def system(self) -> str: ...
+    def system(self) -> SystemPlatform: ...
 
     def home_dir(self) -> Path: ...
 
@@ -34,8 +37,8 @@ class PlatformRuntime(Protocol):
 
 
 class DefaultPlatformRuntime:
-    def system(self) -> str:
-        return platform.system()
+    def system(self) -> SystemPlatform:
+        return cast(SystemPlatform, platform.system())
 
     def home_dir(self) -> Path:
         return Path.home()
@@ -112,7 +115,7 @@ def open_path(path: Path, runtime: PlatformRuntime | None = None) -> None:
         )
         return
     if system == "Windows":
-        os.startfile(str(path))  # type: ignore[attr-defined]
+        os.startfile(str(path))  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         return
     subprocess.Popen(
         ["xdg-open", str(path)],

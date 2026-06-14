@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import platform
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from transclip.platform.runtime import PlatformRuntime, get_runtime
 from transclip.product import CONFIG_DIR_NAME, LOG_DIR_NAME
+
+if TYPE_CHECKING:
+    from transclip.platform.runtime import SystemPlatform
 
 ProfileRuntimeKind = Literal["torch_cuda", "torch_rocm", "torch_mps", "torch_cpu", "mlx", "openvino", "file"]
 ProfileId = Literal[
@@ -23,7 +26,7 @@ ProfileId = Literal[
 @dataclass(frozen=True, slots=True)
 class RuntimeProfile:
     profile_id: ProfileId
-    system: str
+    system: SystemPlatform
     architecture: str
     default_asr_backend: str
     default_asr_model: str

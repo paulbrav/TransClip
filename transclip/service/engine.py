@@ -4,7 +4,7 @@ import logging
 import tempfile
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from transclip.asr import (
     GRANITE_NAR_BUCKET_SECONDS,
@@ -40,6 +40,9 @@ from .types import (
     ServiceHealthResponse,
     TranscribeResponse,
 )
+
+if TYPE_CHECKING:
+    from .types import RecordSource
 
 
 class StopSignal(Protocol):
@@ -117,7 +120,7 @@ class InferenceEngine:
         self,
         cleanup: bool | None = None,
         discard: bool = False,
-        source: str = "/record/stop",
+        source: RecordSource = "/record/stop",
         record_history: bool = False,
     ) -> RecordSessionResponse:
         result = self.dictation_session.stop_recording(
@@ -284,7 +287,7 @@ class InferenceEngine:
         self,
         wav_path: Path,
         cleanup: bool | None,
-        source: str,
+        source: RecordSource,
     ) -> TranscribeResponse:
         return self.transcribe(
             wav_path,

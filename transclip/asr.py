@@ -7,7 +7,7 @@ import tempfile
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from transclip.platform.runtime import PlatformRuntime
 
@@ -24,7 +24,21 @@ from .openvino_device import download_openvino_snapshot, resolve_openvino_device
 from .settings import Settings
 from .timing import timed_ms
 
+if TYPE_CHECKING:
+    from .device import TorchDevice
+
 logger = logging.getLogger(__name__)
+
+# The backend identity string reported by an ASR backend (ASRBackend.name) and
+# carried on TranscriptionResult.backend / the /transcribe and /health wire
+# fields. Distinct from the catalog/normalized ASRBackendKind (e.g. "granite").
+ASRBackendName = Literal[
+    "granite-transformers",
+    "granite-nar-transformers",
+    "mlx-audio",
+    "openvino-whisper",
+    "test-file",
+]
 
 AR_TOKENS_PER_AUDIO_SECOND = 10
 AR_MIN_NEW_TOKENS = 200
@@ -34,12 +48,15 @@ AR_MIN_NEW_TOKENS = 200
 class TranscriptionResult:
     text: str
     timings_ms: dict[str, float]
+    # The backend identity reported on the wire. ASRBackend implementations pass
+    # their ASRBackendName; the incremental path passes its own free-form label,
+    # so this stays a plain str.
     backend: str
     model: str
 
 
 class ASRBackend(Protocol):
-    name: str
+    name: ASRBackendName
     model: str
 
     def transcribe(self, wav_path: Path, keywords: list[str] | None = None) -> TranscriptionResult: ...
@@ -119,7 +136,7 @@ DefaultASRAudioPreparer = TorchAudioPreparer
 
 
 class GraniteSpeechTransformersBackend:
-    name = "granite-transformers"
+    name: ASRBackendName = "granite-transformers"
 
     def __init__(
         self,
@@ -139,7 +156,7 @@ class GraniteSpeechTransformersBackend:
     def _device(self):
         return resolve_torch_device(self.device)
 
-    def _load(self, device: str):
+    def _load(self, device: TorchDevice):
         if self._loaded is not None:
             return self._loaded
         try:
@@ -219,7 +236,7 @@ GRANITE_NAR_BUCKET_SECONDS = 2.0
 
 
 class GraniteSpeechNarTransformersBackend:
-    name = "granite-nar-transformers"
+    name: ASRBackendName = "granite-nar-transformers"
 
     def __init__(
         self,
@@ -239,7 +256,7 @@ class GraniteSpeechNarTransformersBackend:
     def _device(self):
         return resolve_torch_device(self.device)
 
-    def _load(self, device: str):
+    def _load(self, device: TorchDevice):
         if self._loaded is not None:
             return self._loaded
         try:
@@ -300,7 +317,7 @@ class GraniteSpeechNarTransformersBackend:
 
 
 class MlxAudioASRBackend:
-    name = "mlx-audio"
+    name: ASRBackendName = "mlx-audio"
 
     def __init__(
         self,
@@ -384,7 +401,7 @@ class OpenVINOWhisperBackend:
     by resolve_openvino_device, kept separate from the torch device path.
     """
 
-    name = "openvino-whisper"
+    name: ASRBackendName = "openvino-whisper"
 
     def __init__(
         self,
@@ -489,7 +506,7 @@ class OpenVINOWhisperBackend:
 
 
 class FileTranscriptASRBackend:
-    name = "test-file"
+    name: ASRBackendName = "test-file"
 
     def __init__(self, transcript_path: Path):
         self.transcript_path = transcript_path
@@ -590,7 +607,7 @@ def granite_user_prompt(keywords: list[str] | None = None) -> str:
     return "transcribe the speech with proper punctuation and capitalization."
 
 
-def _granite_transformers_dtype(torch, device: str):
+def _granite_transformers_dtype(torch, device: TorchDevice):
     if device == "cuda":
         return torch.bfloat16
     if device == "mps" and _mps_bfloat16_supported():
@@ -607,7 +624,7 @@ def _mps_bfloat16_supported() -> bool:
     return major >= 14
 
 
-def _granite_nar_dtype(torch, device: str):
+def _granite_nar_dtype(torch, device: TorchDevice):
     if device != "cuda":
         return torch.float32
     if getattr(torch.version, "hip", None):
@@ -615,7 +632,7 @@ def _granite_nar_dtype(torch, device: str):
     return torch.bfloat16
 
 
-def _configure_rocm_nar_attention_env(os_module, torch, device: str) -> None:
+def _configure_rocm_nar_attention_env(os_module, torch, device: TorchDevice) -> None:
     if device == "cuda" and getattr(torch.version, "hip", None):
         os_module.environ.setdefault("FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE")
         os_module.environ.setdefault("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL", "1")

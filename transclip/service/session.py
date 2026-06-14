@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
 from time import perf_counter
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from transclip.asr_streaming import PartialTranscript
 from transclip.audio import AudioRecorder
@@ -14,6 +14,9 @@ from transclip.settings import Settings
 
 from .streaming import StreamingCapture, StreamingDictationAdapter
 from .types import RecordSessionResponse, TranscribeResponse
+
+if TYPE_CHECKING:
+    from .types import DictationStatus, DiscardReason, RecordSource
 
 
 class Recorder(Protocol):
@@ -27,7 +30,7 @@ class Recorder(Protocol):
 
 
 RecorderFactory = Callable[[Settings], Recorder]
-Transcriber = Callable[[Path, bool | None, str], TranscribeResponse]
+Transcriber = Callable[[Path, bool | None, "RecordSource"], TranscribeResponse]
 Clock = Callable[[], float]
 
 
@@ -38,7 +41,7 @@ class RecordingHandle(Protocol):
         self,
         *,
         cleanup: bool | None,
-        source: str,
+        source: RecordSource,
     ) -> TranscribeResponse: ...
 
     def discard(self) -> None: ...
@@ -56,7 +59,7 @@ class BatchRecording:
         self,
         *,
         cleanup: bool | None,
-        source: str,
+        source: RecordSource,
     ) -> TranscribeResponse:
         with tempfile.TemporaryDirectory() as tmp:
             wav_path = self.recorder.stop_to_wav(Path(tmp) / "recording.wav")
@@ -83,7 +86,7 @@ class StreamingRecording:
         self,
         *,
         cleanup: bool | None,
-        source: str,
+        source: RecordSource,
     ) -> TranscribeResponse:
         self.adapter.detach_session(self.capture.session)
         try:
@@ -133,7 +136,7 @@ class DictationSession:
         self._active: ActiveRecording | None = None
         self._last_toggle_accepted_at = 0.0
 
-    def status(self) -> str:
+    def status(self) -> DictationStatus:
         with self._lock:
             return "recording" if self._active else "ready"
 
@@ -155,7 +158,7 @@ class DictationSession:
         self,
         cleanup: bool | None = None,
         discard: bool = False,
-        source: str = "/record/stop",
+        source: RecordSource = "/record/stop",
     ) -> RecordSessionResponse:
         with self._lock:
             active = self._pop_active()
@@ -216,8 +219,8 @@ class DictationSession:
         *,
         cleanup: bool | None,
         discard: bool,
-        discard_reason: str | None = None,
-        source: str,
+        discard_reason: DiscardReason | None = None,
+        source: RecordSource,
     ) -> RecordSessionResponse:
         duration_ms = round((self._clock() - active.started_at) * 1000, 3)
         if discard:
