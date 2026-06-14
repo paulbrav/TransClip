@@ -12,7 +12,6 @@ def _has_pystray() -> bool:
     return importlib.util.find_spec("pystray") is not None
 
 
-@unittest.skipUnless(sys.platform == "win32", "tray win32 adapter requires pystray/Pillow")
 class TrayWin32HotkeyTests(unittest.TestCase):
     def test_invalid_binding_is_rejected_without_persisting_or_restarting(self) -> None:
         from transclip.desktop.tray import win32
@@ -62,7 +61,6 @@ class TrayWin32HotkeyTests(unittest.TestCase):
         self.assertIn("ctrl+alt+t", toast_mock.call_args.args[1])
 
 
-@unittest.skipUnless(sys.platform == "win32", "tray win32 adapter requires pystray/Pillow")
 class TrayWin32RecordingNotifyTests(unittest.TestCase):
     def _fake_outcome(self, *, ok=True, action="started", paste_failed="", error=""):
         return SimpleNamespace(
@@ -98,7 +96,6 @@ class TrayWin32RecordingNotifyTests(unittest.TestCase):
         self.assertIn("Ctrl+V", toast.call_args.args[1])
 
 
-@unittest.skipUnless(sys.platform == "win32", "tray win32 adapter requires pystray/Pillow")
 class TrayWin32ActionNotifyTests(unittest.TestCase):
     def test_notify_action_toasts_when_enabled(self) -> None:
         from transclip.desktop.tray import win32
@@ -156,7 +153,6 @@ class CaptureHotkeyTests(unittest.TestCase):
         self.assertEqual(calls, ["pause", "read", "resume"])  # resume runs even on failure
 
 
-@unittest.skipUnless(sys.platform == "win32", "tray win32 adapter requires pystray/Pillow")
 class TrayWin32IconTests(unittest.TestCase):
     def test_health_icon_color_maps_known_states(self) -> None:
         from transclip.desktop.tray.win32 import health_icon_color

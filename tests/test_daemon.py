@@ -16,7 +16,7 @@ from transclip.daemon import (
 )
 from transclip.daemon.linux import build_systemd_unit, install_linux_daemon
 from transclip.daemon.macos import install_macos_daemon, launch_agent_path
-from transclip.daemon.windows import install_windows_daemon
+from transclip.daemon.windows import install_windows_daemon, uninstall_windows_daemon
 from transclip.desktop.hotkey import build_toggle_invocation, windows_hotkey_setup_message
 from transclip.paths import service_settings_path
 from transclip.settings import Settings, write_settings
@@ -255,12 +255,19 @@ class DaemonTests(unittest.TestCase):
             home=Path("C:/Users/test"),
             env={"LOCALAPPDATA": "C:/Users/test/AppData/Local"},
         )
+        calls = []
+
+        def runner(command, **_kwargs):
+            calls.append(command)
+            return type("Completed", (), {"returncode": 1, "stdout": ""})()
+
         with (
             patch("transclip.daemon.windows._set_autostart") as set_autostart,
             patch("transclip.daemon.windows._spawn_service") as spawn,
             patch("transclip.daemon.linux.install_shortcut") as install_shortcut,
         ):
             results = install_windows_daemon(
+                runner=runner,
                 runtime=runtime,
                 hotkey_setup_message=windows_hotkey_setup_message,
             )
@@ -273,6 +280,24 @@ class DaemonTests(unittest.TestCase):
         install_shortcut.assert_not_called()
         self.assertTrue(any("ctrl+shift+space" in result.detail for result in results))
         self.assertTrue(any("prefetch" in result.detail for result in results))
+        # Migration: a fresh install still tears down any leftover legacy task so
+        # an in-place upgrade does not double-start the service at logon.
+        self.assertIn(["schtasks", "/Delete", "/TN", "TransClip", "/F"], calls)
+
+    def test_windows_uninstall_clears_autostart_and_legacy_task(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        calls = []
+
+        def runner(command, **_kwargs):
+            calls.append(command)
+            return type("Completed", (), {"returncode": 0, "stdout": ""})()
+
+        with patch("transclip.daemon.windows._clear_autostart", return_value=True):
+            results = uninstall_windows_daemon(runner=runner, runtime=runtime)
+
+        self.assertIn(["schtasks", "/Delete", "/TN", "TransClip", "/F"], calls)
+        self.assertTrue(any("logon autostart" in result.detail for result in results))
+        self.assertTrue(any("legacy Task Scheduler task" in result.detail for result in results))
 
     def test_windows_service_state_reports_active_when_service_process_running(self):
         runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))

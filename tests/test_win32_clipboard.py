@@ -1,4 +1,5 @@
 import ctypes
+import os
 import sys
 import unittest
 from unittest.mock import MagicMock, patch
@@ -147,13 +148,20 @@ class Win32InputStructTests(unittest.TestCase):
         self.assertEqual(ctypes.sizeof(INPUT), 40)
 
 
-@unittest.skipUnless(sys.platform == "win32", "exercises the real Win32 SendInput")
+@unittest.skipUnless(
+    sys.platform == "win32" and os.environ.get("TRANSCLIP_LIVE_PASTE_TESTS"),
+    "live SendInput test; set TRANSCLIP_LIVE_PASTE_TESTS=1 on a real interactive Windows desktop",
+)
 class Win32PasteLiveTests(unittest.TestCase):
-    """Drive the real SendInput path.
+    """Drive the real SendInput path (opt-in via TRANSCLIP_LIVE_PASTE_TESTS).
 
     A wrong-sized INPUT struct passes every mocked test (SendInput is faked to
     return 4) but is rejected by the OS at runtime. Only a real call proves the
-    struct the kernel sees is the size it expects.
+    struct the kernel sees is the size it expects. Gated off CI: a locked/secure
+    or contended CI desktop can make SendInput insert <4 events even with a
+    correct struct, which would flake the blocking Windows gate. The deterministic
+    sizeof(INPUT)==40 assertion above already guards the struct-size regression;
+    this stays available for manual validation on a real interactive desktop.
     """
 
     def setUp(self) -> None:

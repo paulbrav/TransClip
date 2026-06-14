@@ -21,7 +21,9 @@ def is_valid_hotkey(binding: str) -> bool:
         return False
     try:
         keyboard.parse_hotkey(binding)
-    except (ValueError, ImportError):
+    except Exception:
+        # Pure validity probe: any parse failure (not just ValueError) means the
+        # binding is unusable and must be rejected rather than crash the apply path.
         return False
     return True
 
@@ -37,9 +39,7 @@ def start_windows_hotkey(
     try:
         import keyboard
     except ImportError as exc:
-        raise RuntimeError(
-            "keyboard is not installed; install transclip[windows-ui] for global hotkeys"
-        ) from exc
+        raise RuntimeError("keyboard is not installed; install transclip[windows-ui] for global hotkeys") from exc
     binding = active_hotkey(settings, platform_runtime)
     handle = keyboard.add_hotkey(binding, callback, suppress=False)
 

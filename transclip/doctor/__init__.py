@@ -70,7 +70,6 @@ def run_checks(
         check_session_type(platform_runtime),
         check_clipboard_tools(platform_runtime),
         check_paste_tools(platform_runtime),
-        check_windows_elevated_paste(platform_runtime),
         *build_backend_checks(settings, platform_runtime),
         check_hotkey_readiness(settings, platform_runtime),
         check_microphone_devices(settings, platform_runtime),
@@ -78,6 +77,10 @@ def run_checks(
         check_windows_version(platform_runtime),
         check_last_shortcut_log_event(platform_runtime),
     ]
+    if platform_runtime.system() == "Windows":
+        # UIPI advisory is meaningful only on Windows; keep it out of the
+        # Linux/macOS doctor output entirely.
+        checks.append(check_windows_elevated_paste(platform_runtime))
     if include_audio_debug:
         checks.append(check_audio_debug(settings))
     return checks

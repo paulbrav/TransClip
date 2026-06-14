@@ -27,6 +27,12 @@ Runner = Callable[..., subprocess.CompletedProcess[str]]
 RUN_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 RUN_KEY_VALUE_NAME = DISPLAY_NAME
 
+# Pre-Run-key TransClip versions registered a root-folder Task Scheduler logon
+# task with this name. We migrated to the HKCU Run key above; install/uninstall
+# both clear any leftover task so an in-place upgrade does not double-start the
+# service at logon (old task + Run key) or orphan the task on uninstall.
+_LEGACY_TASK_NAME = "TransClip"
+
 
 # --- registry seams -------------------------------------------------------
 # ``winreg`` is a Windows-only stdlib module, but this file is imported on every
@@ -145,6 +151,16 @@ def _stop_service(runner: Runner) -> CommandResult:
     )
 
 
+def _remove_legacy_task(runner: Runner) -> CommandResult:
+    """Best-effort teardown of the pre-Run-key Task Scheduler logon task.
+
+    No-ops cleanly when no such task exists (schtasks returns nonzero, tolerated).
+    """
+    run_command(["schtasks", "/End", "/TN", _LEGACY_TASK_NAME], runner, tolerate_failure=True)
+    run_command(["schtasks", "/Delete", "/TN", _LEGACY_TASK_NAME, "/F"], runner, tolerate_failure=True)
+    return CommandResult(True, f"cleared any legacy Task Scheduler task ({_LEGACY_TASK_NAME})")
+
+
 # --- public API -----------------------------------------------------------
 
 
@@ -156,11 +172,11 @@ def install_windows_daemon(
     *,
     hotkey_setup_message: Callable[..., str],
 ) -> list[CommandResult]:
-    del runner  # autostart is registered via the registry, not a subprocess
     platform_runtime = get_runtime(runtime)
     command = _service_command_line(settings_path)
     _set_autostart(command)
     results: list[CommandResult] = [
+        _remove_legacy_task(runner),
         CommandResult(True, f"registered logon autostart ({RUN_KEY_VALUE_NAME}): {command}"),
         _start_now(command),
     ]
@@ -186,7 +202,7 @@ def uninstall_windows_daemon(
     runtime: PlatformRuntime | None = None,
 ) -> list[CommandResult]:
     del runtime
-    results = [_stop_service(runner)]
+    results = [_stop_service(runner), _remove_legacy_task(runner)]
     if _clear_autostart():
         results.append(CommandResult(True, f"removed logon autostart ({RUN_KEY_VALUE_NAME})"))
     else:
