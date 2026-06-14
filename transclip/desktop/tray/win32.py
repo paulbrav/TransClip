@@ -157,13 +157,21 @@ def run_windows_tray(
         on_health_icon=lambda: menu_view.set_health_icon(session.health.icon),
     )
 
+    def pause_hotkey() -> None:
+        # Stop and clear the handle so resume (restart_hotkey) re-registers
+        # cleanly instead of trying to remove the already-removed hotkey.
+        stop = hotkey_holder["stop"]
+        if stop is not None:
+            stop()
+            hotkey_holder["stop"] = None
+
     def capture_hotkey() -> str | None:
         try:
             import keyboard
         except ImportError:
             return None
         return _capture_hotkey(
-            pause=lambda: hotkey_holder["stop"]() if hotkey_holder["stop"] is not None else None,
+            pause=pause_hotkey,
             resume=restart_hotkey,
             read_hotkey=lambda: keyboard.read_hotkey(suppress=False),
         )
@@ -346,8 +354,12 @@ def _prompt_hotkey(
             entry.config(state="disabled")
 
             def worker() -> None:
-                recording["result"] = capture()
-                recording["active"] = False
+                # finally so a failure in capture() can never leave the dialog
+                # stuck in the recording state (entry disabled, buttons inert).
+                try:
+                    recording["result"] = capture()
+                finally:
+                    recording["active"] = False
 
             threading.Thread(target=worker, name="transclip-hotkey-capture", daemon=True).start()
             poll_capture()
