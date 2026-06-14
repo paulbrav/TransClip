@@ -240,6 +240,10 @@ def run_windows_tray(
         return pystray.Menu(*items)
 
     def on_hotkey() -> None:
+        # Runs on the keyboard library's low-level hook thread, not the pystray
+        # message loop: it mutates menu-item backing state and calls
+        # update_menu(). Writes are simple attribute sets, so the worst case is a
+        # torn read that self-heals on the next repaint.
         toggle_and_notify()
 
     icon = pystray.Icon(
