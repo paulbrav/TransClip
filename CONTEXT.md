@@ -42,7 +42,8 @@ service manager, and supported runtime kinds. Linux x86_64 defaults to Granite
 NAR with systemd; Linux CPU defaults to Granite AR. macOS Apple Silicon defaults
 to MLX Whisper via `mlx-audio` with launchd. Windows defaults to Granite AR
 (`ibm-granite/granite-speech-4.1-2b`) with CUDA when available and Task
-Scheduler for the background service. Granite NAR is not supported on Windows.
+Scheduler for the background service. Granite NAR is also selectable on Windows
+CUDA.
 
 **ASR runtime**: The local speech-to-text execution path for a WAV file. It
 includes audio preparation, backend selection, local model loading, transcript

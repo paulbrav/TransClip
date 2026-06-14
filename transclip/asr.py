@@ -661,13 +661,16 @@ def _nar_decode(output: Any, tokenizer: Any) -> str:
 
     Newer revisions return token-id tensors in ``output.preds`` that must be
     detokenized; older revisions returned already-decoded strings in
-    ``output.text_preds``.
+    ``output.text_preds``. When both are present, the already-decoded
+    ``text_preds`` wins. Truthiness (not ``is not None``) is used so a
+    present-but-empty field falls through to the next candidate instead of
+    raising IndexError.
     """
     text_preds = getattr(output, "text_preds", None)
-    if text_preds is not None:
+    if text_preds:
         return text_preds[0]
     preds = getattr(output, "preds", None)
-    if preds is not None:
+    if preds:
         if tokenizer is None:
             raise RuntimeError("Granite NAR returned token ids but no tokenizer was loaded to decode them")
         return tokenizer.decode(preds[0], skip_special_tokens=True)

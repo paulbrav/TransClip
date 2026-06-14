@@ -69,7 +69,8 @@ transclip tray
 
 Install a CUDA-enabled PyTorch wheel before prefetching Granite AR models, then
 run `transclip models prefetch --model ibm-granite/granite-speech-4.1-2b`.
-Granite NAR is not supported on Windows.
+Granite NAR (`asr_backend = "granite_nar"`) is also selectable on Windows CUDA;
+Granite AR is the default.
 
 Check readiness and logs:
 
@@ -252,9 +253,11 @@ Supported ASR on Windows:
 
 - `ibm-granite/granite-speech-4.1-2b` (default Granite autoregressive)
 - `ibm-granite/granite-speech-4.1-2b-plus` (speaker/timestamp features)
+- `ibm-granite/granite-speech-4.1-2b-nar` (Granite NAR, lower latency; selectable on CUDA)
 
-Granite Speech 4.1 NAR and ROCm are not supported on Windows. Eval thresholds
-for Windows Granite AR are in `eval/windows/manifest.json` (relaxed vs Linux NAR).
+ROCm is not supported on Windows; Granite Speech 4.1 NAR is selectable on Windows
+CUDA (Granite AR remains the default). Eval thresholds for Windows Granite AR are
+in `eval/windows/manifest.json` (relaxed vs Linux NAR).
 
 ### Intel acceleration (integrated GPU / NPU) via OpenVINO
 
@@ -378,7 +381,7 @@ after a restart does not pay a multi-second ROCm shape compile.
 |----------|---------------|-------------|-------|
 | Linux GPU (CUDA/ROCm) | Granite NAR | Opt-in | No extra dependencies |
 | Linux/Windows CPU | Granite CPU/AR | No | Requires the granite_nar GPU backend |
-| Windows CUDA | Granite AR | No | granite_nar is not supported on Windows |
+| Windows CUDA | Granite AR (NAR selectable) | No | NAR selectable on CUDA; incremental pending validation |
 | macOS MLX | MLX Whisper | Pending benchmark | Run `scripts/bench_nar_mlx.py` on an M-series (gate: warm 8 s pass <= 900 ms) |
 
 While recording, `GET /record/partial` and the tray's **Copy partial
