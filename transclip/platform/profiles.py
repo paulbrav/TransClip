@@ -46,21 +46,16 @@ GRANITE_NAR_UNSUPPORTED_MACOS = (
     "Granite Speech 4.1 NAR requires Apple Silicon on macOS. "
     'Set asr_backend = "mlx_audio_whisper" or choose a supported MLX model.'
 )
-GRANITE_NAR_UNSUPPORTED_WINDOWS = (
-    "Granite Speech 4.1 NAR is not supported on Windows. "
-    'Set asr_backend = "granite" with ibm-granite/granite-speech-4.1-2b.'
-)
 INCREMENTAL_UNSUPPORTED_MACOS = (
     "Incremental transcription is pending the NAR-MLX benchmark: "
     "run scripts/bench_nar_mlx.py on an Apple Silicon Mac "
     "(gate: warm 8 s pass <= 900 ms) and commit eval/macos/nar-mlx-bench.json."
 )
 INCREMENTAL_UNSUPPORTED_CPU = (
-    "Incremental transcription requires the granite_nar GPU backend; "
-    "CPU-only hosts run batch transcription."
+    "Incremental transcription requires the granite_nar GPU backend; CPU-only hosts run batch transcription."
 )
 INCREMENTAL_UNSUPPORTED_WINDOWS = (
-    "granite_nar is not supported on Windows, so incremental transcription is unavailable."
+    "Incremental transcription on Windows is pending validation; batch transcription is used."
 )
 INCREMENTAL_UNSUPPORTED_PLATFORM = "Incremental transcription is not supported on this platform."
 
@@ -155,7 +150,6 @@ def detect_runtime_profile(runtime: PlatformRuntime | None = None) -> RuntimePro
                 default_asr_device="auto",
                 supported_runtime_kinds=("torch_cuda", "torch_cpu", "file"),
                 service_manager="task_scheduler",
-                granite_nar_unsupported_reason=GRANITE_NAR_UNSUPPORTED_WINDOWS,
                 incremental_transcription_unsupported_reason=INCREMENTAL_UNSUPPORTED_WINDOWS,
             )
         from transclip.openvino_device import has_intel_accelerator
@@ -184,7 +178,6 @@ def detect_runtime_profile(runtime: PlatformRuntime | None = None) -> RuntimePro
             default_asr_device="cpu",
             supported_runtime_kinds=("torch_cpu", "file"),
             service_manager="task_scheduler",
-            granite_nar_unsupported_reason=GRANITE_NAR_UNSUPPORTED_WINDOWS,
             incremental_transcription_unsupported_reason=INCREMENTAL_UNSUPPORTED_WINDOWS,
         )
 

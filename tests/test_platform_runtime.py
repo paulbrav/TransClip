@@ -101,9 +101,7 @@ class PlatformRuntimeTests(unittest.TestCase):
     def test_granite_nar_rejected_on_darwin_intel(self):
         runtime = FakeRuntime(system="Darwin", home=Path("/Users/test"), check_output_text="x86_64")
         with self.assertRaisesRegex(ValueError, "requires aarch64, arm64"):
-            validate_asr_model_backend(
-                "granite_nar", "ibm-granite/granite-speech-4.1-2b-nar", runtime
-            )
+            validate_asr_model_backend("granite_nar", "ibm-granite/granite-speech-4.1-2b-nar", runtime)
 
     def test_supported_catalog_entries_filter_by_platform(self):
         linux_runtime = FakeRuntime(system="Linux", home=Path("/home/user"))
@@ -168,7 +166,7 @@ class PlatformRuntimeTests(unittest.TestCase):
         self.assertEqual(profile.profile_id, "windows_cpu")
         self.assertEqual(settings.asr_device, "cpu")
 
-    def test_granite_nar_rejected_on_windows(self):
+    def test_granite_nar_accepted_on_windows(self):
         runtime = FakeRuntime(system="Windows", home=Path("C:/Users/tester"))
         with patch("transclip.device.torch_cuda_usable", return_value=True):
             settings = replace(
@@ -176,15 +174,17 @@ class PlatformRuntimeTests(unittest.TestCase):
                 asr_backend="granite_nar",
                 asr_model="ibm-granite/granite-speech-4.1-2b-nar",
             )
-            with self.assertRaisesRegex(ValueError, "not supported on Windows"):
-                validate_asr_model_backend(settings.asr_backend, settings.asr_model, runtime)
+            self.assertEqual(
+                validate_asr_model_backend(settings.asr_backend, settings.asr_model, runtime),
+                "granite_nar",
+            )
 
-    def test_supported_catalog_entries_exclude_nar_on_windows(self):
+    def test_supported_catalog_entries_include_nar_on_windows(self):
         runtime = FakeRuntime(system="Windows", home=Path("C:/Users/tester"))
         model_ids = {entry.model_id for entry in supported_catalog_entries(runtime)}
 
         self.assertIn("ibm-granite/granite-speech-4.1-2b", model_ids)
-        self.assertNotIn("ibm-granite/granite-speech-4.1-2b-nar", model_ids)
+        self.assertIn("ibm-granite/granite-speech-4.1-2b-nar", model_ids)
 
     def test_windows_openvino_profile_selected_when_intel_accelerator_present(self):
         runtime = FakeRuntime(system="Windows", home=Path("C:/Users/tester"))

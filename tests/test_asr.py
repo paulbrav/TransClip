@@ -14,6 +14,8 @@ from transclip.asr import (
     OpenVINOWhisperBackend,
     _configure_rocm_nar_attention_env,
     _granite_nar_dtype,
+    _nar_decode,
+    _nar_infer,
     _pad_nar_waveform_to_bucket,
     _whisper_language_token,
     build_asr_backend,
@@ -28,6 +30,7 @@ class ASRTests(unittest.TestCase):
     @staticmethod
     def _linux_runtime() -> FakeRuntime:
         return FakeRuntime(system="Linux", home=Path("/home/user"))
+
     def test_granite_prompt_requests_punctuation(self):
         self.assertEqual(
             granite_user_prompt(),
@@ -420,6 +423,50 @@ class ASRTests(unittest.TestCase):
         padded = _pad_nar_waveform_to_bucket(waveform, sample_rate=16000)
 
         self.assertIs(padded, waveform)
+
+    def test_nar_infer_prefers_transcribe_over_generate(self):
+        # Current NAR revisions expose transcribe(); generate() is gone.
+        calls = []
+
+        class Model:
+            def transcribe(self, **kwargs):
+                calls.append("transcribe")
+                return "via-transcribe"
+
+            def generate(self, **kwargs):
+                calls.append("generate")
+                return "via-generate"
+
+        self.assertEqual(_nar_infer(Model(), {"input_features": 1}), "via-transcribe")
+        self.assertEqual(calls, ["transcribe"])
+
+    def test_nar_infer_falls_back_to_generate_for_older_models(self):
+        # Older revisions (e.g. the friend's pinned Linux model) only had generate().
+        class OldModel:
+            def generate(self, **kwargs):
+                return "via-generate"
+
+        self.assertEqual(_nar_infer(OldModel(), {}), "via-generate")
+
+    def test_nar_decode_uses_text_preds_when_present(self):
+        # Older revisions returned already-decoded strings in text_preds.
+        output = SimpleNamespace(text_preds=["hello world"])
+        self.assertEqual(_nar_decode(output, tokenizer=None), "hello world")
+
+    def test_nar_decode_detokenizes_token_id_preds(self):
+        # Current revisions return token-id tensors in preds needing a tokenizer.
+        class FakeTokenizer:
+            def decode(self, ids, skip_special_tokens=False):
+                assert skip_special_tokens
+                return "decoded:" + ",".join(str(i) for i in ids)
+
+        output = SimpleNamespace(preds=[[1, 2, 3]])
+        self.assertEqual(_nar_decode(output, FakeTokenizer()), "decoded:1,2,3")
+
+    def test_nar_decode_raises_on_token_ids_without_tokenizer(self):
+        output = SimpleNamespace(preds=[[1, 2, 3]])
+        with self.assertRaisesRegex(RuntimeError, "no tokenizer"):
+            _nar_decode(output, tokenizer=None)
 
     def test_audio_preparer_folds_channels_and_resamples_without_model_runtime(self):
         samples = np.array([[1.0, 3.0], [5.0, 7.0]], dtype=np.float32)

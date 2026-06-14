@@ -263,7 +263,7 @@ class GraniteSpeechNarTransformersBackend:
             import os
 
             import torch
-            from transformers import AutoFeatureExtractor, AutoModel
+            from transformers import AutoFeatureExtractor, AutoModel, AutoTokenizer
         except ImportError as exc:
             raise RuntimeError("transformers, torch, and torchaudio are required. Install transclip[models].") from exc
 
@@ -284,7 +284,15 @@ class GraniteSpeechNarTransformersBackend:
             local_files_only=self.local_files_only,
             cache_dir=self.cache_dir or None,
         )
-        self._loaded = (feature_extractor, model)
+        # Current NAR revisions return token ids (output.preds) rather than
+        # decoded strings, so a tokenizer is needed to detokenize them.
+        tokenizer = AutoTokenizer.from_pretrained(
+            self.model,
+            trust_remote_code=True,
+            local_files_only=self.local_files_only,
+            cache_dir=self.cache_dir or None,
+        )
+        self._loaded = (feature_extractor, model, tokenizer)
         return self._loaded
 
     def transcribe(self, wav_path: Path, keywords: list[str] | None = None) -> TranscriptionResult:
@@ -299,21 +307,20 @@ class GraniteSpeechNarTransformersBackend:
         with timed_ms(timings, "asr"):
             import torch
 
-            feature_extractor, model = self._load(device)
+            feature_extractor, model, tokenizer = self._load(device)
             if not torch.is_tensor(waveform):
                 waveform = torch.from_numpy(waveform)
             if sample_rate != GRANITE_NAR_SAMPLE_RATE:
                 import torchaudio
 
-                waveform = torchaudio.functional.resample(
-                    waveform, sample_rate, GRANITE_NAR_SAMPLE_RATE
-                )
+                waveform = torchaudio.functional.resample(waveform, sample_rate, GRANITE_NAR_SAMPLE_RATE)
                 sample_rate = GRANITE_NAR_SAMPLE_RATE
             waveform = _pad_nar_waveform_to_bucket(waveform, sample_rate=sample_rate)
             inputs = feature_extractor([waveform], device=device)
             with torch.inference_mode():
-                output = model.generate(**inputs)
-        return TranscriptionResult(output.text_preds[0].strip(), timings, self.name, self.model)
+                output = _nar_infer(model, inputs)
+            text = _nar_decode(output, tokenizer)
+        return TranscriptionResult(text.strip(), timings, self.name, self.model)
 
 
 class MlxAudioASRBackend:
@@ -636,6 +643,35 @@ def _configure_rocm_nar_attention_env(os_module, torch, device: TorchDevice) -> 
     if device == "cuda" and getattr(torch.version, "hip", None):
         os_module.environ.setdefault("FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE")
         os_module.environ.setdefault("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL", "1")
+
+
+def _nar_infer(model: Any, inputs: Any) -> Any:
+    """Run Granite NAR inference across model revisions.
+
+    The published NAR model code renamed its inference entrypoint from
+    ``generate`` to ``transcribe`` (``can_generate()`` now returns False), so
+    prefer ``transcribe`` and fall back to ``generate`` for older revisions.
+    """
+    runner = getattr(model, "transcribe", None) or model.generate
+    return runner(**inputs)
+
+
+def _nar_decode(output: Any, tokenizer: Any) -> str:
+    """Extract transcript text from a Granite NAR output across model revisions.
+
+    Newer revisions return token-id tensors in ``output.preds`` that must be
+    detokenized; older revisions returned already-decoded strings in
+    ``output.text_preds``.
+    """
+    text_preds = getattr(output, "text_preds", None)
+    if text_preds is not None:
+        return text_preds[0]
+    preds = getattr(output, "preds", None)
+    if preds is not None:
+        if tokenizer is None:
+            raise RuntimeError("Granite NAR returned token ids but no tokenizer was loaded to decode them")
+        return tokenizer.decode(preds[0], skip_special_tokens=True)
+    raise RuntimeError(f"Unexpected Granite NAR output without text_preds or preds: {type(output).__name__}")
 
 
 def _linear_resample(samples: Any, source_rate: int, target_rate: int) -> Any:
