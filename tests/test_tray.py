@@ -478,6 +478,12 @@ class TrayTests(unittest.TestCase):
         runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
         with (
             patch("transclip.desktop.tray.get_runtime", return_value=runtime),
+            # Mock the single-instance guard so the test deterministically reaches
+            # the pystray check. The guard runs first; if a real TransClip tray is
+            # running on this host it holds the mutex and run_tray exits 0
+            # ("already running") before ever checking pystray, failing this test.
+            patch("transclip.desktop.tray.win32.acquire_single_instance", return_value=object()),
+            patch("transclip.desktop.tray.win32.release_single_instance"),
             patch.dict(sys.modules, {"pystray": None}),
         ):
             code = run_tray(Settings())
@@ -497,11 +503,22 @@ class TrayTests(unittest.TestCase):
         menu_holder: dict[str, object] = {}
 
         class FakeMenuItem:
+            # Faithful to pystray: text/enabled are read-only and a callable is
+            # re-evaluated on each read (the previous mutable fake hid the
+            # immutable-MenuItem crash).
             def __init__(self, text, action=None, enabled=True):
-                self.text = text
+                self._text = text
                 self.action = action
-                self.enabled = enabled
+                self._enabled = enabled
                 self.submenu = None
+
+            @property
+            def text(self):
+                return self._text(self) if callable(self._text) else self._text
+
+            @property
+            def enabled(self):
+                return self._enabled(self) if callable(self._enabled) else self._enabled
 
         class FakeMenu:
             def __init__(self, *items):
@@ -516,13 +533,14 @@ class TrayTests(unittest.TestCase):
                 self.visible = False
                 icon_holder["icon"] = self
 
+            def update_menu(self):
+                menu_holder["update_count"] = menu_holder.get("update_count", 0) + 1
+
             def run(self, setup=None):
                 setup(self)
                 menu_holder["before_toggle"] = self.menu
                 toggle = next(
-                    item
-                    for item in self.menu.items
-                    if getattr(item, "action", None) and item.text == "Record"
+                    item for item in self.menu.items if getattr(item, "action", None) and item.text == "Record"
                 )
                 toggle.action(None, toggle)
 
@@ -565,13 +583,13 @@ class TrayTests(unittest.TestCase):
             patch("transclip.history.read_history", return_value=[]),
             patch("transclip.recording_ops.toggle_recording", fake_toggle),
             patch("transclip.desktop.tray.win32.start_windows_hotkey", return_value=lambda: None),
+            patch("transclip.desktop.tray.win32.acquire_single_instance", return_value=object()),
+            patch("transclip.desktop.tray.win32.release_single_instance"),
         ):
             code = run_windows_tray(Settings(), runtime=runtime)
 
         icon = icon_holder["icon"]
-        status = next(
-            item for item in icon.menu.items if getattr(item, "text", "").startswith("Service:")
-        )
+        status = next(item for item in icon.menu.items if getattr(item, "text", "").startswith("Service:"))
         toggle = next(item for item in icon.menu.items if getattr(item, "action", None))
 
         self.assertEqual(code, 0)
@@ -579,6 +597,8 @@ class TrayTests(unittest.TestCase):
         self.assertIs(menu_holder["before_toggle"], icon.menu)
         self.assertEqual(status.text, "Service: recording")
         self.assertEqual(toggle.text, "Stop + paste")
+        # pystray items are immutable, so the refresh repaints via update_menu.
+        self.assertGreater(menu_holder.get("update_count", 0), 0)
 
 
 def menu_item_by_label(indicator, label: str):

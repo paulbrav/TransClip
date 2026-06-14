@@ -6,6 +6,30 @@ from typing import Any
 from ..menu import MODEL_ITEMS_REF
 
 
+class _ItemState:
+    """Mutable label/enabled state behind a pystray MenuItem.
+
+    pystray MenuItems are immutable - ``text`` and ``enabled`` are read-only - so
+    dynamic items are backed by callables that re-read this state on each render.
+    The RefDrivenMenuView setters mutate this object and the tray repaints via
+    ``icon.update_menu()`` (GTK/macOS mutate their widgets directly instead).
+    """
+
+    __slots__ = ("enabled", "text")
+
+    def __init__(self, text: str, enabled: bool = True) -> None:
+        self.text = text
+        self.enabled = enabled
+
+
+def _label_of(state: _ItemState) -> Callable[[Any], str]:
+    return lambda _item: state.text
+
+
+def _enabled_of(state: _ItemState) -> Callable[[Any], bool]:
+    return lambda _item: state.enabled
+
+
 class PystrayMenuSink:
     def __init__(
         self,
@@ -28,15 +52,18 @@ class PystrayMenuSink:
         self._items.append(self._pystray.Menu.SEPARATOR)
 
     def status_label(self, ref: str, text: str) -> None:
-        item = self._pystray.MenuItem(text, None, enabled=False)
+        state = _ItemState(text, enabled=False)
+        item = self._pystray.MenuItem(_label_of(state), None, enabled=_enabled_of(state))
         self._items.append(item)
-        self._menu_refs[ref] = item
+        self._menu_refs[ref] = state
 
     def action(self, ref: str, label: str, action, *, enabled: bool = True, callback=None) -> None:
-        item = self._pystray.MenuItem(label, callback, enabled=enabled)
+        del action
+        state = _ItemState(label, enabled=enabled)
+        item = self._pystray.MenuItem(_label_of(state), callback, enabled=_enabled_of(state))
         self._items.append(item)
         if ref:
-            self._menu_refs[ref] = item
+            self._menu_refs[ref] = state
 
     def _build_history_menu(self) -> Any:
         entries = self._menu_refs.get(
@@ -48,12 +75,16 @@ class PystrayMenuSink:
             if not full_text:
                 submenu_items.append(self._pystray.MenuItem(preview, None, enabled=False))
                 continue
-
-            def copy_history(_icon, _item, value=full_text):
-                self._on_copy_history(value)
-
-            submenu_items.append(self._pystray.MenuItem(preview, copy_history))
+            submenu_items.append(self._pystray.MenuItem(preview, self._copy_history_action(full_text)))
         return self._pystray.Menu(*submenu_items)
+
+    def _copy_history_action(self, value: str) -> Callable[[Any, Any], None]:
+        # A factory so `value` is bound here and the handler takes only
+        # (icon, item): pystray rejects actions with > 2 positional parameters.
+        def handler(_icon: Any, _item: Any) -> None:
+            self._on_copy_history(value)
+
+        return handler
 
     def history_submenu(self, ref: str, title: str, on_open=None) -> None:
         del ref
@@ -72,11 +103,16 @@ class PystrayMenuSink:
         submenu_items: list = []
         self._menu_refs[MODEL_ITEMS_REF] = []
         for label, row in choices:
-
-            def set_model(_icon, _item, model_id=row.model_id, backend=row.backend):
-                self._after_action(lambda: self._set_model(model_id, backend))
-
-            model_item = self._pystray.MenuItem(label, set_model)
+            state = _ItemState(label)
+            model_item = self._pystray.MenuItem(_label_of(state), self._set_model_action(row.model_id, row.backend))
             submenu_items.append(model_item)
-            self._menu_refs[MODEL_ITEMS_REF].append((model_item, row))
+            self._menu_refs[MODEL_ITEMS_REF].append((state, row))
         self._items.append(self._pystray.MenuItem(title, self._pystray.Menu(*submenu_items)))
+
+    def _set_model_action(self, model_id: str, backend: str) -> Callable[[Any, Any], None]:
+        # Bind the per-row values in this factory scope so the handler takes
+        # only (icon, item): pystray rejects actions with > 2 positional args.
+        def handler(_icon: Any, _item: Any) -> None:
+            self._after_action(lambda: self._set_model(model_id, backend))
+
+        return handler

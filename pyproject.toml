@@ -18,7 +18,15 @@ models = ["transformers>=4.52.1", "torch>=2.5", "torchaudio>=2.5", "torchcodec>=
 mlx = ["mlx-audio[stt]>=0.4.4", "huggingface_hub>=0.27", "soundfile>=0.12"]
 openvino = ["openvino-genai>=2025.0", "openvino>=2025.0", "huggingface_hub>=0.27", "soundfile>=0.12", "numpy>=1.26"]
 macos-ui = ["pyobjc-framework-Cocoa>=10; sys_platform == 'darwin'"]
-windows-ui = ["pystray>=0.19", "pillow>=10", "keyboard>=0.13.5; sys_platform == 'win32'"]
+windows-ui = [
+    "pystray>=0.19",
+    "pillow>=10",
+    "keyboard>=0.13.5; sys_platform == 'win32'",
+    "winrt-runtime>=3.2; sys_platform == 'win32'",
+    "winrt-Windows.UI.Notifications>=3.2; sys_platform == 'win32'",
+    "winrt-Windows.Data.Xml.Dom>=3.2; sys_platform == 'win32'",
+    "winrt-Windows.Foundation>=3.2; sys_platform == 'win32'",
+]
 dev = [
     "coverage[toml]>=7.10",
     "mypy>=1.11",
@@ -51,6 +59,10 @@ line-ending = "lf"
 
 [tool.ty.environment]
 python-version = "3.12"
+# Tri-platform codebase: don't assume a single OS, so platform-gated APIs
+# (ctypes.WinDLL, winreg on Windows; mlx/AppKit on macOS) resolve instead of
+# producing false "unresolved" diagnostics on the Linux CI runner.
+python-platform = "all"
 
 [tool.ty.rules]
 # NOTE: unresolved-import is silenced globally because optional/platform-specific

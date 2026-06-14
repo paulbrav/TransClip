@@ -293,6 +293,23 @@ card 1: Generic_1 [HD-Audio Generic], device 0: ALC245 Analog [ALC245 Analog]
         self.assertIn("tray", check.detail.lower())
         self.assertNotIn("XF86TouchpadOff", check.detail)
 
+    def test_windows_elevated_paste_note_warns_about_uipi(self):
+        from transclip.doctor.platform import check_windows_elevated_paste
+
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        check = check_windows_elevated_paste(runtime)
+
+        self.assertEqual(check.name, "windows_elevated_paste")
+        self.assertIn("UIPI", check.detail)
+        self.assertIn("administrator", check.detail.lower())
+        self.assertFalse(check.required)  # informational, not a failure
+
+    def test_windows_elevated_paste_note_skipped_off_windows(self):
+        from transclip.doctor.platform import check_windows_elevated_paste
+
+        runtime = FakeRuntime(system="Linux", home=Path("/home/test"))
+        self.assertIn("not checked", check_windows_elevated_paste(runtime).detail)
+
     def test_windows_microphone_check_mentions_privacy_settings(self):
         runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
         fake_sd = type(
@@ -309,7 +326,7 @@ card 1: Generic_1 [HD-Audio Generic], device 0: ALC245 Analog [ALC245 Analog]
         self.assertIn("USB Mic", check.detail)
         self.assertIn("Microphone", check.detail)
 
-    def test_windows_service_manager_check_mentions_task_scheduler(self):
+    def test_windows_service_manager_check_mentions_autostart(self):
         from transclip.daemon.common import ServiceState
         from transclip.doctor import check_service_manager
 
@@ -320,7 +337,8 @@ card 1: Generic_1 [HD-Audio Generic], device 0: ALC245 Analog [ALC245 Analog]
         )
 
         self.assertFalse(check.ok)
-        self.assertIn("Task Scheduler", check.detail)
+        self.assertIn("autostart", check.detail)
+        self.assertIn("transclip install", check.detail)
 
     def test_windows_granite_asr_runtime_skips_flash_attn_gate(self):
         settings = Settings(

@@ -39,8 +39,24 @@ def toggle_log_path(runtime: PlatformRuntime | None = None) -> Path:
     return logs_dir(runtime) / "toggle-record.log"
 
 
+def _service_python() -> str:
+    """Interpreter to bake into the service unit.
+
+    On Windows prefer ``pythonw.exe`` so the logon autostart entry does not
+    flash a console window at every sign-in: ``python.exe`` is a console
+    (CUI) subsystem binary and gets its own window when launched without an
+    inherited console, while ``pythonw.exe`` is a GUI subsystem binary.
+    """
+    executable = sys.executable
+    if sys.platform == "win32":
+        windowless = Path(executable).with_name("pythonw.exe")
+        if windowless.exists():
+            return str(windowless)
+    return executable
+
+
 def service_command(settings_path: Path | None = None) -> list[str]:
-    command = [sys.executable, "-m", f"{IMPORT_PACKAGE}.cli"]
+    command = [_service_python(), "-m", f"{IMPORT_PACKAGE}.cli"]
     if settings_path:
         command.extend(["--settings", service_settings_path(settings_path)])
     command.append("serve")

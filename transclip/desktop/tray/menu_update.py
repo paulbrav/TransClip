@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -37,6 +38,8 @@ class TrayMenuView(Protocol):
     def rebuild_history(self, entries: Sequence[tuple[str, str]]) -> None: ...
 
     def set_health_icon(self, icon: str) -> None: ...
+
+    def batch(self) -> AbstractContextManager[None]: ...
 
 
 @runtime_checkable
@@ -88,13 +91,14 @@ def apply_menu_snapshot(
     *,
     model_rows: Sequence[tuple[Any, str]],
 ) -> None:
-    view.set_label("status_item", snapshot.status_label)
-    view.set_label("toggle_item", snapshot.toggle_label)
-    view.set_enabled("partial_item", snapshot.partial_enabled)
-    view.set_enabled("latest_item", snapshot.latest_enabled)
-    view.set_label("model_cleanup_item", snapshot.model_cleanup_label)
-    view.set_model_labels(model_rows)
-    view.set_health_icon(snapshot.health_icon)
+    with view.batch():
+        view.set_label("status_item", snapshot.status_label)
+        view.set_label("toggle_item", snapshot.toggle_label)
+        view.set_enabled("partial_item", snapshot.partial_enabled)
+        view.set_enabled("latest_item", snapshot.latest_enabled)
+        view.set_label("model_cleanup_item", snapshot.model_cleanup_label)
+        view.set_model_labels(model_rows)
+        view.set_health_icon(snapshot.health_icon)
 
 
 def after_tray_action(

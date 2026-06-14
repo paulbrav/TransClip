@@ -32,6 +32,6 @@ def windows_hotkey_setup_message(
     current = settings or Settings()
     binding = active_hotkey(current, runtime)
     return (
-        f"Task Scheduler service installed. Global hotkey {binding!r} is registered when "
+        f"Logon autostart registered. Global hotkey {binding!r} is registered when "
         f"transclip tray is running; change it from the tray Set hotkey menu or hotkey_windows."
     )

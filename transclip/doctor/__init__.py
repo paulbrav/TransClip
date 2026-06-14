@@ -29,6 +29,7 @@ from .platform import (
     check_hotkey_readiness,
     check_microphone_devices,
     check_tcc_permissions,
+    check_windows_elevated_paste,
     check_windows_version,
 )
 from .types import Check
@@ -76,6 +77,10 @@ def run_checks(
         check_windows_version(platform_runtime),
         check_last_shortcut_log_event(platform_runtime),
     ]
+    if platform_runtime.system() == "Windows":
+        # UIPI advisory is meaningful only on Windows; keep it out of the
+        # Linux/macOS doctor output entirely.
+        checks.append(check_windows_elevated_paste(platform_runtime))
     if include_audio_debug:
         checks.append(check_audio_debug(settings))
     return checks
@@ -124,8 +129,8 @@ def check_service_manager(
             "missing LaunchAgent; run: transclip install",
         ),
         "Windows": (
-            "Task Scheduler logon task installed",
-            "missing Task Scheduler task; run: transclip install",
+            "logon autostart registered (Run key)",
+            "autostart not registered; run: transclip install",
         ),
     }
     if system not in messages:

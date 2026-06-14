@@ -1,71 +1,167 @@
 from __future__ import annotations
 
 import subprocess
-import xml.sax.saxutils as saxutils
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from transclip.daemon.common import CommandResult, ServiceState, logs_dir, repo_root, run_command, service_command
+from transclip.daemon.common import (
+    CommandResult,
+    ServiceState,
+    repo_root,
+    run_command,
+    service_command,
+)
 from transclip.daemon.protocol import PlatformDaemon
 from transclip.platform.runtime import PlatformRuntime, get_runtime
-from transclip.product import DISPLAY_NAME, TASK_SCHEDULER_NAME
+from transclip.product import DISPLAY_NAME
 from transclip.settings import Settings, load_settings
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
+# Per-user autostart. The logon shell (explorer.exe) launches every value under
+# this key at interactive sign-in. It is writable by the user's own token, so -
+# unlike a root-folder Task Scheduler task - registering autostart here needs no
+# elevation. That was the whole reason for the switch: ``schtasks /Create``
+# failed with "Access is denied" for a non-admin user.
+RUN_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
+RUN_KEY_VALUE_NAME = DISPLAY_NAME
 
-def task_scheduler_xml_path(runtime: PlatformRuntime | None = None) -> Path:
-    return logs_dir(runtime) / f"{TASK_SCHEDULER_NAME}.xml"
+# Pre-Run-key TransClip versions registered a root-folder Task Scheduler logon
+# task with this name. We migrated to the HKCU Run key above; install/uninstall
+# both clear any leftover task so an in-place upgrade does not double-start the
+# service at logon (old task + Run key) or orphan the task on uninstall.
+_LEGACY_TASK_NAME = "TransClip"
 
 
-def build_task_scheduler_xml(settings_path: Path | None = None) -> str:
-    command_parts = service_command(settings_path)
-    command = saxutils.escape(command_parts[0])
-    arguments = saxutils.escape(subprocess.list2cmdline([str(part) for part in command_parts[1:]]))
-    working_directory = saxutils.escape(str(repo_root()))
-    return "\n".join(
-        [
-            '<?xml version="1.0" encoding="UTF-16"?>',
-            '<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">',
-            "  <RegistrationInfo>",
-            f"    <Description>{DISPLAY_NAME} dictation service</Description>",
-            "  </RegistrationInfo>",
-            "  <Triggers>",
-            "    <LogonTrigger>",
-            "      <Enabled>true</Enabled>",
-            "    </LogonTrigger>",
-            "  </Triggers>",
-            "  <Principals>",
-            '    <Principal id="Author">',
-            "      <LogonType>InteractiveToken</LogonType>",
-            "      <RunLevel>LeastPrivilege</RunLevel>",
-            "    </Principal>",
-            "  </Principals>",
-            "  <Settings>",
-            "    <Enabled>true</Enabled>",
-            "    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>",
-            "    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>",
-            "    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>",
-            "    <AllowHardTerminate>true</AllowHardTerminate>",
-            "    <StartWhenAvailable>true</StartWhenAvailable>",
-            "    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>",
-            "    <Hidden>true</Hidden>",
-            "    <RestartOnFailure>",
-            "      <Interval>PT2M</Interval>",
-            "      <Count>3</Count>",
-            "    </RestartOnFailure>",
-            "  </Settings>",
-            '  <Actions Context="Author">',
-            "    <Exec>",
-            f"      <Command>{command}</Command>",
-            f"      <Arguments>{arguments}</Arguments>",
-            f"      <WorkingDirectory>{working_directory}</WorkingDirectory>",
-            "    </Exec>",
-            "  </Actions>",
-            "</Task>",
-            "",
-        ]
+# --- registry seams -------------------------------------------------------
+# ``winreg`` is a Windows-only stdlib module, but this file is imported on every
+# platform (CI runs the daemon tests on Linux). Import it lazily inside each
+# helper so the module loads everywhere; cross-platform tests patch these three
+# functions, and a win32-gated test exercises the real round-trip.
+
+
+def _set_autostart(command: str) -> None:
+    import winreg
+
+    with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, RUN_KEY_PATH, 0, winreg.KEY_SET_VALUE) as key:
+        winreg.SetValueEx(key, RUN_KEY_VALUE_NAME, 0, winreg.REG_SZ, command)
+
+
+def _autostart_command() -> str | None:
+    import winreg
+
+    try:
+        with winreg.OpenKeyEx(winreg.HKEY_CURRENT_USER, RUN_KEY_PATH, 0, winreg.KEY_QUERY_VALUE) as key:
+            value, _kind = winreg.QueryValueEx(key, RUN_KEY_VALUE_NAME)
+    except FileNotFoundError:
+        # The Run key always exists, but the value (or, defensively, the key) may
+        # not - QueryValueEx raises FileNotFoundError when the value is absent.
+        return None
+    return str(value)
+
+
+def _clear_autostart() -> bool:
+    import winreg
+
+    try:
+        with winreg.OpenKeyEx(winreg.HKEY_CURRENT_USER, RUN_KEY_PATH, 0, winreg.KEY_SET_VALUE) as key:
+            winreg.DeleteValue(key, RUN_KEY_VALUE_NAME)
+    except FileNotFoundError:
+        return False
+    return True
+
+
+# --- process control ------------------------------------------------------
+
+
+def _spawn_service(command: str) -> None:
+    """Launch the dictation service detached from this console.
+
+    ``DETACHED_PROCESS`` + ``CREATE_NEW_PROCESS_GROUP`` cut the child loose so it
+    outlives the launching ``transclip install``/``start`` process, and
+    ``CREATE_NO_WINDOW`` suppresses the console flash (belt-and-suspenders with
+    the ``pythonw.exe`` GUI-subsystem interpreter baked into ``service_command``).
+    """
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = (
+            subprocess.DETACHED_PROCESS  # type: ignore[attr-defined]
+            | subprocess.CREATE_NEW_PROCESS_GROUP
+            | subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+        )
+    subprocess.Popen(command, cwd=str(repo_root()), close_fds=True, creationflags=creationflags)
+
+
+def _start_now(command: str) -> CommandResult:
+    try:
+        _spawn_service(command)
+    except OSError as exc:
+        return CommandResult(False, f"could not start dictation service: {exc}")
+    return CommandResult(True, "started dictation service")
+
+
+def _service_command_line(settings_path: Path | None = None) -> str:
+    return subprocess.list2cmdline(service_command(settings_path))
+
+
+# PowerShell matches the live service by command line: the interpreter is
+# ``pythonw.exe`` (or ``python.exe``), so the distinguishing marker is
+# ``transclip ... serve``. ``serve`` keeps this from catching the tray
+# (``transclip tray``) or a toggle invocation (``transclip ... toggle``).
+#
+# The image-name guard (``$_.Name -like 'python*'``) is load-bearing, not an
+# optimisation: ``Get-CimInstance`` enumerates *this very PowerShell process*,
+# whose own command line contains the literals ``*transclip*`` and ``*serve*``
+# (they are in the ``-Command`` text). Without the guard the query counts and
+# tries to kill itself - a phantom "1 service process running" after uninstall,
+# and a "cannot find process" error when that PID exits mid-pipeline.
+_SERVICE_PROCESS_FILTER = (
+    "Get-CimInstance Win32_Process | Where-Object { "
+    "$_.Name -like 'python*' -and $_.CommandLine -like '*transclip*' -and $_.CommandLine -like '*serve*' }"
+)
+
+
+def _count_service_processes(runner: Runner) -> int:
+    result = runner(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", f"@({_SERVICE_PROCESS_FILTER}).Count"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        check=False,
     )
+    if result.returncode != 0:
+        return 0
+    text = (result.stdout or "").strip()
+    return int(text) if text.isdigit() else 0
+
+
+def _stop_service(runner: Runner) -> CommandResult:
+    return run_command(
+        [
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            f"{_SERVICE_PROCESS_FILTER} | ForEach-Object {{ "
+            "Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+        ],
+        runner,
+        tolerate_failure=True,
+    )
+
+
+def _remove_legacy_task(runner: Runner) -> CommandResult:
+    """Best-effort teardown of the pre-Run-key Task Scheduler logon task.
+
+    No-ops cleanly when no such task exists (schtasks returns nonzero, tolerated).
+    """
+    run_command(["schtasks", "/End", "/TN", _LEGACY_TASK_NAME], runner, tolerate_failure=True)
+    run_command(["schtasks", "/Delete", "/TN", _LEGACY_TASK_NAME, "/F"], runner, tolerate_failure=True)
+    return CommandResult(True, f"cleared any legacy Task Scheduler task ({_LEGACY_TASK_NAME})")
+
+
+# --- public API -----------------------------------------------------------
 
 
 def install_windows_daemon(
@@ -76,17 +172,14 @@ def install_windows_daemon(
     *,
     hotkey_setup_message: Callable[..., str],
 ) -> list[CommandResult]:
-    results: list[CommandResult] = []
     platform_runtime = get_runtime(runtime)
-    log_root = logs_dir(platform_runtime)
-    log_root.mkdir(parents=True, exist_ok=True)
-    xml_path = task_scheduler_xml_path(platform_runtime)
-    xml_path.write_text(build_task_scheduler_xml(settings_path), encoding="utf-16")
-    results.append(CommandResult(True, f"wrote {xml_path}"))
-    results.append(
-        run_command(["schtasks", "/Create", "/TN", TASK_SCHEDULER_NAME, "/XML", str(xml_path), "/F"], runner)
-    )
-    results.append(run_command(["schtasks", "/Run", "/TN", TASK_SCHEDULER_NAME], runner))
+    command = _service_command_line(settings_path)
+    _set_autostart(command)
+    results: list[CommandResult] = [
+        _remove_legacy_task(runner),
+        CommandResult(True, f"registered logon autostart ({RUN_KEY_VALUE_NAME}): {command}"),
+        _start_now(command),
+    ]
     settings = settings or load_settings(settings_path, runtime=platform_runtime)
     results.append(
         CommandResult(
@@ -108,14 +201,12 @@ def uninstall_windows_daemon(
     runner: Runner = subprocess.run,
     runtime: PlatformRuntime | None = None,
 ) -> list[CommandResult]:
-    results = [
-        run_command(["schtasks", "/End", "/TN", TASK_SCHEDULER_NAME], runner, tolerate_failure=True),
-        run_command(["schtasks", "/Delete", "/TN", TASK_SCHEDULER_NAME, "/F"], runner, tolerate_failure=True),
-    ]
-    path = task_scheduler_xml_path(runtime)
-    if path.exists():
-        path.unlink()
-        results.append(CommandResult(True, f"removed {path}"))
+    del runtime
+    results = [_stop_service(runner), _remove_legacy_task(runner)]
+    if _clear_autostart():
+        results.append(CommandResult(True, f"removed logon autostart ({RUN_KEY_VALUE_NAME})"))
+    else:
+        results.append(CommandResult(True, "logon autostart was not registered"))
     return results
 
 
@@ -125,46 +216,35 @@ def windows_service_action(
     runtime: PlatformRuntime | None = None,
 ) -> CommandResult:
     del runtime
-    commands = {
-        "start": ["schtasks", "/Run", "/TN", TASK_SCHEDULER_NAME],
-        "stop": ["schtasks", "/End", "/TN", TASK_SCHEDULER_NAME],
-        "restart": ["schtasks", "/End", "/TN", TASK_SCHEDULER_NAME],
-    }
+    if action == "start":
+        return _start_now(_autostart_command() or _service_command_line())
+    if action == "stop":
+        return _stop_service(runner)
     if action == "restart":
-        stop = run_command(commands["stop"], runner, tolerate_failure=True)
-        start = run_command(["schtasks", "/Run", "/TN", TASK_SCHEDULER_NAME], runner)
-        return CommandResult(stop.ok and start.ok, f"{stop.detail}; {start.detail}")
-    return run_command(commands[action], runner)
+        stop = _stop_service(runner)
+        start = _start_now(_autostart_command() or _service_command_line())
+        return CommandResult(start.ok, f"{stop.detail}; {start.detail}")
+    raise ValueError(f"unknown service action: {action}")
 
 
 def windows_service_state(
     runner: Runner = subprocess.run,
     runtime: PlatformRuntime | None = None,
 ) -> ServiceState:
-    path = task_scheduler_xml_path(runtime)
-    result = runner(
-        ["schtasks", "/Query", "/TN", TASK_SCHEDULER_NAME, "/FO", "LIST", "/V"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        check=False,
-    )
-    installed = result.returncode == 0 or path.exists()
-    active = result.returncode == 0 and _windows_task_reports_running(result.stdout)
-    return ServiceState(
-        installed=installed,
-        active=active,
-        detail=result.stdout.strip() or f"exit {result.returncode}",
-    )
-
-
-def _windows_task_reports_running(output: str) -> bool:
-    for line in output.splitlines():
-        stripped = line.strip()
-        if stripped.lower().startswith("status:"):
-            status = stripped.split(":", 1)[1].strip().lower()
-            return status == "running"
-    return False
+    del runtime
+    command = _autostart_command()
+    installed = command is not None
+    running = _count_service_processes(runner)
+    active = running > 0
+    if installed and active:
+        detail = f"autostart registered; {running} service process(es) running"
+    elif installed:
+        detail = "autostart registered; service not running"
+    elif active:
+        detail = f"{running} service process(es) running; autostart not registered"
+    else:
+        detail = "autostart not registered; service not running"
+    return ServiceState(installed=installed, active=active, detail=detail)
 
 
 class WindowsPlatformDaemon:

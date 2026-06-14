@@ -57,7 +57,8 @@ uv sync --extra audio --extra mlx --extra macos-ui
 transclip tray
 ```
 
-On Windows, `install` registers a Task Scheduler logon task. Global hotkey
+On Windows, `install` registers a per-user logon autostart entry (an HKCU Run-key
+value, no admin required). Global hotkey
 `ctrl+shift+space` is registered when `transclip tray` is running (Windows tray
 in `transclip.desktop.tray.win32`). Sync optional UI dependencies for the
 system tray and in-process hotkey:
@@ -240,7 +241,9 @@ Requirements: Windows 10+, Python 3.12+, NVIDIA CUDA PyTorch for GPU inference.
 
 ```bash
 uv sync --extra audio --extra models --extra windows-ui
-uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+# Match the CUDA build to your GPU: Blackwell (RTX 50-series) needs cu128+;
+# older NVIDIA GPUs can use cu124/cu126.
+uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 uv run -m transclip.cli init-config
 uv run -m transclip.cli models prefetch --model ibm-granite/granite-speech-4.1-2b
 uv run -m transclip.cli install
@@ -298,6 +301,13 @@ biasing, so keyword hints are ignored on this backend.
 | --- | --- | --- |
 | Recording | Microphone | Settings > Privacy & security > Microphone |
 | Paste | Focused app | SendInput Ctrl+V; elevated apps may block injection (UIPI) |
+
+**Elevated (administrator) apps:** Windows UIPI blocks a normal-integrity
+process from injecting input into a window owned by a process running as
+administrator. If the transcript is copied to the clipboard but paste does
+nothing in an elevated app (some terminals, installers, or apps "Run as
+administrator"), either run that app without elevation or run TransClip at the
+same elevation. `transclip doctor` reports this under `windows_elevated_paste`.
 
 ## Linux CUDA / ROCm Quick Start
 
