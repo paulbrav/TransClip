@@ -19,7 +19,7 @@ MODEL_CATALOG: tuple[ModelCatalogEntry, ...] = (
         display_name="Fast local ASR - Granite 4.1 NAR",
         runtime_kind="torch",
         estimated_bytes=8 * GIB,
-        supported_platforms=frozenset({"Darwin", "Linux"}),
+        supported_platforms=frozenset({"Darwin", "Linux", "Windows"}),
         supported_architectures=frozenset({"arm64", "aarch64"}),
         dependency_extra="models",
         prefetch_strategy="transformers",
@@ -209,9 +209,7 @@ def catalog_entry_for_backend(backend: str, model_id: str) -> ModelCatalogEntry:
         raise ValueError("file backends do not use the model catalog")
     entry = catalog_entry_for_model(model_id)
     if entry.backend != normalized:
-        raise ValueError(
-            f"Model {model_id} requires asr_backend={entry.backend!r}, not {backend!r}"
-        )
+        raise ValueError(f"Model {model_id} requires asr_backend={entry.backend!r}, not {backend!r}")
     return entry
 
 
@@ -286,11 +284,7 @@ def supported_catalog_entries(runtime: PlatformRuntime | None = None) -> list[Mo
     for entry in MODEL_CATALOG:
         if entry.supported_platforms and profile.system not in entry.supported_platforms:
             continue
-        if (
-            entry.supported_architectures is not None
-            and profile.system == "Darwin"
-            and not is_apple_silicon(runtime)
-        ):
+        if entry.supported_architectures is not None and profile.system == "Darwin" and not is_apple_silicon(runtime):
             continue
         entries.append(entry)
     return entries
@@ -365,5 +359,3 @@ def model_rows(settings: Settings, runtime: PlatformRuntime | None = None) -> li
 
 def asr_model_rows(settings: Settings, runtime: PlatformRuntime | None = None) -> list[ModelRow]:
     return [row for row in model_rows(settings, runtime) if row.backend != "text_generation"]
-
-
