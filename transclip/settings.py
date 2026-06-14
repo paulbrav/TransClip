@@ -37,6 +37,7 @@ class Settings:
     min_recording_ms: int = 250
     max_recording_ms: int = 300_000
     toggle_cooldown_ms: int = 500
+    recording_notifications: bool = True
     debug_capture: bool = False
     debug_capture_dir: str = "debug-captures"
     asr_backend: str = "granite_nar"
@@ -132,7 +133,7 @@ def settings_to_toml(settings: Settings) -> str:
             "paste_injection_delay_ms",
             "clipboard_restore_delay_ms",
         ),
-        ("min_recording_ms", "max_recording_ms", "toggle_cooldown_ms"),
+        ("min_recording_ms", "max_recording_ms", "toggle_cooldown_ms", "recording_notifications"),
         ("debug_capture", "debug_capture_dir"),
         (
             "asr_backend",

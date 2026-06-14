@@ -55,6 +55,42 @@ class TrayWin32HotkeyTests(unittest.TestCase):
 
 
 @unittest.skipUnless(sys.platform == "win32", "tray win32 adapter requires pystray/Pillow")
+class TrayWin32RecordingNotifyTests(unittest.TestCase):
+    def _fake_outcome(self, *, ok=True, action="started", paste_failed="", error=""):
+        return SimpleNamespace(
+            ok=ok, payload={"action": action}, paste_failed_message=paste_failed, error_message=error
+        )
+
+    def test_notifies_on_start_when_enabled(self) -> None:
+        from transclip.desktop.tray import win32
+
+        with patch.object(win32, "windows_toast") as toast:
+            win32._notify_toggle(self._fake_outcome(action="started"), SimpleNamespace(recording_notifications=True))
+
+        toast.assert_called_once()
+        self.assertIn("Recording", toast.call_args.args[1])
+
+    def test_suppressed_when_setting_disabled(self) -> None:
+        from transclip.desktop.tray import win32
+
+        with patch.object(win32, "windows_toast") as toast:
+            win32._notify_toggle(self._fake_outcome(action="started"), SimpleNamespace(recording_notifications=False))
+
+        toast.assert_not_called()
+
+    def test_blocked_paste_is_surfaced(self) -> None:
+        from transclip.desktop.tray import win32
+
+        with patch.object(win32, "windows_toast") as toast:
+            win32._notify_toggle(
+                self._fake_outcome(action="stopped", paste_failed="UIPI blocked"),
+                SimpleNamespace(recording_notifications=True),
+            )
+
+        self.assertIn("Ctrl+V", toast.call_args.args[1])
+
+
+@unittest.skipUnless(sys.platform == "win32", "tray win32 adapter requires pystray/Pillow")
 class TrayWin32IconTests(unittest.TestCase):
     def test_health_icon_color_maps_known_states(self) -> None:
         from transclip.desktop.tray.win32 import health_icon_color
