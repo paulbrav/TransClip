@@ -41,7 +41,10 @@ def _prefetch_snapshot(entry: ModelCatalogEntry, cache_dir: str) -> None:
     try:
         from huggingface_hub import snapshot_download
     except ImportError as exc:
-        raise RuntimeError("huggingface_hub is required for MLX model prefetch.") from exc
+        raise RuntimeError(
+            "huggingface_hub is required to download model snapshots. "
+            "Install transclip[openvino] or transclip[mlx]."
+        ) from exc
     snapshot_download(
         repo_id=entry.model_id,
         cache_dir=cache_dir,

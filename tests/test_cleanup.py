@@ -60,6 +60,17 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(plan.dictation_mode, "rule")
         self.assertFalse(plan.requires_text_model)
 
+    def test_cleanup_plan_supports_openvino_text_runtime(self):
+        routed = CleanupPlan.from_settings(Settings(text_model_runtime="openvino"))
+        self.assertEqual(routed.dictation_mode, "rule")
+        self.assertTrue(routed.requires_text_model)
+
+        always_on = CleanupPlan.from_settings(
+            Settings(text_model_runtime="openvino", voice_model_cleanup_always_on=True)
+        )
+        self.assertEqual(always_on.dictation_mode, "model")
+        self.assertTrue(always_on.requires_text_model)
+
     def test_model_cleanup_prompt_contract_and_output_parsing(self):
         messages = MODEL_CLEANUP_POLICY.messages("um hello --flag /tmp/file")
 

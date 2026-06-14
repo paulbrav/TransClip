@@ -256,6 +256,39 @@ Supported ASR on Windows:
 Granite Speech 4.1 NAR and ROCm are not supported on Windows. Eval thresholds
 for Windows Granite AR are in `eval/windows/manifest.json` (relaxed vs Linux NAR).
 
+### Intel acceleration (integrated GPU / NPU) via OpenVINO
+
+Windows laptops with an Intel CPU + integrated GPU (Iris Xe / Arc) and, on Core
+Ultra Series 1/2, an NPU can run accelerated ASR through OpenVINO instead of
+CUDA. IBM Granite Speech has no OpenVINO path, so the Intel build uses **Whisper**
+for ASR and an OpenVINO **Qwen** model for cleanup.
+
+```bash
+uv sync --extra audio --extra openvino --extra windows-ui
+uv run -m transclip.cli init-config
+uv run -m transclip.cli models prefetch --model OpenVINO/whisper-large-v3-int4-ov
+uv run -m transclip.cli models prefetch --model OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov
+uv run -m transclip.cli doctor   # reports detected OpenVINO devices
+```
+
+Requires the Intel **GPU/NPU drivers** to be installed at the OS level (the pip
+wheels ship the runtime but not the device drivers); `doctor` surfaces missing
+devices. When no NVIDIA CUDA is present but an Intel iGPU/NPU is detected,
+`init-config` auto-selects the `windows_openvino` profile (`asr_backend =
+"openvino_whisper"`, `text_model_runtime = "openvino"`).
+
+Selectable OpenVINO ASR models:
+
+- `OpenVINO/whisper-large-v3-int4-ov` (default — fast, int4)
+- `OpenVINO/whisper-large-v3-int8-ov` (higher accuracy)
+- `OpenVINO/whisper-base-int8-ov` (lightweight / quick smoke test)
+- `FluidInference/whisper-large-v3-turbo-int4-ov-npu` (turbo, NPU-pre-exported)
+
+`asr_device` accepts `auto` (OpenVINO `AUTO` picks NPU/GPU/CPU) or an explicit
+`openvino:GPU`, `openvino:NPU`, or `openvino:CPU` (CPU works without Intel
+drivers and is the way to test on any machine). Whisper does not support keyword
+biasing, so keyword hints are ignored on this backend.
+
 ### Permissions (Windows)
 
 | Action | Permission | Notes |

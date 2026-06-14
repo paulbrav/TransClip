@@ -2,9 +2,15 @@ import sys
 import threading
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from transclip.text_generation import TransformersTextGenerationBackend
+from transclip.settings import Settings
+from transclip.text_generation import (
+    OpenVINOTextGenerationBackend,
+    TransformersTextGenerationBackend,
+    build_text_generation_backend,
+)
 
 
 class TextGenerationTests(unittest.TestCase):
@@ -52,6 +58,84 @@ class TextGenerationTests(unittest.TestCase):
             backend.generate([{"role": "user", "content": "shell task"}], max_new_tokens=8)
 
         self.assertEqual(state.tokenizer.template_kwargs["enable_thinking"], False)
+
+    def test_openvino_backend_uses_llm_pipeline(self):
+        captured = {}
+
+        class FakeTokenizer:
+            def apply_chat_template(self, messages, **kwargs):
+                captured["messages"] = messages
+                captured["template_kwargs"] = kwargs
+                return "PROMPT"
+
+        class FakePipeline:
+            def get_tokenizer(self):
+                return FakeTokenizer()
+
+            def generate(self, prompt, **kwargs):
+                captured["prompt"] = prompt
+                captured["gen_kwargs"] = kwargs
+                return SimpleNamespace(texts=["  cleaned text  "])
+
+        backend = OpenVINOTextGenerationBackend(
+            "OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov",
+            Settings(),
+            local_files_only=False,
+        )
+        backend._pipeline = FakePipeline()
+
+        result = backend.generate([{"role": "user", "content": "clean this"}], max_new_tokens=16)
+
+        self.assertEqual(result.text, "cleaned text")
+        self.assertEqual(result.backend, "openvino")
+        self.assertEqual(captured["prompt"], "PROMPT")
+        self.assertEqual(captured["gen_kwargs"]["max_new_tokens"], 16)
+        self.assertIs(captured["gen_kwargs"]["do_sample"], False)
+        self.assertTrue(captured["template_kwargs"]["add_generation_prompt"])
+        self.assertIs(captured["template_kwargs"]["enable_thinking"], False)
+
+    def test_openvino_render_prompt_falls_back_when_enable_thinking_unsupported(self):
+        captured = {}
+
+        class StrictTokenizer:
+            def apply_chat_template(self, messages, add_generation_prompt):
+                captured["messages"] = messages
+                captured["add_generation_prompt"] = add_generation_prompt
+                return "PROMPT"
+
+        class FakePipeline:
+            def get_tokenizer(self):
+                return StrictTokenizer()
+
+            def generate(self, prompt, **kwargs):
+                captured["prompt"] = prompt
+                return SimpleNamespace(texts=["ok"])
+
+        backend = OpenVINOTextGenerationBackend(
+            "OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov",
+            Settings(),
+            local_files_only=False,
+        )
+        backend._pipeline = FakePipeline()
+
+        result = backend.generate([{"role": "user", "content": "hi"}], max_new_tokens=4)
+
+        self.assertEqual(result.text, "ok")
+        self.assertEqual(captured["prompt"], "PROMPT")
+        self.assertTrue(captured["add_generation_prompt"])
+
+    def test_build_text_generation_backend_selects_openvino(self):
+        backend = build_text_generation_backend(
+            Settings(
+                text_model_runtime="openvino",
+                text_model="OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov",
+            )
+        )
+        self.assertIsInstance(backend, OpenVINOTextGenerationBackend)
+
+    def test_build_text_generation_backend_rejects_unknown_runtime(self):
+        with self.assertRaises(ValueError):
+            build_text_generation_backend(Settings(text_model_runtime="bogus"))
 
 
 class FakeTransformersState:

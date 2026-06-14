@@ -53,11 +53,43 @@ def build_backend_checks(settings: Settings, runtime: PlatformRuntime | None = N
                 check_incremental_transcription(settings, runtime),
             ]
         )
+    elif entry is not None and entry.runtime_kind == "openvino":
+        checks.append(check_openvino_runtime(settings))
     elif entry is not None and entry.runtime_kind == "torch":
         checks.append(check_torch_runtime(settings, runtime))
     else:
         checks.append(Check("asr_runtime", True, f"{settings.asr_backend} has no extra runtime checks"))
     return checks
+
+
+def check_openvino_runtime(settings: Settings) -> Check:
+    try:
+        import openvino
+    except ImportError as exc:
+        return Check("openvino_runtime", False, f"openvino import failed: {exc}; install transclip[openvino]")
+    try:
+        import openvino_genai  # noqa: F401
+    except ImportError as exc:
+        return Check("openvino_runtime", False, f"openvino-genai import failed: {exc}; install transclip[openvino]")
+    from transclip.openvino_device import openvino_available_devices, resolve_openvino_device
+
+    devices = openvino_available_devices()
+    if not devices:
+        return Check(
+            "openvino_runtime",
+            False,
+            "OpenVINO found no devices; install Intel GPU/NPU drivers (or use asr_device='openvino:CPU')",
+        )
+    version = getattr(openvino, "__version__", "unknown")
+    try:
+        selected = resolve_openvino_device(settings.asr_device)
+    except (RuntimeError, ValueError) as exc:
+        return Check("openvino_runtime", False, f"openvino {version}; devices: {', '.join(devices)}; {exc}")
+    return Check(
+        "openvino_runtime",
+        True,
+        f"openvino {version}; devices: {', '.join(devices)}; using {selected}",
+    )
 
 
 def build_mlx_checks(settings: Settings, runtime: PlatformRuntime | None = None) -> list[Check]:

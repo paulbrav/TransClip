@@ -63,6 +63,39 @@ class ModelsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "requires asr_backend='granite_nar'"):
             validate_asr_model_backend("granite", "ibm-granite/granite-speech-4.1-2b-nar", runtime)
 
+    def test_openvino_catalog_aliases_and_validation(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        asr_rows = {(model.backend, model.model_id) for model in SUPPORTED_MODELS}
+        self.assertIn(("openvino_whisper", "OpenVINO/whisper-large-v3-int4-ov"), asr_rows)
+        self.assertIn(("openvino_whisper", "OpenVINO/whisper-large-v3-int8-ov"), asr_rows)
+        text_rows = {(model.backend, model.model_id) for model in SUPPORTED_TEXT_MODELS}
+        self.assertIn(("text_generation", "OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov"), text_rows)
+
+        self.assertEqual(normalize_asr_backend("openvino"), "openvino_whisper")
+        self.assertEqual(normalize_asr_backend("ov"), "openvino_whisper")
+        with patch("transclip.device.torch_cuda_usable", return_value=True):
+            self.assertEqual(
+                validate_asr_model_backend("openvino", "OpenVINO/whisper-large-v3-int4-ov", runtime),
+                "openvino_whisper",
+            )
+            with self.assertRaises(ValueError):
+                validate_asr_model_backend("openvino", "ibm-granite/granite-speech-4.1-2b", runtime)
+
+    def test_openvino_whisper_entry_uses_snapshot_runtime(self):
+        entry = next(m for m in SUPPORTED_MODELS if m.model_id == "OpenVINO/whisper-large-v3-int4-ov")
+        self.assertEqual(entry.runtime_kind, "openvino")
+        self.assertEqual(entry.prefetch_strategy, "snapshot_download")
+        self.assertEqual(entry.dependency_extra, "openvino")
+
+    def test_openvino_asr_models_listed_only_on_windows(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        with patch("transclip.device.torch_cuda_usable", return_value=True):
+            win_ids = {entry.model_id for entry in supported_catalog_entries(runtime)}
+        self.assertIn("OpenVINO/whisper-large-v3-int4-ov", win_ids)
+        with patch_linux_gpu_runtime():
+            lin_ids = {entry.model_id for entry in supported_catalog_entries(linux_gpu_runtime())}
+        self.assertNotIn("OpenVINO/whisper-large-v3-int4-ov", lin_ids)
+
     def test_cache_detection_and_rows_do_not_download(self):
         with tempfile.TemporaryDirectory() as tmp, patch_linux_gpu_runtime():
             runtime = linux_gpu_runtime()
