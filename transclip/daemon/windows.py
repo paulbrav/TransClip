@@ -5,17 +5,17 @@ import xml.sax.saxutils as saxutils
 from collections.abc import Callable
 from pathlib import Path
 
-from transclip.daemon.common import CommandResult, ServiceState, repo_root, run_command, service_command
+from transclip.daemon.common import CommandResult, ServiceState, logs_dir, repo_root, run_command, service_command
 from transclip.daemon.protocol import PlatformDaemon
-from transclip.platform.runtime import PlatformRuntime, get_runtime, user_log_dir
-from transclip.product import DISPLAY_NAME, LOG_DIR_NAME, TASK_SCHEDULER_NAME
+from transclip.platform.runtime import PlatformRuntime, get_runtime
+from transclip.product import DISPLAY_NAME, TASK_SCHEDULER_NAME
 from transclip.settings import Settings, load_settings
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
 
 def task_scheduler_xml_path(runtime: PlatformRuntime | None = None) -> Path:
-    return user_log_dir(LOG_DIR_NAME, runtime) / f"{TASK_SCHEDULER_NAME}.xml"
+    return logs_dir(runtime) / f"{TASK_SCHEDULER_NAME}.xml"
 
 
 def build_task_scheduler_xml(settings_path: Path | None = None) -> str:
@@ -78,7 +78,7 @@ def install_windows_daemon(
 ) -> list[CommandResult]:
     results: list[CommandResult] = []
     platform_runtime = get_runtime(runtime)
-    log_root = user_log_dir(LOG_DIR_NAME, platform_runtime)
+    log_root = logs_dir(platform_runtime)
     log_root.mkdir(parents=True, exist_ok=True)
     xml_path = task_scheduler_xml_path(platform_runtime)
     xml_path.write_text(build_task_scheduler_xml(settings_path), encoding="utf-16")

@@ -6,17 +6,15 @@ from unittest.mock import MagicMock, patch
 from transclip.daemon import (
     SERVICE_NAME,
     append_toggle_log,
-    build_systemd_unit,
     collect_status,
     install_daemon,
-    install_linux_daemon,
-    install_macos_daemon,
     last_toggle_log_event,
     service_action,
     service_state,
     toggle_log_path,
 )
-from transclip.daemon.macos import launch_agent_path
+from transclip.daemon.linux import build_systemd_unit, install_linux_daemon
+from transclip.daemon.macos import install_macos_daemon, launch_agent_path
 from transclip.daemon.windows import build_task_scheduler_xml, install_windows_daemon
 from transclip.desktop.hotkey import build_toggle_invocation, windows_hotkey_setup_message
 from transclip.paths import service_settings_path
