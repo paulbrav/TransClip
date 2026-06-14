@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import sys
 import threading
 from collections.abc import Callable
@@ -379,7 +380,15 @@ def _prompt_hotkey(
         entry.focus_set()
         root.mainloop()
 
-    thread = threading.Thread(target=run, name="transclip-hotkey-dialog", daemon=True)
+    def run_and_cleanup() -> None:
+        run()
+        # The Tk interpreter was created on this thread; finalize it here, after
+        # run()'s widgets are out of scope, so the cyclic GC does not free it on
+        # the main thread - which aborts with
+        # "Tcl_AsyncDelete: async handler deleted by the wrong thread".
+        gc.collect()
+
+    thread = threading.Thread(target=run_and_cleanup, name="transclip-hotkey-dialog", daemon=True)
     thread.start()
     thread.join()
     return state["value"], state["available"]
