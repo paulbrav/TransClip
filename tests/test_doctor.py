@@ -326,7 +326,7 @@ card 1: Generic_1 [HD-Audio Generic], device 0: ALC245 Analog [ALC245 Analog]
         self.assertIn("USB Mic", check.detail)
         self.assertIn("Microphone", check.detail)
 
-    def test_windows_service_manager_check_mentions_task_scheduler(self):
+    def test_windows_service_manager_check_mentions_autostart(self):
         from transclip.daemon.common import ServiceState
         from transclip.doctor import check_service_manager
 
@@ -337,7 +337,8 @@ card 1: Generic_1 [HD-Audio Generic], device 0: ALC245 Analog [ALC245 Analog]
         )
 
         self.assertFalse(check.ok)
-        self.assertIn("Task Scheduler", check.detail)
+        self.assertIn("autostart", check.detail)
+        self.assertIn("transclip install", check.detail)
 
     def test_windows_granite_asr_runtime_skips_flash_attn_gate(self):
         settings = Settings(
