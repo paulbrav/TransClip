@@ -57,6 +57,26 @@ def _notify_action(message: str, settings: Settings) -> None:
         windows_toast(DISPLAY_NAME, message)
 
 
+def _capture_hotkey(
+    pause: Callable[[], None],
+    resume: Callable[[], None],
+    read_hotkey: Callable[[], str | None],
+) -> str | None:
+    """Pause the live hotkey, capture a chord, then restore the hotkey.
+
+    Pausing stops the keys pressed for capture from also triggering the
+    currently registered global hotkey. resume() always runs (even if the read
+    fails), and a failed read yields None rather than propagating.
+    """
+    pause()
+    try:
+        return read_hotkey()
+    except Exception:
+        return None
+    finally:
+        resume()
+
+
 def run_windows_tray(
     settings: Settings,
     explicit_settings_path: Path | None = None,
@@ -137,8 +157,19 @@ def run_windows_tray(
         on_health_icon=lambda: menu_view.set_health_icon(session.health.icon),
     )
 
+    def capture_hotkey() -> str | None:
+        try:
+            import keyboard
+        except ImportError:
+            return None
+        return _capture_hotkey(
+            pause=lambda: hotkey_holder["stop"]() if hotkey_holder["stop"] is not None else None,
+            resume=restart_hotkey,
+            read_hotkey=lambda: keyboard.read_hotkey(suppress=False),
+        )
+
     def set_hotkey(_icon=None, _item=None) -> None:
-        _set_hotkey_dialog(session, restart_hotkey)
+        _set_hotkey_dialog(session, restart_hotkey, capture_hotkey)
         controller.update_menu()
 
     def toggle_and_notify() -> object:
@@ -226,15 +257,22 @@ def run_windows_tray(
     return 0
 
 
-def _set_hotkey_dialog(session: TraySession, restart_hotkey: Callable[[], None]) -> None:
-    value, available = _prompt_hotkey(session.settings.hotkey_windows)
+def _set_hotkey_dialog(
+    session: TraySession,
+    restart_hotkey: Callable[[], None],
+    capture: Callable[[], str | None] | None = None,
+) -> None:
+    value, available = _prompt_hotkey(session.settings.hotkey_windows, capture)
     if not available:
         session.set_detail("tkinter is unavailable for hotkey dialog")
         return
     _apply_hotkey_selection(session, value, restart_hotkey)
 
 
-def _prompt_hotkey(initial: str) -> tuple[str | None, bool]:
+def _prompt_hotkey(
+    initial: str,
+    capture: Callable[[], str | None] | None = None,
+) -> tuple[str | None, bool]:
     """Prompt for a hotkey on a dedicated thread; return (value, tk_available).
 
     pystray runs its Win32 message loop on the main thread and invokes the menu
@@ -244,6 +282,11 @@ def _prompt_hotkey(initial: str) -> tuple[str | None, bool]:
     every click is dead. Running our own small dialog on a separate thread gives
     it a clean message queue and event loop; topmost + focus_force make it
     interactive. The caller blocks (join) until it closes - i.e. it is modal.
+
+    When ``capture`` is supplied a "Record keys" button captures the pressed
+    chord (on a worker thread, since it blocks); the entry is disabled and the
+    buttons are inert during capture, so the press cannot close the dialog or
+    type into the field, and the result is filled in via after() polling.
     """
     state: dict[str, Any] = {"value": None, "available": True}
 
@@ -257,22 +300,63 @@ def _prompt_hotkey(initial: str) -> tuple[str | None, bool]:
         root.title("Set hotkey")
         root.resizable(False, False)
         root.attributes("-topmost", True)
-        tk.Label(root, text="Enter a keyboard-library hotkey, e.g. ctrl+shift+space").pack(padx=16, pady=(14, 6))
+        prompt = "Type a keyboard-library hotkey (e.g. ctrl+shift+space)"
+        if capture is not None:
+            prompt += ",\nor click Record keys and press the combination."
+        tk.Label(root, text=prompt, justify="left").pack(padx=16, pady=(14, 6))
         entry = tk.Entry(root, width=44)
         entry.insert(0, initial)
         entry.select_range(0, "end")
         entry.pack(padx=16, pady=6)
 
+        recording: dict[str, Any] = {"active": False, "result": None}
+        record_button: Any = None
+
         def submit() -> None:
+            if recording["active"]:
+                return
             state["value"] = entry.get()
             root.destroy()
 
         def cancel() -> None:
+            if recording["active"]:
+                return
             state["value"] = None
             root.destroy()
 
+        def poll_capture() -> None:
+            if recording["active"]:
+                root.after(100, poll_capture)
+                return
+            entry.config(state="normal")
+            record_button.config(text="Record keys")
+            chord = recording["result"]
+            recording["result"] = None
+            if chord:
+                entry.delete(0, "end")
+                entry.insert(0, chord)
+                entry.select_range(0, "end")
+            entry.focus_set()
+
+        def begin_capture() -> None:
+            if capture is None or recording["active"]:
+                return
+            recording["active"] = True
+            record_button.config(text="Press your hotkey…")
+            entry.config(state="disabled")
+
+            def worker() -> None:
+                recording["result"] = capture()
+                recording["active"] = False
+
+            threading.Thread(target=worker, name="transclip-hotkey-capture", daemon=True).start()
+            poll_capture()
+
         buttons = tk.Frame(root)
         buttons.pack(pady=(6, 14))
+        if capture is not None:
+            record_button = tk.Button(buttons, text="Record keys", width=12, command=begin_capture)
+            record_button.pack(side="left", padx=8)
         tk.Button(buttons, text="OK", width=10, command=submit).pack(side="left", padx=8)
         tk.Button(buttons, text="Cancel", width=10, command=cancel).pack(side="left", padx=8)
         root.bind("<Return>", lambda _event: submit())

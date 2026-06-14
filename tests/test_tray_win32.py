@@ -110,6 +110,44 @@ class TrayWin32ActionNotifyTests(unittest.TestCase):
         toast.assert_not_called()
 
 
+class CaptureHotkeyTests(unittest.TestCase):
+    def test_pauses_reads_then_resumes_in_order(self) -> None:
+        from transclip.desktop.tray.win32 import _capture_hotkey
+
+        calls: list[str] = []
+
+        def read() -> str:
+            calls.append("read")
+            return "ctrl+shift+space"
+
+        result = _capture_hotkey(
+            pause=lambda: calls.append("pause"),
+            resume=lambda: calls.append("resume"),
+            read_hotkey=read,
+        )
+
+        self.assertEqual(result, "ctrl+shift+space")
+        self.assertEqual(calls, ["pause", "read", "resume"])
+
+    def test_always_resumes_and_returns_none_when_read_fails(self) -> None:
+        from transclip.desktop.tray.win32 import _capture_hotkey
+
+        calls: list[str] = []
+
+        def boom() -> str:
+            calls.append("read")
+            raise RuntimeError("hook failed")
+
+        result = _capture_hotkey(
+            pause=lambda: calls.append("pause"),
+            resume=lambda: calls.append("resume"),
+            read_hotkey=boom,
+        )
+
+        self.assertIsNone(result)
+        self.assertEqual(calls, ["pause", "read", "resume"])  # resume runs even on failure
+
+
 @unittest.skipUnless(sys.platform == "win32", "tray win32 adapter requires pystray/Pillow")
 class TrayWin32IconTests(unittest.TestCase):
     def test_health_icon_color_maps_known_states(self) -> None:
