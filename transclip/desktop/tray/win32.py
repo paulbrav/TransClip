@@ -39,7 +39,7 @@ def health_icon_color(name: str) -> str:
 
 def _notify_toggle(outcome: Any, settings: Settings) -> None:
     """Toast the result of a recording toggle when notifications are enabled."""
-    if not settings.recording_notifications:
+    if not settings.tray_notifications:
         return
     message = recording_toast_message(
         outcome.ok,
@@ -48,6 +48,12 @@ def _notify_toggle(outcome: Any, settings: Settings) -> None:
         error=outcome.error_message or "",
     )
     if message:
+        windows_toast(DISPLAY_NAME, message)
+
+
+def _notify_action(message: str, settings: Settings) -> None:
+    """Toast a tray action (e.g. a service/model change) when enabled."""
+    if settings.tray_notifications:
         windows_toast(DISPLAY_NAME, message)
 
 
@@ -149,6 +155,30 @@ def run_windows_tray(
     # Notify on both toggle paths (global hotkey and the tray menu item).
     action_callbacks["toggle"] = lambda *_: toggle_and_notify()
 
+    def _action_with_toast(message: str, action: Callable[[], object]) -> Callable[..., object]:
+        def run(*_args: object) -> object:
+            _notify_action(message, session.settings)
+            return action()
+
+        return run
+
+    # These tray actions restart the service (a few seconds of unavailability),
+    # which is otherwise invisible - so they get a heads-up toast.
+    action_callbacks["start_service"] = _action_with_toast(
+        "Starting the dictation service…", lambda: controller.run_tray_action(session.start_service)
+    )
+    action_callbacks["restart_service"] = _action_with_toast(
+        "Restarting the dictation service…", lambda: controller.run_tray_action(session.restart_service)
+    )
+    action_callbacks["model_cleanup"] = _action_with_toast(
+        "Toggling model cleanup — restarting the service…",
+        lambda: controller.run_tray_action(session.toggle_model_cleanup),
+    )
+
+    def set_model_and_notify(model_id: str, backend: str) -> object:
+        _notify_action("Switching ASR model — restarting the service…", session.settings)
+        return session.set_asr_model(model_id, backend)
+
     def build_menu() -> pystray.Menu:
         items: list = []
         materialize_tray_menu(
@@ -159,7 +189,7 @@ def run_windows_tray(
                 menu_refs,
                 pystray=pystray,
                 after_action=controller.run_tray_action,
-                set_model=session.set_asr_model,
+                set_model=set_model_and_notify,
                 on_copy_history=controller.copy_history_text,
             ),
             action_callbacks=action_callbacks,
@@ -277,4 +307,5 @@ def _apply_hotkey_selection(
     session.settings = patch_settings(path, hotkey_windows=binding)
     restart_hotkey()
     session.set_detail(f"Hotkey set to {binding}")
-    windows_toast(DISPLAY_NAME, f"Hotkey set to {binding}")
+    if session.settings.tray_notifications:
+        windows_toast(DISPLAY_NAME, f"Hotkey set to {binding}")

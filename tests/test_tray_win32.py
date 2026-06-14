@@ -65,7 +65,7 @@ class TrayWin32RecordingNotifyTests(unittest.TestCase):
         from transclip.desktop.tray import win32
 
         with patch.object(win32, "windows_toast") as toast:
-            win32._notify_toggle(self._fake_outcome(action="started"), SimpleNamespace(recording_notifications=True))
+            win32._notify_toggle(self._fake_outcome(action="started"), SimpleNamespace(tray_notifications=True))
 
         toast.assert_called_once()
         self.assertIn("Recording", toast.call_args.args[1])
@@ -74,7 +74,7 @@ class TrayWin32RecordingNotifyTests(unittest.TestCase):
         from transclip.desktop.tray import win32
 
         with patch.object(win32, "windows_toast") as toast:
-            win32._notify_toggle(self._fake_outcome(action="started"), SimpleNamespace(recording_notifications=False))
+            win32._notify_toggle(self._fake_outcome(action="started"), SimpleNamespace(tray_notifications=False))
 
         toast.assert_not_called()
 
@@ -84,10 +84,30 @@ class TrayWin32RecordingNotifyTests(unittest.TestCase):
         with patch.object(win32, "windows_toast") as toast:
             win32._notify_toggle(
                 self._fake_outcome(action="stopped", paste_failed="UIPI blocked"),
-                SimpleNamespace(recording_notifications=True),
+                SimpleNamespace(tray_notifications=True),
             )
 
         self.assertIn("Ctrl+V", toast.call_args.args[1])
+
+
+@unittest.skipUnless(sys.platform == "win32", "tray win32 adapter requires pystray/Pillow")
+class TrayWin32ActionNotifyTests(unittest.TestCase):
+    def test_notify_action_toasts_when_enabled(self) -> None:
+        from transclip.desktop.tray import win32
+
+        with patch.object(win32, "windows_toast") as toast:
+            win32._notify_action("Restarting the dictation service", SimpleNamespace(tray_notifications=True))
+
+        toast.assert_called_once()
+        self.assertIn("Restarting the dictation service", toast.call_args.args[1])
+
+    def test_notify_action_suppressed_when_disabled(self) -> None:
+        from transclip.desktop.tray import win32
+
+        with patch.object(win32, "windows_toast") as toast:
+            win32._notify_action("anything", SimpleNamespace(tray_notifications=False))
+
+        toast.assert_not_called()
 
 
 @unittest.skipUnless(sys.platform == "win32", "tray win32 adapter requires pystray/Pillow")
