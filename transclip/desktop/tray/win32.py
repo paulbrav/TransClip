@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from transclip.desktop.hotkey.windows import is_valid_hotkey, start_windows_hotkey
-from transclip.desktop.notifications import register_toast_app_id, windows_toast
+from transclip.desktop.notifications import recording_toast_message, register_toast_app_id, windows_toast
 from transclip.desktop.win32_app import (
     acquire_single_instance,
     release_single_instance,
@@ -34,6 +34,20 @@ def health_icon_color(name: str) -> str:
     rather than just show the wrong color.
     """
     return {"recording": "red", "ready": "green", "offline": "orange"}.get(name, "gray")
+
+
+def _notify_toggle(outcome: Any, settings: Settings) -> None:
+    """Toast the result of a recording toggle when notifications are enabled."""
+    if not settings.recording_notifications:
+        return
+    message = recording_toast_message(
+        outcome.ok,
+        outcome.payload.get("action"),
+        paste_failed=bool(outcome.paste_failed_message),
+        error=outcome.error_message or "",
+    )
+    if message:
+        windows_toast(DISPLAY_NAME, message)
 
 
 def run_windows_tray(
@@ -120,12 +134,19 @@ def run_windows_tray(
         _set_hotkey_dialog(session, restart_hotkey)
         controller.update_menu()
 
+    def toggle_and_notify() -> object:
+        outcome = controller.toggle_record()
+        _notify_toggle(outcome, session.settings)
+        return outcome
+
     action_callbacks = build_tray_action_callbacks(
         controller,
         session,
         set_hotkey=set_hotkey,
         quit=lambda: icon_holder["icon"].stop() if icon_holder["icon"] is not None else None,
     )
+    # Notify on both toggle paths (global hotkey and the tray menu item).
+    action_callbacks["toggle"] = lambda *_: toggle_and_notify()
 
     def build_menu() -> pystray.Menu:
         items: list = []
@@ -148,7 +169,7 @@ def run_windows_tray(
         return pystray.Menu(*items)
 
     def on_hotkey() -> None:
-        controller.toggle_record()
+        toggle_and_notify()
 
     icon = pystray.Icon(
         DISPLAY_NAME,

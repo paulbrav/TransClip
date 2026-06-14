@@ -23,6 +23,24 @@ def toast_xml(title: str, message: str) -> str:
     )
 
 
+def recording_toast_message(ok: bool, action: str | None, *, paste_failed: bool, error: str = "") -> str | None:
+    """Body text for a recording-toggle toast, or None when no toast is warranted.
+
+    Covers the whole "recording on/off" story: started, stopped+pasted, the
+    blocked-paste case (UIPI / elevated target, where the transcript is on the
+    clipboard but did not paste), and a failed toggle.
+    """
+    if not ok:
+        return f"Recording failed: {error or 'unknown error'}"
+    if action == "started":
+        return "Recording… press the hotkey again to stop"
+    if action == "stopped":
+        if paste_failed:
+            return "Transcript copied — paste was blocked; press Ctrl+V to paste"
+        return "Transcribed and pasted"
+    return None
+
+
 def _winrt_toast_api() -> tuple[Any, Any, Any]:
     """Import seam for the WinRT toast classes (kept tiny so it is mockable)."""
     from winrt.windows.data.xml.dom import XmlDocument

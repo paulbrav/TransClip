@@ -65,6 +65,35 @@ class WindowsToastTests(unittest.TestCase):
             self.assertFalse(notifications.windows_toast("t", "m"))
 
 
+class RecordingToastMessageTests(unittest.TestCase):
+    def _msg(self, **kw):
+        from transclip.desktop.notifications import recording_toast_message
+
+        defaults = {"ok": True, "action": "started", "paste_failed": False, "error": ""}
+        defaults.update(kw)
+        return recording_toast_message(
+            defaults["ok"], defaults["action"], paste_failed=defaults["paste_failed"], error=defaults["error"]
+        )
+
+    def test_started_announces_recording(self):
+        self.assertIn("Recording", self._msg(action="started"))
+
+    def test_stopped_confirms_paste(self):
+        self.assertIn("paste", self._msg(action="stopped").lower())
+
+    def test_stopped_with_blocked_paste_tells_user_to_paste_manually(self):
+        msg = self._msg(action="stopped", paste_failed=True)
+        self.assertIn("Ctrl+V", msg)
+
+    def test_failure_includes_reason(self):
+        msg = self._msg(ok=False, action=None, error="microphone busy")
+        self.assertIn("failed", msg.lower())
+        self.assertIn("microphone busy", msg)
+
+    def test_unknown_action_yields_no_toast(self):
+        self.assertIsNone(self._msg(action=None))
+
+
 @unittest.skipUnless(sys.platform == "win32", "writes to HKCU")
 class RegisterToastAppIdLiveTests(unittest.TestCase):
     def test_register_writes_display_name(self) -> None:
