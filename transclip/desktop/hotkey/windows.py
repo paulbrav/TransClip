@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 
 from transclip.platform.runtime import PlatformRuntime, get_runtime
@@ -43,6 +44,10 @@ def start_windows_hotkey(
     handle = keyboard.add_hotkey(binding, callback, suppress=False)
 
     def stop() -> None:
-        keyboard.remove_hotkey(handle)
+        # Idempotent: keyboard.remove_hotkey raises KeyError if the hotkey is
+        # already gone, and stop() may be called more than once (e.g. a pause
+        # followed by a restart).
+        with contextlib.suppress(KeyError):
+            keyboard.remove_hotkey(handle)
 
     return stop
