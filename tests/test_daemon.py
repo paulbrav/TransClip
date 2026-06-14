@@ -42,7 +42,7 @@ class DaemonTests(unittest.TestCase):
     def test_service_command_uses_pythonw_on_windows(self):
         from transclip.daemon.common import service_command
 
-        # The logon Task Scheduler service must not flash a console window;
+        # The logon autostart service must not flash a console window;
         # python.exe is a console-subsystem binary, pythonw.exe is not.
         self.assertEqual(Path(service_command()[0]).name.lower(), "pythonw.exe")
 
@@ -344,6 +344,12 @@ class DaemonTests(unittest.TestCase):
         joined = " ".join(calls[0])
         self.assertIn("Stop-Process", joined)
         self.assertIn("serve", joined)  # only the service, not the tray/toggle
+        # Constrain to the python interpreter image so the querying PowerShell
+        # process - whose command line also contains these literals - is not
+        # matched and killed by its own pipeline.
+        self.assertIn("$_.Name -like 'python*'", joined)
+        # A PID that exits between enumeration and Stop-Process must stay quiet.
+        self.assertIn("SilentlyContinue", joined)
 
     def test_windows_run_key_command_preserves_settings_path_with_spaces(self):
         from transclip.daemon.windows import _service_command_line

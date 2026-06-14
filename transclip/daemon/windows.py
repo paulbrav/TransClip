@@ -99,13 +99,20 @@ def _service_command_line(settings_path: Path | None = None) -> str:
     return subprocess.list2cmdline(service_command(settings_path))
 
 
-# PowerShell matches the live service by command line rather than by image name:
-# the interpreter is ``pythonw.exe`` (or ``python.exe``), so the distinguishing
-# marker is ``transclip ... serve``. ``serve`` keeps this from catching the tray
+# PowerShell matches the live service by command line: the interpreter is
+# ``pythonw.exe`` (or ``python.exe``), so the distinguishing marker is
+# ``transclip ... serve``. ``serve`` keeps this from catching the tray
 # (``transclip tray``) or a toggle invocation (``transclip ... toggle``).
+#
+# The image-name guard (``$_.Name -like 'python*'``) is load-bearing, not an
+# optimisation: ``Get-CimInstance`` enumerates *this very PowerShell process*,
+# whose own command line contains the literals ``*transclip*`` and ``*serve*``
+# (they are in the ``-Command`` text). Without the guard the query counts and
+# tries to kill itself - a phantom "1 service process running" after uninstall,
+# and a "cannot find process" error when that PID exits mid-pipeline.
 _SERVICE_PROCESS_FILTER = (
     "Get-CimInstance Win32_Process | Where-Object { "
-    "$_.CommandLine -like '*transclip*' -and $_.CommandLine -like '*serve*' }"
+    "$_.Name -like 'python*' -and $_.CommandLine -like '*transclip*' -and $_.CommandLine -like '*serve*' }"
 )
 
 
@@ -130,7 +137,8 @@ def _stop_service(runner: Runner) -> CommandResult:
             "-NoProfile",
             "-NonInteractive",
             "-Command",
-            f"{_SERVICE_PROCESS_FILTER} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}",
+            f"{_SERVICE_PROCESS_FILTER} | ForEach-Object {{ "
+            "Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
         ],
         runner,
         tolerate_failure=True,
