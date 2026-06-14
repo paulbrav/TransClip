@@ -478,6 +478,12 @@ class TrayTests(unittest.TestCase):
         runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
         with (
             patch("transclip.desktop.tray.get_runtime", return_value=runtime),
+            # Mock the single-instance guard so the test deterministically reaches
+            # the pystray check. The guard runs first; if a real TransClip tray is
+            # running on this host it holds the mutex and run_tray exits 0
+            # ("already running") before ever checking pystray, failing this test.
+            patch("transclip.desktop.tray.win32.acquire_single_instance", return_value=object()),
+            patch("transclip.desktop.tray.win32.release_single_instance"),
             patch.dict(sys.modules, {"pystray": None}),
         ):
             code = run_tray(Settings())
@@ -534,9 +540,7 @@ class TrayTests(unittest.TestCase):
                 setup(self)
                 menu_holder["before_toggle"] = self.menu
                 toggle = next(
-                    item
-                    for item in self.menu.items
-                    if getattr(item, "action", None) and item.text == "Record"
+                    item for item in self.menu.items if getattr(item, "action", None) and item.text == "Record"
                 )
                 toggle.action(None, toggle)
 
@@ -585,9 +589,7 @@ class TrayTests(unittest.TestCase):
             code = run_windows_tray(Settings(), runtime=runtime)
 
         icon = icon_holder["icon"]
-        status = next(
-            item for item in icon.menu.items if getattr(item, "text", "").startswith("Service:")
-        )
+        status = next(item for item in icon.menu.items if getattr(item, "text", "").startswith("Service:"))
         toggle = next(item for item in icon.menu.items if getattr(item, "action", None))
 
         self.assertEqual(code, 0)
