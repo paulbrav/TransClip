@@ -1,7 +1,15 @@
+import importlib.util
 import sys
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+
+
+def _has_pystray() -> bool:
+    # PystrayMenuSinkActionTests imports pystray directly; without the windows-ui
+    # extra it would error rather than skip. The other win32 tray classes import
+    # win32 lazily and do not need it.
+    return importlib.util.find_spec("pystray") is not None
 
 
 @unittest.skipUnless(sys.platform == "win32", "tray win32 adapter requires pystray/Pillow")
@@ -165,7 +173,7 @@ class TrayWin32IconTests(unittest.TestCase):
         self.assertEqual(health_icon_color("busy"), "gray")
 
 
-@unittest.skipUnless(sys.platform == "win32", "real pystray validates menu actions")
+@unittest.skipUnless(sys.platform == "win32" and _has_pystray(), "real pystray validates menu actions")
 class PystrayMenuSinkActionTests(unittest.TestCase):
     """The real pystray rejects menu actions taking >2 positional args.
 

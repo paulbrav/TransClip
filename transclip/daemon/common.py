@@ -42,7 +42,7 @@ def toggle_log_path(runtime: PlatformRuntime | None = None) -> Path:
 def _service_python() -> str:
     """Interpreter to bake into the service unit.
 
-    On Windows prefer ``pythonw.exe`` so the logon Task Scheduler task does not
+    On Windows prefer ``pythonw.exe`` so the logon autostart entry does not
     flash a console window at every sign-in: ``python.exe`` is a console
     (CUI) subsystem binary and gets its own window when launched without an
     inherited console, while ``pythonw.exe`` is a GUI subsystem binary.
