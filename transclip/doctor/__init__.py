@@ -126,8 +126,8 @@ def check_service_manager(
             "missing LaunchAgent; run: transclip install",
         ),
         "Windows": (
-            "Task Scheduler logon task installed",
-            "missing Task Scheduler task; run: transclip install",
+            "logon autostart registered (Run key)",
+            "autostart not registered; run: transclip install",
         ),
     }
     if system not in messages:

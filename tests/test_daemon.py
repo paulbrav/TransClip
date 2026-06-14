@@ -16,10 +16,9 @@ from transclip.daemon import (
 )
 from transclip.daemon.linux import build_systemd_unit, install_linux_daemon
 from transclip.daemon.macos import install_macos_daemon, launch_agent_path
-from transclip.daemon.windows import build_task_scheduler_xml, install_windows_daemon
+from transclip.daemon.windows import install_windows_daemon
 from transclip.desktop.hotkey import build_toggle_invocation, windows_hotkey_setup_message
 from transclip.paths import service_settings_path
-from transclip.product import TASK_SCHEDULER_NAME
 from transclip.settings import Settings, write_settings
 
 from tests.service_helpers import FakeRuntime, normalize_path_text
@@ -155,8 +154,7 @@ class DaemonTests(unittest.TestCase):
             self.assertTrue(any("Keyboard Shortcut" in result.detail for result in results))
             self.assertTrue(
                 any(
-                    "Library/Logs/transclip/toggle-record.log"
-                    in normalize_path_text(result.detail)
+                    "Library/Logs/transclip/toggle-record.log" in normalize_path_text(result.detail)
                     for result in results
                 )
             )
@@ -248,69 +246,91 @@ class DaemonTests(unittest.TestCase):
         self.assertFalse(status["paste"]["ok"])
         self.assertIn("wtype unusable", status["paste"]["detail"])
 
-    def test_windows_install_uses_schtasks_and_skips_gnome_shortcut(self):
-        calls = []
-
-        def runner(command, **_kwargs):
-            calls.append(command)
-            return type("Completed", (), {"returncode": 0, "stdout": ""})()
-
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            runtime = FakeRuntime(
-                system="Windows",
-                home=home,
-                env={"LOCALAPPDATA": str(home / "AppData/Local")},
+    def test_windows_install_registers_run_key_autostart_and_skips_gnome_shortcut(self):
+        # The Run key is a per-user registry value (no admin needed); install
+        # also starts the service immediately so status is "active" right away
+        # rather than only after the next sign-in.
+        runtime = FakeRuntime(
+            system="Windows",
+            home=Path("C:/Users/test"),
+            env={"LOCALAPPDATA": "C:/Users/test/AppData/Local"},
+        )
+        with (
+            patch("transclip.daemon.windows._set_autostart") as set_autostart,
+            patch("transclip.daemon.windows._spawn_service") as spawn,
+            patch("transclip.daemon.linux.install_shortcut") as install_shortcut,
+        ):
+            results = install_windows_daemon(
+                runtime=runtime,
+                hotkey_setup_message=windows_hotkey_setup_message,
             )
-            with patch("transclip.daemon.linux.install_shortcut") as install_shortcut:
-                results = install_windows_daemon(
-                    runner=runner,
-                    runtime=runtime,
-                    hotkey_setup_message=windows_hotkey_setup_message,
-                )
 
-            xml_path = home / "AppData/Local/transclip/logs/TransClip.xml"
-            self.assertTrue(xml_path.exists())
-            self.assertIn(["schtasks", "/Create", "/TN", TASK_SCHEDULER_NAME, "/XML", str(xml_path), "/F"], calls)
-            self.assertIn(["schtasks", "/Run", "/TN", TASK_SCHEDULER_NAME], calls)
-            install_shortcut.assert_not_called()
-            self.assertTrue(any("ctrl+shift+space" in result.detail for result in results))
-            self.assertTrue(any("prefetch" in result.detail for result in results))
+        set_autostart.assert_called_once()
+        registered_command = set_autostart.call_args.args[0]
+        self.assertIn("transclip.cli", registered_command)
+        self.assertTrue(registered_command.rstrip().endswith("serve"))
+        spawn.assert_called_once()
+        install_shortcut.assert_not_called()
+        self.assertTrue(any("ctrl+shift+space" in result.detail for result in results))
+        self.assertTrue(any("prefetch" in result.detail for result in results))
 
-    def test_windows_service_state_detects_running_task_in_any_locale(self):
-        runtime = FakeRuntime(
-            system="Windows",
-            home=Path("C:/Users/test"),
-            env={"LOCALAPPDATA": "C:/Users/test/AppData/Local"},
-        )
+    def test_windows_service_state_reports_active_when_service_process_running(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
 
-        def runner(command, **_kwargs):
-            if command and "powershell" in command[0].lower():
-                # MSFT_ScheduledTask.State enum is numeric: Running == 4.
-                return type("Completed", (), {"returncode": 0, "stdout": "4"})()
-            # schtasks prints a localized status on non-English Windows; relying
-            # on it would report the task inactive even while it is running.
-            return type("Completed", (), {"returncode": 0, "stdout": "Status: Wird ausgeführt"})()
+        def runner(_command, **_kwargs):
+            return type("Completed", (), {"returncode": 0, "stdout": "1"})()
 
-        self.assertTrue(service_state(runner=runner, runtime=runtime).active)
+        with patch(
+            "transclip.daemon.windows._autostart_command",
+            return_value="pythonw -m transclip.cli serve",
+        ):
+            state = service_state(runner=runner, runtime=runtime)
 
-    def test_windows_service_state_reports_ready_task_as_inactive(self):
-        runtime = FakeRuntime(
-            system="Windows",
-            home=Path("C:/Users/test"),
-            env={"LOCALAPPDATA": "C:/Users/test/AppData/Local"},
-        )
-
-        def runner(command, **_kwargs):
-            if command and "powershell" in command[0].lower():
-                return type("Completed", (), {"returncode": 0, "stdout": "3"})()  # Ready, not Running
-            return type("Completed", (), {"returncode": 0, "stdout": "TaskName: \\TransClip"})()
-
-        state = service_state(runner=runner, runtime=runtime)
         self.assertTrue(state.installed)
+        self.assertTrue(state.active)
+
+    def test_windows_service_state_reports_inactive_when_no_service_process(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+
+        def runner(_command, **_kwargs):
+            return type("Completed", (), {"returncode": 0, "stdout": "0"})()
+
+        with patch(
+            "transclip.daemon.windows._autostart_command",
+            return_value="pythonw -m transclip.cli serve",
+        ):
+            state = service_state(runner=runner, runtime=runtime)
+
+        self.assertTrue(state.installed)  # autostart registered
+        self.assertFalse(state.active)  # but no live service process
+
+    def test_windows_service_state_reports_uninstalled_without_autostart(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+
+        def runner(_command, **_kwargs):
+            return type("Completed", (), {"returncode": 0, "stdout": "0"})()
+
+        with patch("transclip.daemon.windows._autostart_command", return_value=None):
+            state = service_state(runner=runner, runtime=runtime)
+
+        self.assertFalse(state.installed)
         self.assertFalse(state.active)
 
-    def test_windows_service_action_runs_schtasks(self):
+    def test_windows_service_action_start_spawns_registered_command(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        with (
+            patch(
+                "transclip.daemon.windows._autostart_command",
+                return_value="pythonw -m transclip.cli serve",
+            ),
+            patch("transclip.daemon.windows._spawn_service") as spawn,
+        ):
+            result = service_action("start", runner=MagicMock(), runtime=runtime)
+
+        self.assertTrue(result.ok)
+        spawn.assert_called_once_with("pythonw -m transclip.cli serve")
+
+    def test_windows_service_action_stop_kills_matching_processes(self):
         calls = []
 
         def runner(command, **_kwargs):
@@ -318,22 +338,23 @@ class DaemonTests(unittest.TestCase):
             return type("Completed", (), {"returncode": 0, "stdout": ""})()
 
         runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
-        result = service_action("start", runner=runner, runtime=runtime)
+        result = service_action("stop", runner=runner, runtime=runtime)
 
         self.assertTrue(result.ok)
-        self.assertIn(["schtasks", "/Run", "/TN", TASK_SCHEDULER_NAME], calls)
+        joined = " ".join(calls[0])
+        self.assertIn("Stop-Process", joined)
+        self.assertIn("serve", joined)  # only the service, not the tray/toggle
 
-    def test_task_scheduler_xml_quotes_settings_paths_with_spaces(self):
-        settings_path = Path("C:/Users/test user/AppData/Roaming/transclip/settings.toml")
-        xml = build_task_scheduler_xml(settings_path)
+    def test_windows_run_key_command_preserves_settings_path_with_spaces(self):
+        from transclip.daemon.windows import _service_command_line
 
-        self.assertIn('encoding="UTF-16"', xml)
-        self.assertIn("<Enabled>true</Enabled>", xml)
-        self.assertIn("<Hidden>true</Hidden>", xml)
-        self.assertIn("test user", xml)
-        self.assertIn("--settings", xml)
-        self.assertIn("-m transclip.cli", xml)
-        self.assertIn(" serve</Arguments>", xml)
+        path = Path("C:/Users/test user/AppData/Roaming/transclip/settings.toml")
+        command = _service_command_line(path)
+
+        self.assertIn("test user", command)
+        self.assertIn("--settings", command)
+        self.assertIn("transclip.cli", command)
+        self.assertTrue(command.rstrip().endswith("serve"))
 
     def test_service_settings_path_preserves_absolute_windows_paths(self):
         path = Path("C:/Users/test user/AppData/Roaming/transclip/settings.toml")
@@ -350,17 +371,17 @@ class DaemonTests(unittest.TestCase):
             [normalize_path_text(str(part)) for part in command],
         )
 
-    def test_windows_task_state_parses_numeric_enum(self):
-        from transclip.daemon.windows import _windows_task_state
+    def test_count_service_processes_parses_powershell_count(self):
+        from transclip.daemon.windows import _count_service_processes
 
         def running(_command, **_kwargs):
-            return type("Completed", (), {"returncode": 0, "stdout": "4\n"})()
+            return type("Completed", (), {"returncode": 0, "stdout": "2\n"})()
 
-        def missing(_command, **_kwargs):
+        def errored(_command, **_kwargs):
             return type("Completed", (), {"returncode": 1, "stdout": ""})()
 
-        self.assertEqual(_windows_task_state(running), 4)
-        self.assertIsNone(_windows_task_state(missing))
+        self.assertEqual(_count_service_processes(running), 2)
+        self.assertEqual(_count_service_processes(errored), 0)
 
     def test_install_daemon_passes_settings_to_platform_backend(self):
         from transclip.daemon.common import CommandResult
@@ -388,6 +409,29 @@ class DaemonTests(unittest.TestCase):
 
         self.assertFalse(results[0].ok)
         self.assertIn("unsupported platform", results[0].detail)
+
+
+@unittest.skipUnless(sys.platform == "win32", "Run-key autostart uses the real Windows registry")
+class WindowsRunKeyRegistryTests(unittest.TestCase):
+    """Exercise the real winreg round-trip the mocked tests stub out.
+
+    Uses a throwaway value name under HKCU\\...\\Run and always cleans it up, so
+    the user's actual ``TransClip`` autostart entry is never touched.
+    """
+
+    def test_autostart_set_read_clear_roundtrip(self) -> None:
+        from transclip.daemon import windows
+
+        with patch.object(windows, "RUN_KEY_VALUE_NAME", "TransClipPytestProbe"):
+            try:
+                self.assertIsNone(windows._autostart_command())  # absent to start
+                windows._set_autostart("pythonw -m transclip.cli serve")
+                self.assertEqual(windows._autostart_command(), "pythonw -m transclip.cli serve")
+                self.assertTrue(windows._clear_autostart())
+                self.assertIsNone(windows._autostart_command())  # gone after clear
+                self.assertFalse(windows._clear_autostart())  # idempotent: already gone
+            finally:
+                windows._clear_autostart()
 
 
 if __name__ == "__main__":
