@@ -260,9 +260,8 @@ def validate_asr_model_backend(
             raise ValueError('Use asr_backend = "granite_nar" with Granite NAR models')
         if "granite-speech" not in model_id:
             raise ValueError("Granite ASR requires an ibm-granite granite-speech model")
-    elif backend == "openvino_whisper":
-        if "whisper" not in model_id.lower():
-            raise ValueError("OpenVINO ASR requires an OpenVINO Whisper model (whisper-*-ov)")
+    elif backend == "openvino_whisper" and "whisper" not in model_id.lower():
+        raise ValueError("OpenVINO ASR requires an OpenVINO Whisper model (whisper-*-ov)")
     profile = detect_runtime_profile(runtime)
     if backend == "granite_nar" and profile.granite_nar_unsupported_reason:
         raise ValueError(profile.granite_nar_unsupported_reason)

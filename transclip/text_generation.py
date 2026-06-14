@@ -6,7 +6,7 @@ from typing import Any, Protocol
 
 from .device import resolve_torch_device
 from .models import mlx_snapshot_path
-from .openvino_device import resolve_openvino_device
+from .openvino_device import download_openvino_snapshot, resolve_openvino_device
 from .settings import Settings
 from .timing import timed_ms
 
@@ -154,13 +154,7 @@ class OpenVINOTextGenerationBackend:
         return self._resolved_path
 
     def _download_snapshot(self) -> str:
-        try:
-            from huggingface_hub import snapshot_download
-        except ImportError as exc:
-            raise RuntimeError(
-                "huggingface_hub is required to fetch OpenVINO models. Install transclip[openvino]."
-            ) from exc
-        return snapshot_download(repo_id=self.model_name, cache_dir=self.cache_dir or None)
+        return download_openvino_snapshot(self.model_name, self.cache_dir)
 
     def _load(self):
         with self._lock:

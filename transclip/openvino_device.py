@@ -24,6 +24,21 @@ def openvino_available_devices() -> tuple[str, ...]:
         return ()
 
 
+def download_openvino_snapshot(repo_id: str, cache_dir: str = "") -> str:
+    """Download a Hugging Face snapshot for an OpenVINO model, returning its path.
+
+    Shared by the OpenVINO ASR and text-generation backends so the import guard
+    and download call live in one place.
+    """
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError as exc:
+        raise RuntimeError(
+            "huggingface_hub is required to fetch OpenVINO models. Install transclip[openvino]."
+        ) from exc
+    return snapshot_download(repo_id=repo_id, cache_dir=cache_dir or None)
+
+
 def has_intel_accelerator() -> bool:
     """True when an Intel iGPU or NPU is available via OpenVINO.
 
