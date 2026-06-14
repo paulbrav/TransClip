@@ -5,6 +5,7 @@ import math
 import platform as py_platform
 import tempfile
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol
@@ -251,6 +252,7 @@ class GraniteSpeechNarTransformersBackend:
         self.local_files_only = local_files_only
         self.cache_dir = cache_dir
         self._loaded = None
+        self._tokenizer = None
         self.audio_preparer = TorchAudioPreparer()
 
     def _device(self):
@@ -263,7 +265,7 @@ class GraniteSpeechNarTransformersBackend:
             import os
 
             import torch
-            from transformers import AutoFeatureExtractor, AutoModel, AutoTokenizer
+            from transformers import AutoFeatureExtractor, AutoModel
         except ImportError as exc:
             raise RuntimeError("transformers, torch, and torchaudio are required. Install transclip[models].") from exc
 
@@ -284,16 +286,24 @@ class GraniteSpeechNarTransformersBackend:
             local_files_only=self.local_files_only,
             cache_dir=self.cache_dir or None,
         )
-        # Current NAR revisions return token ids (output.preds) rather than
-        # decoded strings, so a tokenizer is needed to detokenize them.
-        tokenizer = AutoTokenizer.from_pretrained(
-            self.model,
-            trust_remote_code=True,
-            local_files_only=self.local_files_only,
-            cache_dir=self.cache_dir or None,
-        )
-        self._loaded = (feature_extractor, model, tokenizer)
+        self._loaded = (feature_extractor, model)
         return self._loaded
+
+    def _get_tokenizer(self):
+        # Lazy + cached: only current NAR revisions (which return token-id `preds`)
+        # need a tokenizer. The default revision returns decoded `text_preds`, so
+        # this never runs on the primary Linux gfx1151 path -- keeping its startup
+        # identical to before the version-robust decode was added.
+        if self._tokenizer is None:
+            from transformers import AutoTokenizer
+
+            self._tokenizer = AutoTokenizer.from_pretrained(
+                self.model,
+                trust_remote_code=True,
+                local_files_only=self.local_files_only,
+                cache_dir=self.cache_dir or None,
+            )
+        return self._tokenizer
 
     def transcribe(self, wav_path: Path, keywords: list[str] | None = None) -> TranscriptionResult:
         del keywords
@@ -307,7 +317,7 @@ class GraniteSpeechNarTransformersBackend:
         with timed_ms(timings, "asr"):
             import torch
 
-            feature_extractor, model, tokenizer = self._load(device)
+            feature_extractor, model = self._load(device)
             if not torch.is_tensor(waveform):
                 waveform = torch.from_numpy(waveform)
             if sample_rate != GRANITE_NAR_SAMPLE_RATE:
@@ -319,7 +329,7 @@ class GraniteSpeechNarTransformersBackend:
             inputs = feature_extractor([waveform], device=device)
             with torch.inference_mode():
                 output = _nar_infer(model, inputs)
-            text = _nar_decode(output, tokenizer)
+            text = _nar_decode(output, self._get_tokenizer)
         return TranscriptionResult(text.strip(), timings, self.name, self.model)
 
 
@@ -652,25 +662,27 @@ def _nar_infer(model: Any, inputs: Any) -> Any:
     ``generate`` to ``transcribe`` (``can_generate()`` now returns False), so
     prefer ``transcribe`` and fall back to ``generate`` for older revisions.
     """
-    runner = getattr(model, "transcribe", None) or model.generate
+    runner = getattr(model, "transcribe", None) or getattr(model, "generate", None)
+    if runner is None:
+        raise RuntimeError("Granite NAR model exposes neither transcribe() nor generate()")
     return runner(**inputs)
 
 
-def _nar_decode(output: Any, tokenizer: Any) -> str:
-    """Extract transcript text from a Granite NAR output across model revisions.
+def _nar_decode(output: Any, load_tokenizer: Callable[[], Any]) -> str:
+    """Decode a Granite NAR output across model revisions.
 
-    Newer revisions return token-id tensors in ``output.preds`` that must be
-    detokenized; older revisions returned already-decoded strings in
-    ``output.text_preds``. When both are present, the already-decoded
-    ``text_preds`` wins. Truthiness (not ``is not None``) is used so a
-    present-but-empty field falls through to the next candidate instead of
-    raising IndexError.
+    Older revisions return decoded strings in ``text_preds`` (preferred when
+    present); newer ones return token-id tensors in ``preds``. ``load_tokenizer``
+    is called only on the ``preds`` path, so the default revision never builds a
+    tokenizer it won't use. Truthiness (not ``is not None``) lets an empty
+    ``text_preds`` fall through instead of raising IndexError.
     """
     text_preds = getattr(output, "text_preds", None)
     if text_preds:
         return text_preds[0]
     preds = getattr(output, "preds", None)
     if preds:
+        tokenizer = load_tokenizer()
         if tokenizer is None:
             raise RuntimeError("Granite NAR returned token ids but no tokenizer was loaded to decode them")
         return tokenizer.decode(preds[0], skip_special_tokens=True)

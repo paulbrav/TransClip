@@ -451,7 +451,7 @@ class ASRTests(unittest.TestCase):
     def test_nar_decode_uses_text_preds_when_present(self):
         # Older revisions returned already-decoded strings in text_preds.
         output = SimpleNamespace(text_preds=["hello world"])
-        self.assertEqual(_nar_decode(output, tokenizer=None), "hello world")
+        self.assertEqual(_nar_decode(output, lambda: None), "hello world")
 
     def test_nar_decode_detokenizes_token_id_preds(self):
         # Current revisions return token-id tensors in preds needing a tokenizer.
@@ -461,12 +461,12 @@ class ASRTests(unittest.TestCase):
                 return "decoded:" + ",".join(str(i) for i in ids)
 
         output = SimpleNamespace(preds=[[1, 2, 3]])
-        self.assertEqual(_nar_decode(output, FakeTokenizer()), "decoded:1,2,3")
+        self.assertEqual(_nar_decode(output, lambda: FakeTokenizer()), "decoded:1,2,3")
 
     def test_nar_decode_raises_on_token_ids_without_tokenizer(self):
         output = SimpleNamespace(preds=[[1, 2, 3]])
         with self.assertRaisesRegex(RuntimeError, "no tokenizer"):
-            _nar_decode(output, tokenizer=None)
+            _nar_decode(output, lambda: None)
 
     def test_nar_decode_prefers_text_preds_when_both_present(self):
         # Already-decoded text_preds wins over raw token-id preds.
@@ -475,7 +475,7 @@ class ASRTests(unittest.TestCase):
                 raise AssertionError("must not detokenize when text_preds is present")
 
         output = SimpleNamespace(text_preds=["winner"], preds=[[9, 9]])
-        self.assertEqual(_nar_decode(output, BoomTokenizer()), "winner")
+        self.assertEqual(_nar_decode(output, lambda: BoomTokenizer()), "winner")
 
     def test_nar_decode_falls_through_empty_text_preds_to_token_ids(self):
         # An empty text_preds must not IndexError; fall through to preds.
@@ -484,7 +484,7 @@ class ASRTests(unittest.TestCase):
                 return "decoded:" + ",".join(str(i) for i in ids)
 
         output = SimpleNamespace(text_preds=[], preds=[[7, 8]])
-        self.assertEqual(_nar_decode(output, FakeTokenizer()), "decoded:7,8")
+        self.assertEqual(_nar_decode(output, lambda: FakeTokenizer()), "decoded:7,8")
 
     def test_audio_preparer_folds_channels_and_resamples_without_model_runtime(self):
         samples = np.array([[1.0, 3.0], [5.0, 7.0]], dtype=np.float32)
