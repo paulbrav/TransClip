@@ -468,6 +468,24 @@ class ASRTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "no tokenizer"):
             _nar_decode(output, tokenizer=None)
 
+    def test_nar_decode_prefers_text_preds_when_both_present(self):
+        # Already-decoded text_preds wins over raw token-id preds.
+        class BoomTokenizer:
+            def decode(self, *_a, **_k):
+                raise AssertionError("must not detokenize when text_preds is present")
+
+        output = SimpleNamespace(text_preds=["winner"], preds=[[9, 9]])
+        self.assertEqual(_nar_decode(output, BoomTokenizer()), "winner")
+
+    def test_nar_decode_falls_through_empty_text_preds_to_token_ids(self):
+        # An empty text_preds must not IndexError; fall through to preds.
+        class FakeTokenizer:
+            def decode(self, ids, skip_special_tokens=False):
+                return "decoded:" + ",".join(str(i) for i in ids)
+
+        output = SimpleNamespace(text_preds=[], preds=[[7, 8]])
+        self.assertEqual(_nar_decode(output, FakeTokenizer()), "decoded:7,8")
+
     def test_audio_preparer_folds_channels_and_resamples_without_model_runtime(self):
         samples = np.array([[1.0, 3.0], [5.0, 7.0]], dtype=np.float32)
         resample_calls = []

@@ -25,9 +25,7 @@ def prefetch_model(model_id: str, settings: Settings, runtime: PlatformRuntime |
         try:
             handler = _PREFETCH_BY_BACKEND[entry.backend]
         except KeyError as exc:
-            raise RuntimeError(
-                f"No prefetch handler for backend {entry.backend!r} (model {entry.model_id!r})"
-            ) from exc
+            raise RuntimeError(f"No prefetch handler for backend {entry.backend!r} (model {entry.model_id!r})") from exc
         handler(entry, cache_dir)
         return model_cache_path(entry.model_id, settings, runtime)
 
@@ -71,7 +69,7 @@ def _prefetch_text_generation(entry: ModelCatalogEntry, cache_dir: str) -> None:
 
 def _prefetch_granite_nar(entry: ModelCatalogEntry, cache_dir: str) -> None:
     try:
-        from transformers import AutoModel, AutoProcessor
+        from transformers import AutoModel, AutoProcessor, AutoTokenizer
     except ImportError as exc:
         raise RuntimeError("transformers is required. Install transclip[models].") from exc
     AutoModel.from_pretrained(
@@ -81,6 +79,14 @@ def _prefetch_granite_nar(entry: ModelCatalogEntry, cache_dir: str) -> None:
         cache_dir=cache_dir,
     )
     AutoProcessor.from_pretrained(
+        entry.model_id,
+        trust_remote_code=True,
+        local_files_only=False,
+        cache_dir=cache_dir,
+    )
+    # The NAR backend loads a standalone tokenizer with local_files_only=True to
+    # detokenize output.preds; cache it explicitly so a fresh prefetch suffices.
+    AutoTokenizer.from_pretrained(
         entry.model_id,
         trust_remote_code=True,
         local_files_only=False,
