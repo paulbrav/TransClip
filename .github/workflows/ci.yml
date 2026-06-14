@@ -17,9 +17,15 @@ jobs:
         run: uv sync --extra dev --extra audio
       - name: Ruff
         run: uv run ruff check .
+      - name: Ty (informational, non-blocking)
+        # ty is the primary type checker. It is non-blocking for now while the
+        # pre-existing structural diagnostic backlog is worked down; the diagnostic
+        # count must not grow (see plans/ for the tracked baseline).
+        continue-on-error: true
+        run: uv run ty check
       - name: Mypy (informational, non-blocking)
-        # ty is the primary type checker; this lane only surfaces typo-in-comparison
-        # (strict_equality) issues that ty cannot catch. It must never gate CI.
+        # Complements ty: surfaces typo-in-comparison (strict_equality) issues that
+        # ty cannot catch. It must never gate CI.
         continue-on-error: true
         run: uv run mypy
       - name: Compile

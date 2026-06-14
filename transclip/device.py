@@ -6,9 +6,6 @@ from functools import lru_cache
 from typing import Literal
 
 TorchDevice = Literal["cpu", "cuda", "mps"]
-# Device strings accepted by resolve_torch_device (case-insensitively): the
-# resolved torch devices plus "auto" (probe) and "rocm" (alias for "cuda").
-ASRDeviceString = Literal["auto", "cpu", "cuda", "mps", "rocm"]
 
 
 def resolve_torch_device(requested: str = "auto") -> TorchDevice:
