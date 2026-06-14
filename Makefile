@@ -5,8 +5,11 @@ UV ?= uv
 # contains torch. Pinning UV_PROJECT_ENVIRONMENT here guarantees `uv run`/`uv sync`
 # target .venv-dev and can NEVER prune the ROCm serving env (.venv). The systemd
 # unit uses an absolute .venv/bin/python3 path and is unaffected.
-export UV_PROJECT_ENVIRONMENT ?= .venv-dev
+# `:=` (not `?=`) so a stale UV_PROJECT_ENVIRONMENT exported in the shell cannot
+# redirect a sync back onto .venv; `make VAR=...` on the command line still wins.
+export UV_PROJECT_ENVIRONMENT := .venv-dev
 export UV_NO_SYNC ?= 1
+DEV_PY := $(UV_PROJECT_ENVIRONMENT)/bin/python
 
 help:
 	@printf '%s\n' \
@@ -25,32 +28,37 @@ help:
 		'  make ruff-format   Alias for format' \
 		'  make ty            Alias for typecheck'
 
-check: lint format-check typecheck test compile
-	git diff --check
-
-test:
-	$(UV) run -m unittest discover -v
-
-lint:
-	$(UV) run ruff check .
-
-lint-fix:
-	$(UV) run ruff check . --fix
-
-format:
-	$(UV) run ruff format .
-
-format-check:
-	$(UV) run ruff format . --check
-
-typecheck:
-	$(UV) run ty check
-
-compile:
-	$(UV) run -m compileall transclip tests scripts
+# Auto-bootstrap the dev venv on first use, so `make test`/`check` work without a
+# prior `make dev-venv` (UV_NO_SYNC=1 means `uv run` will not populate it itself).
+$(DEV_PY):
+	$(UV) sync --extra dev --extra audio
 
 dev-venv:
 	$(UV) sync --extra dev --extra audio
+
+check: lint format-check typecheck test compile
+	git diff --check
+
+test: | $(DEV_PY)
+	$(UV) run -m unittest discover -v
+
+lint: | $(DEV_PY)
+	$(UV) run ruff check .
+
+lint-fix: | $(DEV_PY)
+	$(UV) run ruff check . --fix
+
+format: | $(DEV_PY)
+	$(UV) run ruff format .
+
+format-check: | $(DEV_PY)
+	$(UV) run ruff format . --check
+
+typecheck: | $(DEV_PY)
+	$(UV) run ty check
+
+compile: | $(DEV_PY)
+	$(UV) run -m compileall transclip tests scripts
 
 ruff-check: lint
 ruff-fix: lint-fix

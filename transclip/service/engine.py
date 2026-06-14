@@ -55,6 +55,30 @@ class WaveformTranscriber(Protocol):
     def __call__(self, waveform: Any, sample_rate: int = 16000) -> TranscriptionResult: ...
 
 
+def _ml_stack_importable() -> bool:
+    """Whether the core ML stack imports. Used to classify a warmup failure: a
+    pruned torch is an env-broken (operator-fix) condition regardless of how the
+    failure surfaced -- ModuleNotFoundError on the NAR path, or a wrapped
+    RuntimeError from the GPU device probe (which runs torch in a subprocess) on
+    the AR + cuda path -- so the exception type alone is not reliable."""
+    try:
+        import torch  # noqa: F401
+        import transformers  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _redact_home(message: str | None) -> str | None:
+    """Strip the user's home path from wire-exposed error text (the full text
+    stays in the journal log). /readyz is loopback + same-origin guarded, but
+    there is no reason to put an absolute home path / username on the wire."""
+    if message is None:
+        return None
+    home = str(Path.home())
+    return message.replace(home, "~") if home else message
+
+
 class InferenceEngine:
     def __init__(
         self,
@@ -93,24 +117,23 @@ class InferenceEngine:
                 self.warm_asr()
                 self.asr_ready = True
                 self.asr_last_error = None
-            except ImportError as exc:
-                # ModuleNotFoundError (subclass of ImportError) means the ML stack
-                # is gone (e.g. a stray `uv sync` pruned torch). Hard, operator-fix.
-                self.asr_ready = False
-                self.asr_env_broken = True
-                self.asr_last_error = f"{type(exc).__name__}: {exc}"
-                logging.getLogger(__name__).error(
-                    "ASR warmup failed: ML stack not importable (%s). Reinstall "
-                    "the serving env via scripts/setup_gfx1151_env.sh; service is "
-                    "degraded and /record/* will fail until torch is restored.",
-                    self.asr_last_error,
-                )
             except Exception as exc:
-                # Recoverable (e.g. weights not yet downloaded); lazy load may fix it.
                 self.asr_ready = False
-                self.asr_env_broken = False
                 self.asr_last_error = f"{type(exc).__name__}: {exc}"
-                logging.getLogger(__name__).exception("ASR warmup failed; continuing with lazy model load")
+                # Classify by probing the real condition, not the exception type:
+                # a pruned torch surfaces as ModuleNotFoundError on the NAR path
+                # but as a wrapped RuntimeError on the AR + cuda path, so the type
+                # is unreliable. env_broken => the operator must reinstall the env.
+                self.asr_env_broken = not _ml_stack_importable()
+                if self.asr_env_broken:
+                    logging.getLogger(__name__).error(
+                        "ASR warmup failed: ML stack not importable (%s). Reinstall "
+                        "the serving env via scripts/setup_gfx1151_env.sh; service is "
+                        "degraded and /record/* will fail until torch is restored.",
+                        self.asr_last_error,
+                    )
+                else:
+                    logging.getLogger(__name__).exception("ASR warmup failed; continuing with lazy model load")
         self._streaming = streaming if streaming is not None else self._build_incremental_adapter()
         self.dictation_session = DictationSession(
             settings,
@@ -126,7 +149,7 @@ class InferenceEngine:
             "env_broken": self.asr_env_broken,
             "asr_backend": self.asr_backend.name,
             "asr_model": self.asr_backend.model,
-            "error": self.asr_last_error,
+            "error": _redact_home(self.asr_last_error),
         }
 
     def health(self) -> ServiceHealthResponse:

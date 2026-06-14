@@ -386,6 +386,12 @@ transcript** expose the committed text so far. The final text always runs the
 normal post-ASR pipeline. Leave `incremental_transcription` unset (or set it
 to `false`) for the default single-pass batch behavior.
 
+`GET /readyz` (alias `/healthz`) reports ASR readiness: HTTP 200 with
+`{"ready": true, ...}` once the model has loaded, or 503 with `env_broken: true`
+and the error when the ML stack failed to import (e.g. torch was pruned from
+`.venv`). Use it to tell a degraded service apart from a healthy one instead of
+waiting for the first dictation to 500.
+
 For fast local plumbing tests
 without downloading a model, point `asr_backend` at a transcript file:
 
@@ -542,16 +548,16 @@ Then build and run the eval:
 
 ```bash
 TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1 \
-VIRTUAL_ENV=$PWD/.venv uv run --active scripts/run_real_eval_pipeline.py \
+.venv/bin/python scripts/run_real_eval_pipeline.py \
   ~/transclip-real-eval
 ```
 
 ## Tests
 
 ```bash
-uv run -m unittest discover -s tests -v
-uv run -m compileall scripts transclip tests
-VIRTUAL_ENV=$PWD/.venv uv run --active scripts/check_v1_completion.py
+make test
+make compile
+.venv/bin/python scripts/check_v1_completion.py
 ```
 
 Contributors changing imports or adding platform code should read
