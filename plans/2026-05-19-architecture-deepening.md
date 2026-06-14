@@ -431,7 +431,7 @@ Tests:
 ```bash
 uv run -m unittest tests.test_eval_harness tests.test_check_eval_results tests.test_prepare_real_eval tests.test_run_real_eval_pipeline -v
 uv run -m unittest discover -s tests -v
-VIRTUAL_ENV=$PWD/.venv-gfx1151 uv run --active scripts/check_v1_completion.py
+.venv/bin/python scripts/check_v1_completion.py
 ```
 
 Review notes:
@@ -453,7 +453,7 @@ uv run -m compileall transclip scripts tests
 Run after slices that touch model, ASR, eval, or runtime completion:
 
 ```bash
-VIRTUAL_ENV=$PWD/.venv-gfx1151 uv run --active scripts/check_v1_completion.py
+.venv/bin/python scripts/check_v1_completion.py
 ```
 
 Optional live diagnostics after platform, paste, shortcut, or daemon slices:

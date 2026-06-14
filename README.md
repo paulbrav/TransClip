@@ -310,7 +310,8 @@ canonical runtime environment is `.venv`; the systemd service and GNOME
 shortcut should point at `.venv/bin/python3`. Do not use the local custom wheel
 for this app; it fails GPU tensor execution on this host.
 
-Use the helper script:
+Use the helper script (idempotent -- safe to re-run; it rebuilds `.venv` from the
+pinned `requirements-gfx1151.txt`):
 
 ```bash
 scripts/setup_gfx1151_env.sh
@@ -319,18 +320,24 @@ scripts/setup_gfx1151_env.sh
 Or run the setup steps manually:
 
 ```bash
-uv venv --python 3.13 .venv
+uv venv --clear --python 3.13 .venv
+# --extra-index-url (NOT --index-url): the gfx1151 index only serves ROCm torch
+# wheels, so replacing PyPI 404s on transformers etc. --pre allows ROCm prereleases.
 uv pip install --python .venv/bin/python \
-  --index-url https://rocm.nightlies.amd.com/v2/gfx1151/ \
-  --pre torch torchaudio torchvision pytorch-triton-rocm
-uv pip install --python .venv/bin/python \
-  -e . 'transformers>=4.52.1' 'accelerate>=1.0' 'soundfile>=0.12' 'sounddevice>=0.5'
+  --extra-index-url https://rocm.nightlies.amd.com/v2/gfx1151/ --pre \
+  -r requirements-gfx1151.txt
+uv pip install --python .venv/bin/python -e .
 FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE MAX_JOBS=4 \
   uv pip install --python .venv/bin/python --no-deps \
   flash-attn==2.8.3 --no-build-isolation
-uv pip install --python .venv/bin/python einops
-uv pip install --python .venv/bin/python flash-linear-attention
 ```
+
+**`.venv` (serving) vs `.venv-dev` (tooling).** `.venv` holds the ROCm ML stack and
+is built only by the script above. Lint/type/test tooling lives in a separate
+`.venv-dev` (`make dev-venv`). **Never run a bare `uv run`/`uv sync` against `.venv`:**
+torch is only on the ROCm index, so an unpinned sync prunes the whole ML stack and
+breaks the service. `make` and `.envrc` pin `UV_PROJECT_ENVIRONMENT=.venv-dev` so the
+serving env is never touched by tooling.
 
 The default ASR backend is `ibm-granite/granite-speech-4.1-2b-nar`, selected
 with `asr_backend = "granite_nar"`, because it is the measured low-latency V1

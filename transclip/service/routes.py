@@ -21,6 +21,10 @@ class RouteResponse:
 def dispatch_get(engine: InferenceEngine, path: str) -> RouteResponse:
     if path == "/health":
         return RouteResponse(200, engine.health())
+    if path in {"/readyz", "/healthz"}:
+        readiness = engine.asr_readiness()
+        status = 200 if readiness["ready"] else 503
+        return RouteResponse(status, readiness)
     if path == "/record/partial":
         return RouteResponse(200, engine.record_partial())
     return RouteResponse(404, {"error": "not found"})

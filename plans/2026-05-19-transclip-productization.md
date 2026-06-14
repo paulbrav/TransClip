@@ -240,7 +240,7 @@ uv run -m unittest discover -s tests -v
 Optional real eval:
 
 ```bash
-VIRTUAL_ENV=$PWD/.venv-gfx1151 uv run --active -m transclip.cli eval eval/real-usage/manifest.json --output eval/real-usage/results.json
+.venv/bin/python -m transclip.cli eval eval/real-usage/manifest.json --output eval/real-usage/results.json
 ```
 
 ### Slice 7: Rewrite README and Install Flow
@@ -324,8 +324,8 @@ uv run ruff check .
 git diff --check --no-color
 uv run -m compileall transclip scripts tests
 uv run -m unittest discover -s tests -v
-VIRTUAL_ENV=$PWD/.venv-gfx1151 uv run --active -m transclip.cli eval eval/real-usage/manifest.json --output eval/real-usage/results.json
-VIRTUAL_ENV=$PWD/.venv-gfx1151 uv run --active scripts/check_v1_completion.py
+.venv/bin/python -m transclip.cli eval eval/real-usage/manifest.json --output eval/real-usage/results.json
+.venv/bin/python scripts/check_v1_completion.py
 ```
 
 Expected status at the time this plan was written:
