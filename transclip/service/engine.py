@@ -55,6 +55,30 @@ class WaveformTranscriber(Protocol):
     def __call__(self, waveform: Any, sample_rate: int = 16000) -> TranscriptionResult: ...
 
 
+def _ml_stack_importable() -> bool:
+    """Whether the core ML stack imports. Used to classify a warmup failure: a
+    pruned torch is an env-broken (operator-fix) condition regardless of how the
+    failure surfaced -- ModuleNotFoundError on the NAR path, or a wrapped
+    RuntimeError from the GPU device probe (which runs torch in a subprocess) on
+    the AR + cuda path -- so the exception type alone is not reliable."""
+    try:
+        import torch  # noqa: F401
+        import transformers  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _redact_home(message: str | None) -> str | None:
+    """Strip the user's home path from wire-exposed error text (the full text
+    stays in the journal log). /readyz is loopback + same-origin guarded, but
+    there is no reason to put an absolute home path / username on the wire."""
+    if message is None:
+        return None
+    home = str(Path.home())
+    return message.replace(home, "~") if home else message
+
+
 class InferenceEngine:
     def __init__(
         self,
@@ -76,16 +100,40 @@ class InferenceEngine:
         )
         self.debug_capture = DebugCapture(settings)
         self.asr_backend = asr_backend or build_asr_backend(settings)
+        # Readiness reflects whether the ASR stack is usable. Default True so
+        # lazy-load CLI paths (no warmup) and successful warmups report ready;
+        # a warm_asr() failure flips it False and records why (surfaced by /readyz).
+        self.asr_ready: bool = True
+        self.asr_last_error: str | None = None
+        # True only when warmup failed because the ML stack (torch/transformers)
+        # could not be imported -- an env-broken condition the operator must fix.
+        self.asr_env_broken: bool = False
         if warm_asr:
             # Warmup failure (e.g. weights not yet downloaded) must not abort
             # startup: serve degraded and surface the error per-request, as the
-            # lazy-loading path always did.
+            # lazy-loading path always did. But record it so /readyz reports 503
+            # instead of silently 500-ing every transcription.
             try:
                 self.warm_asr()
-            except Exception:
-                logging.getLogger(__name__).exception(
-                    "ASR warmup failed; continuing with lazy model load"
-                )
+                self.asr_ready = True
+                self.asr_last_error = None
+            except Exception as exc:
+                self.asr_ready = False
+                self.asr_last_error = f"{type(exc).__name__}: {exc}"
+                # Classify by probing the real condition, not the exception type:
+                # a pruned torch surfaces as ModuleNotFoundError on the NAR path
+                # but as a wrapped RuntimeError on the AR + cuda path, so the type
+                # is unreliable. env_broken => the operator must reinstall the env.
+                self.asr_env_broken = not _ml_stack_importable()
+                if self.asr_env_broken:
+                    logging.getLogger(__name__).error(
+                        "ASR warmup failed: ML stack not importable (%s). Reinstall "
+                        "the serving env via scripts/setup_gfx1151_env.sh; service is "
+                        "degraded and /record/* will fail until torch is restored.",
+                        self.asr_last_error,
+                    )
+                else:
+                    logging.getLogger(__name__).exception("ASR warmup failed; continuing with lazy model load")
         self._streaming = streaming if streaming is not None else self._build_incremental_adapter()
         self.dictation_session = DictationSession(
             settings,
@@ -93,6 +141,16 @@ class InferenceEngine:
             recorder_factory=lambda current_settings: AudioRecorder(current_settings),
             streaming=self._streaming,
         )
+
+    def asr_readiness(self) -> dict[str, object]:
+        """Report whether the ASR backend loaded. Drives GET /readyz (200/503)."""
+        return {
+            "ready": self.asr_ready,
+            "env_broken": self.asr_env_broken,
+            "asr_backend": self.asr_backend.name,
+            "asr_model": self.asr_backend.model,
+            "error": _redact_home(self.asr_last_error),
+        }
 
     def health(self) -> ServiceHealthResponse:
         status = self.dictation_session.status()

@@ -1,0 +1,32 @@
+# Pinned SERVING environment for AMD ROCm gfx1151 (the env the systemd unit runs).
+#
+# Install (scripts/setup_gfx1151_env.sh does this for you):
+#   uv pip install --python .venv/bin/python \
+#     --extra-index-url https://rocm.nightlies.amd.com/v2/gfx1151/ --pre \
+#     -r requirements-gfx1151.txt
+#
+# Why these exact rules:
+#   - Use --extra-index-url, NOT --index-url. --index-url REPLACES PyPI, so the
+#     gfx1151 index (which only serves ROCm torch wheels) 404s on transformers etc.
+#   - --pre is required for the ROCm prerelease wheels. tokenizers/safetensors are
+#     pinned exactly so the global --pre does not drift them to rc builds.
+#   - flash-attn is NOT listed here: it has no ROCm wheel and must be compiled
+#     locally (--no-deps --no-build-isolation + FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE).
+#   - The editable project install (`uv pip install -e .`) is a separate step.
+
+# ROCm wheels (resolved from the gfx1151 extra index)
+torch==2.11.0+rocm7.13.0a20260424
+torchaudio==2.11.0+rocm7.13.0a20260424
+torchvision==0.26.0+rocm7.13.0a20260424
+pytorch-triton-rocm==3.5.0+gitfcf723cb.rocm7.9.0rc20251001
+
+# Model / audio stack (resolved from PyPI)
+transformers==5.12.0
+accelerate==1.14.0
+tokenizers==0.22.2
+safetensors==0.8.0
+soundfile==0.14.0
+sounddevice==0.5.5
+numpy==2.4.3
+einops==0.8.2
+flash-linear-attention==0.5.0

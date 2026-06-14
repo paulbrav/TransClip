@@ -310,7 +310,8 @@ canonical runtime environment is `.venv`; the systemd service and GNOME
 shortcut should point at `.venv/bin/python3`. Do not use the local custom wheel
 for this app; it fails GPU tensor execution on this host.
 
-Use the helper script:
+Use the helper script (idempotent -- safe to re-run; it rebuilds `.venv` from the
+pinned `requirements-gfx1151.txt`):
 
 ```bash
 scripts/setup_gfx1151_env.sh
@@ -319,18 +320,24 @@ scripts/setup_gfx1151_env.sh
 Or run the setup steps manually:
 
 ```bash
-uv venv --python 3.13 .venv
+uv venv --clear --python 3.13 .venv
+# --extra-index-url (NOT --index-url): the gfx1151 index only serves ROCm torch
+# wheels, so replacing PyPI 404s on transformers etc. --pre allows ROCm prereleases.
 uv pip install --python .venv/bin/python \
-  --index-url https://rocm.nightlies.amd.com/v2/gfx1151/ \
-  --pre torch torchaudio torchvision pytorch-triton-rocm
-uv pip install --python .venv/bin/python \
-  -e . 'transformers>=4.52.1' 'accelerate>=1.0' 'soundfile>=0.12' 'sounddevice>=0.5'
+  --extra-index-url https://rocm.nightlies.amd.com/v2/gfx1151/ --pre \
+  -r requirements-gfx1151.txt
+uv pip install --python .venv/bin/python -e .
 FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE MAX_JOBS=4 \
   uv pip install --python .venv/bin/python --no-deps \
   flash-attn==2.8.3 --no-build-isolation
-uv pip install --python .venv/bin/python einops
-uv pip install --python .venv/bin/python flash-linear-attention
 ```
+
+**`.venv` (serving) vs `.venv-dev` (tooling).** `.venv` holds the ROCm ML stack and
+is built only by the script above. Lint/type/test tooling lives in a separate
+`.venv-dev` (`make dev-venv`). **Never run a bare `uv run`/`uv sync` against `.venv`:**
+torch is only on the ROCm index, so an unpinned sync prunes the whole ML stack and
+breaks the service. `make` and `.envrc` pin `UV_PROJECT_ENVIRONMENT=.venv-dev` so the
+serving env is never touched by tooling.
 
 The default ASR backend is `ibm-granite/granite-speech-4.1-2b-nar`, selected
 with `asr_backend = "granite_nar"`, because it is the measured low-latency V1
@@ -378,6 +385,12 @@ While recording, `GET /record/partial` and the tray's **Copy partial
 transcript** expose the committed text so far. The final text always runs the
 normal post-ASR pipeline. Leave `incremental_transcription` unset (or set it
 to `false`) for the default single-pass batch behavior.
+
+`GET /readyz` (alias `/healthz`) reports ASR readiness: HTTP 200 with
+`{"ready": true, ...}` once the model has loaded, or 503 with `env_broken: true`
+and the error when the ML stack failed to import (e.g. torch was pruned from
+`.venv`). Use it to tell a degraded service apart from a healthy one instead of
+waiting for the first dictation to 500.
 
 For fast local plumbing tests
 without downloading a model, point `asr_backend` at a transcript file:
@@ -535,16 +548,16 @@ Then build and run the eval:
 
 ```bash
 TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1 \
-VIRTUAL_ENV=$PWD/.venv uv run --active scripts/run_real_eval_pipeline.py \
+.venv/bin/python scripts/run_real_eval_pipeline.py \
   ~/transclip-real-eval
 ```
 
 ## Tests
 
 ```bash
-uv run -m unittest discover -s tests -v
-uv run -m compileall scripts transclip tests
-VIRTUAL_ENV=$PWD/.venv uv run --active scripts/check_v1_completion.py
+make test
+make compile
+.venv/bin/python scripts/check_v1_completion.py
 ```
 
 Contributors changing imports or adding platform code should read
