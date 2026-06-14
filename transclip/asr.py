@@ -20,6 +20,7 @@ from .models import (
     resolve_catalog_entry,
     validate_asr_model_backend,
 )
+from .openvino_device import resolve_openvino_device
 from .settings import Settings
 from .timing import timed_ms
 
@@ -360,7 +361,7 @@ class MlxAudioASRBackend:
             try:
                 with tempfile.TemporaryDirectory(prefix="transclip-mlx-") as tmp:
                     output_stem = str(Path(tmp) / "transcript")
-                    with timed_ms(timings, "generate_write"):
+                    with timed_ms(timings, "generate"):
                         result = generate_transcription(
                             model,
                             audio.wav_path,
@@ -373,6 +374,124 @@ class MlxAudioASRBackend:
                 if audio is not None and getattr(audio, "temporary", False):
                     audio.wav_path.unlink(missing_ok=True)
         return TranscriptionResult(text.strip(), timings, self.name, self.model)
+
+
+class OpenVINOWhisperBackend:
+    """Whisper ASR accelerated on Intel CPU/iGPU/NPU via OpenVINO GenAI.
+
+    Mirrors MlxAudioASRBackend: lazy, lock-guarded pipeline load from a local HF
+    snapshot. OpenVINO uses its own device namespace (CPU/GPU/NPU/AUTO) resolved
+    by resolve_openvino_device, kept separate from the torch device path.
+    """
+
+    name = "openvino-whisper"
+
+    def __init__(
+        self,
+        model: str,
+        settings: Settings | None = None,
+        *,
+        device: str = "auto",
+        local_files_only: bool = True,
+        cache_dir: str = "",
+        validate_cache: bool = False,
+    ):
+        self.model = model
+        self.settings = settings
+        self.device = device
+        self.local_files_only = local_files_only
+        self.cache_dir = cache_dir
+        self._resolved_path: str | None = None
+        self._resolved_device: str | None = None
+        self._pipeline: Any | None = None
+        self._model_lock = threading.RLock()
+        self.audio_preparer = PathAudioPreparer()
+        self._keywords_warned = False
+        if validate_cache:
+            self._model_path()
+
+    def _model_path(self) -> str:
+        if self._resolved_path:
+            return self._resolved_path
+        settings = self.settings
+        if settings is not None:
+            snapshot = mlx_snapshot_path(self.model, settings)
+            if snapshot is not None:
+                self._resolved_path = str(snapshot)
+                return self._resolved_path
+        if self.local_files_only:
+            raise RuntimeError(
+                f"Local OpenVINO model artifacts missing for {self.model}. "
+                f"Run: transclip models prefetch --model {self.model}"
+            )
+        self._resolved_path = self._download_snapshot()
+        return self._resolved_path
+
+    def _download_snapshot(self) -> str:
+        try:
+            from huggingface_hub import snapshot_download
+        except ImportError as exc:
+            raise RuntimeError(
+                "huggingface_hub is required to fetch OpenVINO models. Install transclip[openvino]."
+            ) from exc
+        return snapshot_download(repo_id=self.model, cache_dir=self.cache_dir or None)
+
+    def _ov_device(self) -> str:
+        if self._resolved_device is None:
+            self._resolved_device = resolve_openvino_device(self.device)
+        return self._resolved_device
+
+    def _load(self) -> Any:
+        with self._model_lock:
+            if self._pipeline is not None:
+                return self._pipeline
+            try:
+                import openvino_genai as ov_genai
+            except ImportError as exc:
+                raise RuntimeError(
+                    "openvino-genai is required for the OpenVINO ASR backend. Install transclip[openvino]."
+                ) from exc
+            device = self._ov_device()
+            config: dict[str, Any] = {}
+            if device == "NPU":
+                # The NPU plugin requires static shapes for the Whisper pipeline.
+                config["STATIC_PIPELINE"] = True
+            self._pipeline = ov_genai.WhisperPipeline(self._model_path(), device, **config)
+            return self._pipeline
+
+    def _read_audio(self, wav_path: Path) -> Any:
+        import numpy as np
+
+        loader = self.audio_preparer.loader
+        samples, sample_rate = loader.load_samples(wav_path)
+        mono = loader.fold_mono(samples)
+        if sample_rate != loader.target_sample_rate:
+            mono = _linear_resample(mono, sample_rate, loader.target_sample_rate)
+        return np.ascontiguousarray(mono, dtype=np.float32)
+
+    def _generate(self, pipeline: Any, samples: Any) -> Any:
+        kwargs: dict[str, Any] = {}
+        language = self.settings.language if self.settings else None
+        token = _whisper_language_token(language) if language else ""
+        if token:
+            kwargs["language"] = token
+            kwargs["task"] = "transcribe"
+        return pipeline.generate(samples, **kwargs)
+
+    def transcribe(self, wav_path: Path, keywords: list[str] | None = None) -> TranscriptionResult:
+        if keywords and not self._keywords_warned:
+            logger.debug("OpenVINO Whisper does not support keyword biasing; keywords are ignored")
+            self._keywords_warned = True
+        del keywords
+        timings: dict[str, float] = {}
+        with timed_ms(timings, "asr"):
+            with timed_ms(timings, "model_load"):
+                pipeline = self._load()
+            with timed_ms(timings, "audio_prepare"):
+                samples = self._read_audio(wav_path)
+            with timed_ms(timings, "generate"):
+                result = self._generate(pipeline, samples)
+        return TranscriptionResult(_openvino_result_text(result).strip(), timings, self.name, self.model)
 
 
 class FileTranscriptASRBackend:
@@ -415,6 +534,14 @@ def build_asr_backend(
             **cache_options,
             validate_cache=settings.models_local_files_only,
         )
+    elif backend_kind == "openvino_whisper":
+        backend = OpenVINOWhisperBackend(
+            settings.asr_model,
+            settings,
+            device=settings.asr_device,
+            **cache_options,
+            validate_cache=settings.models_local_files_only,
+        )
     else:
         backend = GraniteSpeechTransformersBackend(settings.asr_model, torch_device, **cache_options)
     return backend
@@ -445,6 +572,20 @@ def _pad_nar_waveform_to_bucket(
     padded = np.zeros(target, dtype=getattr(waveform, "dtype", np.float32))
     padded[:length] = waveform
     return padded
+
+
+def _whisper_language_token(language: str | None) -> str:
+    lang = (language or "").strip()
+    if not lang or lang.startswith("<|"):
+        return lang
+    return f"<|{lang}|>"
+
+
+def _openvino_result_text(result: Any) -> str:
+    texts = getattr(result, "texts", None)
+    if texts:
+        return str(texts[0])
+    return str(result)
 
 
 def granite_user_prompt(keywords: list[str] | None = None) -> str:

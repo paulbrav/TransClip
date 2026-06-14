@@ -11,9 +11,11 @@ from transclip.asr import (
     GraniteSpeechNarTransformersBackend,
     GraniteSpeechTransformersBackend,
     MlxAudioASRBackend,
+    OpenVINOWhisperBackend,
     _configure_rocm_nar_attention_env,
     _granite_nar_dtype,
     _pad_nar_waveform_to_bucket,
+    _whisper_language_token,
     build_asr_backend,
     granite_user_prompt,
 )
@@ -80,6 +82,134 @@ class ASRTests(unittest.TestCase):
         )
         self.assertIsInstance(backend, MlxAudioASRBackend)
 
+    @staticmethod
+    def _windows_runtime() -> FakeRuntime:
+        return FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+
+    def test_windows_openvino_backend_selection(self):
+        runtime = self._windows_runtime()
+        with patch("transclip.device.torch_cuda_usable", return_value=True):
+            backend = build_asr_backend(
+                Settings(
+                    asr_backend="openvino_whisper",
+                    asr_model="OpenVINO/whisper-large-v3-int4-ov",
+                    asr_device="auto",
+                    models_local_files_only=False,
+                ),
+                runtime=runtime,
+            )
+        self.assertIsInstance(backend, OpenVINOWhisperBackend)
+        self.assertEqual(backend.device, "auto")
+
+    def test_openvino_requires_whisper_model(self):
+        runtime = self._windows_runtime()
+        with (
+            patch("transclip.device.torch_cuda_usable", return_value=True),
+            self.assertRaises(ValueError),
+        ):
+            build_asr_backend(
+                Settings(
+                    asr_backend="openvino_whisper",
+                    asr_model="ibm-granite/granite-speech-4.1-2b",
+                ),
+                runtime=runtime,
+            )
+
+    def test_openvino_transcribe_ignores_keywords_and_uses_pipeline(self):
+        captured = {}
+
+        class FakePipeline:
+            def generate(self, samples, **kwargs):
+                captured["samples_len"] = len(samples)
+                captured["kwargs"] = kwargs
+                return SimpleNamespace(texts=["  hello world  "])
+
+        backend = OpenVINOWhisperBackend(
+            "OpenVINO/whisper-large-v3-int4-ov",
+            Settings(language="en"),
+            device="openvino:CPU",
+            local_files_only=False,
+        )
+        backend._pipeline = FakePipeline()
+        backend._read_audio = lambda _path: np.zeros(16000, dtype=np.float32)
+
+        result = backend.transcribe(Path("a.wav"), keywords=["PyTorch"])
+
+        self.assertEqual(result.text, "hello world")
+        self.assertEqual(captured["samples_len"], 16000)
+        self.assertEqual(captured["kwargs"].get("language"), "<|en|>")
+        self.assertEqual(captured["kwargs"].get("task"), "transcribe")
+        self.assertIn("model_load", result.timings_ms)
+        self.assertIn("generate", result.timings_ms)
+
+    def test_openvino_load_sets_static_pipeline_on_npu(self):
+        captured = {}
+
+        class FakeWhisperPipeline:
+            def __init__(self, model_path, device, **kwargs):
+                captured["model_path"] = model_path
+                captured["device"] = device
+                captured["kwargs"] = kwargs
+
+        fake_genai = SimpleNamespace(WhisperPipeline=FakeWhisperPipeline)
+        backend = OpenVINOWhisperBackend(
+            "OpenVINO/whisper-large-v3-int4-ov",
+            Settings(),
+            device="openvino:NPU",
+            local_files_only=False,
+        )
+        backend._model_path = lambda: "/models/whisper"
+
+        with (
+            patch.dict("sys.modules", {"openvino_genai": fake_genai}),
+            patch(
+                "transclip.openvino_device.openvino_available_devices",
+                return_value=("CPU", "NPU"),
+            ),
+        ):
+            backend._load()
+
+        self.assertEqual(captured["device"], "NPU")
+        self.assertTrue(captured["kwargs"].get("STATIC_PIPELINE"))
+
+    def test_openvino_load_skips_static_pipeline_on_cpu(self):
+        captured = {}
+
+        class FakeWhisperPipeline:
+            def __init__(self, model_path, device, **kwargs):
+                captured["device"] = device
+                captured["kwargs"] = kwargs
+
+        fake_genai = SimpleNamespace(WhisperPipeline=FakeWhisperPipeline)
+        backend = OpenVINOWhisperBackend(
+            "OpenVINO/whisper-large-v3-int4-ov",
+            Settings(),
+            device="openvino:CPU",
+            local_files_only=False,
+        )
+        backend._model_path = lambda: "/models/whisper"
+
+        with patch.dict("sys.modules", {"openvino_genai": fake_genai}):
+            backend._load()
+
+        self.assertEqual(captured["device"], "CPU")
+        self.assertNotIn("STATIC_PIPELINE", captured["kwargs"])
+
+    def test_openvino_missing_local_artifacts_raises(self):
+        backend = OpenVINOWhisperBackend(
+            "OpenVINO/whisper-large-v3-int4-ov",
+            Settings(model_cache_dir="/transclip-nonexistent-cache"),
+            local_files_only=True,
+        )
+        with self.assertRaisesRegex(RuntimeError, "prefetch"):
+            backend._model_path()
+
+    def test_whisper_language_token_formatting(self):
+        self.assertEqual(_whisper_language_token("en"), "<|en|>")
+        self.assertEqual(_whisper_language_token("<|fr|>"), "<|fr|>")
+        self.assertEqual(_whisper_language_token(""), "")
+        self.assertEqual(_whisper_language_token(None), "")
+
     def test_mlx_audio_reuses_loaded_model_object_across_transcriptions(self):
         loaded_model = object()
         load_calls = []
@@ -118,7 +248,7 @@ class ASRTests(unittest.TestCase):
         self.assertEqual(second.text, "transcript 2")
         self.assertIn("model_load", second.timings_ms)
         self.assertIn("audio_prepare", second.timings_ms)
-        self.assertIn("generate_write", second.timings_ms)
+        self.assertIn("generate", second.timings_ms)
 
     def test_mlx_audio_preserves_empty_structured_transcript(self):
         backend = MlxAudioASRBackend(

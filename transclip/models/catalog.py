@@ -74,6 +74,50 @@ MODEL_CATALOG: tuple[ModelCatalogEntry, ...] = (
         dependency_extra="mlx",
         prefetch_strategy="snapshot_download",
     ),
+    ModelCatalogEntry(
+        model_id="OpenVINO/whisper-large-v3-int4-ov",
+        backend="openvino_whisper",
+        display_name="Intel OpenVINO Whisper large-v3 (int4)",
+        runtime_kind="openvino",
+        estimated_bytes=int(1.2 * GIB),
+        supported_platforms=frozenset({"Windows"}),
+        supported_architectures=None,
+        dependency_extra="openvino",
+        prefetch_strategy="snapshot_download",
+    ),
+    ModelCatalogEntry(
+        model_id="OpenVINO/whisper-large-v3-int8-ov",
+        backend="openvino_whisper",
+        display_name="Intel OpenVINO Whisper large-v3 (int8, higher accuracy)",
+        runtime_kind="openvino",
+        estimated_bytes=int(1.8 * GIB),
+        supported_platforms=frozenset({"Windows"}),
+        supported_architectures=None,
+        dependency_extra="openvino",
+        prefetch_strategy="snapshot_download",
+    ),
+    ModelCatalogEntry(
+        model_id="OpenVINO/whisper-base-int8-ov",
+        backend="openvino_whisper",
+        display_name="Intel OpenVINO Whisper base (int8, lightweight)",
+        runtime_kind="openvino",
+        estimated_bytes=int(0.2 * GIB),
+        supported_platforms=frozenset({"Windows"}),
+        supported_architectures=None,
+        dependency_extra="openvino",
+        prefetch_strategy="snapshot_download",
+    ),
+    ModelCatalogEntry(
+        model_id="FluidInference/whisper-large-v3-turbo-int4-ov-npu",
+        backend="openvino_whisper",
+        display_name="Intel OpenVINO Whisper Turbo (int4, NPU-ready)",
+        runtime_kind="openvino",
+        estimated_bytes=int(1.0 * GIB),
+        supported_platforms=frozenset({"Windows"}),
+        supported_architectures=None,
+        dependency_extra="openvino",
+        prefetch_strategy="snapshot_download",
+    ),
 )
 
 SUPPORTED_MODELS = list(MODEL_CATALOG)
@@ -91,6 +135,28 @@ SUPPORTED_TEXT_MODELS = [
         dependency_extra="models",
         prefetch_strategy="transformers",
     ),
+    ModelCatalogEntry(
+        model_id="OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov",
+        backend="text_generation",
+        display_name="OpenVINO Qwen2.5 1.5B Instruct (int4, lightweight)",
+        runtime_kind="openvino",
+        estimated_bytes=int(1.2 * GIB),
+        supported_platforms=frozenset({"Linux", "Windows"}),
+        supported_architectures=None,
+        dependency_extra="openvino",
+        prefetch_strategy="snapshot_download",
+    ),
+    ModelCatalogEntry(
+        model_id="OpenVINO/Qwen2.5-7B-Instruct-int4-ov",
+        backend="text_generation",
+        display_name="OpenVINO Qwen2.5 7B Instruct (int4, higher quality)",
+        runtime_kind="openvino",
+        estimated_bytes=int(5.0 * GIB),
+        supported_platforms=frozenset({"Linux", "Windows"}),
+        supported_architectures=None,
+        dependency_extra="openvino",
+        prefetch_strategy="snapshot_download",
+    ),
 ]
 
 ASR_BACKEND_ALIASES = {
@@ -106,6 +172,10 @@ ASR_BACKEND_ALIASES = {
     "granite_mlx": "granite_mlx",
     "granite_nar_mlx": "granite_nar_mlx",
     "granite-nar-mlx": "granite_nar_mlx",
+    "openvino": "openvino_whisper",
+    "openvino_whisper": "openvino_whisper",
+    "ov": "openvino_whisper",
+    "ov_whisper": "openvino_whisper",
 }
 
 
@@ -190,6 +260,9 @@ def validate_asr_model_backend(
             raise ValueError('Use asr_backend = "granite_nar" with Granite NAR models')
         if "granite-speech" not in model_id:
             raise ValueError("Granite ASR requires an ibm-granite granite-speech model")
+    elif backend == "openvino_whisper":
+        if "whisper" not in model_id.lower():
+            raise ValueError("OpenVINO ASR requires an OpenVINO Whisper model (whisper-*-ov)")
     profile = detect_runtime_profile(runtime)
     if backend == "granite_nar" and profile.granite_nar_unsupported_reason:
         raise ValueError(profile.granite_nar_unsupported_reason)

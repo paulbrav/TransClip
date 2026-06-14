@@ -22,6 +22,7 @@ from .asr import (
     check_asr_runtime,
     check_incremental_transcription,
     check_model_cache,
+    check_openvino_runtime,
     check_torch_runtime,
 )
 from .platform import (
@@ -42,6 +43,7 @@ __all__ = [
     "check_incremental_transcription",
     "check_microphone_devices",
     "check_model_cache",
+    "check_openvino_runtime",
     "check_paste_tools",
     "check_torch_runtime",
     "checks_as_json",

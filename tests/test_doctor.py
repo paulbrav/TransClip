@@ -52,6 +52,26 @@ class DoctorTests(unittest.TestCase):
             (Path(tmp) / "models--Qwen--Qwen3.5-4B").mkdir()
             self.assertTrue(check_model_cache(settings).ok)
 
+    def test_openvino_backend_emits_openvino_runtime_check(self):
+        from transclip.doctor import build_backend_checks
+
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/test"))
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                asr_backend="openvino_whisper",
+                asr_model="OpenVINO/whisper-large-v3-int4-ov",
+                asr_device="openvino:CPU",
+                cleanup_enabled=False,
+                voice_mode_routing_enabled=False,
+                model_cache_dir=tmp,
+            )
+            with patch("transclip.device.torch_cuda_usable", return_value=True):
+                checks = build_backend_checks(settings, runtime)
+
+        openvino_checks = [check for check in checks if check.name == "openvino_runtime"]
+        self.assertEqual(len(openvino_checks), 1)
+        self.assertTrue(openvino_checks[0].detail)
+
     def test_nar_asr_runtime_checks_flash_attn(self):
         torch = SimpleNamespace(
             version=SimpleNamespace(hip=None),

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 GIB = 1024**3
-ModelRuntimeKind = Literal["torch", "mlx", "file"]
+ModelRuntimeKind = Literal["torch", "mlx", "file", "openvino"]
 PrefetchStrategy = Literal["transformers", "snapshot_download", "none"]
 
 

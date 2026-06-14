@@ -186,6 +186,36 @@ class PlatformRuntimeTests(unittest.TestCase):
         self.assertIn("ibm-granite/granite-speech-4.1-2b", model_ids)
         self.assertNotIn("ibm-granite/granite-speech-4.1-2b-nar", model_ids)
 
+    def test_windows_openvino_profile_selected_when_intel_accelerator_present(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/tester"))
+        with (
+            patch("transclip.device.torch_cuda_usable", return_value=False),
+            patch("transclip.openvino_device.has_intel_accelerator", return_value=True),
+        ):
+            profile = detect_runtime_profile(runtime)
+            settings = default_settings(runtime)
+
+        self.assertEqual(profile.profile_id, "windows_openvino")
+        self.assertEqual(profile.service_manager, "task_scheduler")
+        self.assertEqual(settings.asr_backend, "openvino_whisper")
+        self.assertEqual(settings.asr_model, "OpenVINO/whisper-large-v3-int4-ov")
+        self.assertEqual(settings.asr_device, "auto")
+        self.assertEqual(settings.text_model_runtime, "openvino")
+        self.assertEqual(settings.text_model, "OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov")
+
+    def test_windows_cpu_profile_when_no_cuda_or_intel_accelerator(self):
+        runtime = FakeRuntime(system="Windows", home=Path("C:/Users/tester"))
+        with (
+            patch("transclip.device.torch_cuda_usable", return_value=False),
+            patch("transclip.openvino_device.has_intel_accelerator", return_value=False),
+        ):
+            profile = detect_runtime_profile(runtime)
+            settings = default_settings(runtime)
+
+        self.assertEqual(profile.profile_id, "windows_cpu")
+        self.assertEqual(settings.asr_backend, "granite")
+        self.assertEqual(settings.text_model_runtime, "transformers")
+
 
 if __name__ == "__main__":
     unittest.main()

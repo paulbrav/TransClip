@@ -77,6 +77,8 @@ def default_settings(runtime: PlatformRuntime | None = None) -> Settings:
         asr_backend=profile.default_asr_backend,
         asr_model=profile.default_asr_model,
         asr_device=profile.default_asr_device,
+        text_model_runtime=profile.default_text_model_runtime,
+        text_model=profile.default_text_model,
     )
 
 

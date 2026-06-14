@@ -73,8 +73,9 @@ class CleanupPlan:
 
     @classmethod
     def from_settings(cls, settings: Settings) -> CleanupPlan:
-        uses_model = settings.text_model_runtime == "transformers" and settings.voice_model_cleanup_always_on
-        requires_text_model = settings.text_model_runtime == "transformers" and (
+        model_capable_runtime = settings.text_model_runtime in {"transformers", "openvino"}
+        uses_model = model_capable_runtime and settings.voice_model_cleanup_always_on
+        requires_text_model = model_capable_runtime and (
             settings.voice_mode_routing_enabled or uses_model
         )
         return cls(
