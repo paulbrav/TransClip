@@ -59,6 +59,10 @@ line-ending = "lf"
 
 [tool.ty.environment]
 python-version = "3.12"
+# Tri-platform codebase: don't assume a single OS, so platform-gated APIs
+# (ctypes.WinDLL, winreg on Windows; mlx/AppKit on macOS) resolve instead of
+# producing false "unresolved" diagnostics on the Linux CI runner.
+python-platform = "all"
 
 [tool.ty.rules]
 # NOTE: unresolved-import is silenced globally because optional/platform-specific

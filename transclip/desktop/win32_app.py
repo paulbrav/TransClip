@@ -30,7 +30,7 @@ SINGLE_INSTANCE_MUTEX = "TransClip-tray-singleton"
 
 
 @functools.cache
-def _kernel32() -> ctypes.WinDLL:
+def _kernel32() -> ctypes.WinDLL:  # type: ignore[name-defined]
     """Private kernel32 handle with use_last_error so get_last_error is reliable.
 
     Raises AttributeError off Windows (ctypes.WinDLL does not exist there), which

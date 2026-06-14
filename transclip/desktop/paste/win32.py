@@ -78,7 +78,7 @@ def _require_windows() -> None:
         raise RuntimeError("Win32 clipboard APIs are only available on Windows")
 
 
-def _configure_prototypes(user32: ctypes.WinDLL, kernel32: ctypes.WinDLL) -> None:
+def _configure_prototypes(user32: ctypes.WinDLL, kernel32: ctypes.WinDLL) -> None:  # type: ignore[name-defined]
     """Declare 64-bit-safe argument and return types for the Win32 calls.
 
     Without an explicit ``restype``, ctypes assumes a 32-bit ``int`` return and
@@ -109,7 +109,7 @@ def _configure_prototypes(user32: ctypes.WinDLL, kernel32: ctypes.WinDLL) -> Non
 
 
 @functools.cache
-def _win32_libraries() -> tuple[ctypes.WinDLL, ctypes.WinDLL]:
+def _win32_libraries() -> tuple[ctypes.WinDLL, ctypes.WinDLL]:  # type: ignore[name-defined]
     """Bind private ``user32``/``kernel32`` handles with configured prototypes.
 
     A private ``WinDLL`` keeps our argtypes/restype declarations off the
@@ -123,7 +123,7 @@ def _win32_libraries() -> tuple[ctypes.WinDLL, ctypes.WinDLL]:
 
 
 def _open_clipboard(
-    user32: ctypes.WinDLL,
+    user32: ctypes.WinDLL,  # type: ignore[name-defined]
     *,
     attempts: int = _OPEN_CLIPBOARD_ATTEMPTS,
     sleep: Callable[[float], object] = time.sleep,
