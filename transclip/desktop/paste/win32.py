@@ -22,32 +22,39 @@ _OPEN_CLIPBOARD_ATTEMPTS = 10
 _OPEN_CLIPBOARD_RETRY_DELAY_S = 0.015
 
 
+# Win32 INPUT-family structs. Use fixed-width ctypes types, NOT wintypes.WORD/
+# DWORD/LONG: the latter alias c_ushort/c_ulong/c_long, and c_ulong/c_long are 8
+# bytes on LP64 (Linux/macOS) vs 4 on Windows (LLP64). That would make
+# sizeof(INPUT) host-dependent (56 bytes off-Windows vs the real 40-byte x64 ABI)
+# and break the cross-platform test suite. Fixed-width keeps the layout identical
+# everywhere; on Windows it is byte-for-byte unchanged. (WORD=c_uint16,
+# DWORD=c_uint32, LONG=c_int32.)
 class KEYBDINPUT(ctypes.Structure):
     _fields_ = [
-        ("wVk", wintypes.WORD),
-        ("wScan", wintypes.WORD),
-        ("dwFlags", wintypes.DWORD),
-        ("time", wintypes.DWORD),
+        ("wVk", ctypes.c_uint16),
+        ("wScan", ctypes.c_uint16),
+        ("dwFlags", ctypes.c_uint32),
+        ("time", ctypes.c_uint32),
         ("dwExtraInfo", ctypes.c_ulonglong),
     ]
 
 
 class MOUSEINPUT(ctypes.Structure):
     _fields_ = [
-        ("dx", wintypes.LONG),
-        ("dy", wintypes.LONG),
-        ("mouseData", wintypes.DWORD),
-        ("dwFlags", wintypes.DWORD),
-        ("time", wintypes.DWORD),
+        ("dx", ctypes.c_int32),
+        ("dy", ctypes.c_int32),
+        ("mouseData", ctypes.c_uint32),
+        ("dwFlags", ctypes.c_uint32),
+        ("time", ctypes.c_uint32),
         ("dwExtraInfo", ctypes.c_ulonglong),
     ]
 
 
 class HARDWAREINPUT(ctypes.Structure):
     _fields_ = [
-        ("uMsg", wintypes.DWORD),
-        ("wParamL", wintypes.WORD),
-        ("wParamH", wintypes.WORD),
+        ("uMsg", ctypes.c_uint32),
+        ("wParamL", ctypes.c_uint16),
+        ("wParamH", ctypes.c_uint16),
     ]
 
 
@@ -61,7 +68,7 @@ class INPUT(ctypes.Structure):
 
     _anonymous_ = ("u",)
     _fields_ = [
-        ("type", wintypes.DWORD),
+        ("type", ctypes.c_uint32),
         ("u", _INPUTUNION),
     ]
 
