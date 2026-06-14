@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -82,7 +83,7 @@ def run_windows_tray(
         return 1
 
     session = TraySession(settings, explicit_settings_path, runtime)
-    icon_holder: dict[str, object] = {"icon": None}
+    icon_holder: dict[str, Any] = {"icon": None}
     hotkey_holder: dict[str, Callable[[], None] | None] = {"stop": None}
     menu_refs: dict[str, Any] = {}
     history_state = HistoryMenuState(signature=object())
@@ -196,22 +197,66 @@ def run_windows_tray(
 
 
 def _set_hotkey_dialog(session: TraySession, restart_hotkey: Callable[[], None]) -> None:
-    try:
-        import tkinter as tk
-        from tkinter import simpledialog
-    except ImportError:
+    value, available = _prompt_hotkey(session.settings.hotkey_windows)
+    if not available:
         session.set_detail("tkinter is unavailable for hotkey dialog")
         return
-    root = tk.Tk()
-    root.withdraw()
-    value = simpledialog.askstring(
-        "Set hotkey",
-        "Enter a keyboard-library hotkey, e.g. ctrl+shift+space",
-        initialvalue=session.settings.hotkey_windows,
-        parent=root,
-    )
-    root.destroy()
     _apply_hotkey_selection(session, value, restart_hotkey)
+
+
+def _prompt_hotkey(initial: str) -> tuple[str | None, bool]:
+    """Prompt for a hotkey on a dedicated thread; return (value, tk_available).
+
+    pystray runs its Win32 message loop on the main thread and invokes the menu
+    action synchronously inside that loop, after making its own hidden window
+    the foreground window. A tkinter dialog created there is nested inside
+    pystray's message pump and can never take the foreground, so it renders but
+    every click is dead. Running our own small dialog on a separate thread gives
+    it a clean message queue and event loop; topmost + focus_force make it
+    interactive. The caller blocks (join) until it closes - i.e. it is modal.
+    """
+    state: dict[str, Any] = {"value": None, "available": True}
+
+    def run() -> None:
+        try:
+            import tkinter as tk
+        except ImportError:
+            state["available"] = False
+            return
+        root = tk.Tk()
+        root.title("Set hotkey")
+        root.resizable(False, False)
+        root.attributes("-topmost", True)
+        tk.Label(root, text="Enter a keyboard-library hotkey, e.g. ctrl+shift+space").pack(padx=16, pady=(14, 6))
+        entry = tk.Entry(root, width=44)
+        entry.insert(0, initial)
+        entry.select_range(0, "end")
+        entry.pack(padx=16, pady=6)
+
+        def submit() -> None:
+            state["value"] = entry.get()
+            root.destroy()
+
+        def cancel() -> None:
+            state["value"] = None
+            root.destroy()
+
+        buttons = tk.Frame(root)
+        buttons.pack(pady=(6, 14))
+        tk.Button(buttons, text="OK", width=10, command=submit).pack(side="left", padx=8)
+        tk.Button(buttons, text="Cancel", width=10, command=cancel).pack(side="left", padx=8)
+        root.bind("<Return>", lambda _event: submit())
+        root.bind("<Escape>", lambda _event: cancel())
+        root.protocol("WM_DELETE_WINDOW", cancel)
+        root.lift()
+        root.focus_force()
+        entry.focus_set()
+        root.mainloop()
+
+    thread = threading.Thread(target=run, name="transclip-hotkey-dialog", daemon=True)
+    thread.start()
+    thread.join()
+    return state["value"], state["available"]
 
 
 def _apply_hotkey_selection(
