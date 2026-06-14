@@ -164,7 +164,6 @@ def detect_runtime_profile(runtime: PlatformRuntime | None = None) -> RuntimePro
                 default_asr_device="auto",
                 supported_runtime_kinds=("openvino", "torch_cpu", "file"),
                 service_manager="task_scheduler",
-                granite_nar_unsupported_reason=GRANITE_NAR_UNSUPPORTED_WINDOWS,
                 incremental_transcription_unsupported_reason=INCREMENTAL_UNSUPPORTED_WINDOWS,
                 default_text_model_runtime="openvino",
                 default_text_model="OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov",
