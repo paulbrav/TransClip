@@ -197,6 +197,29 @@ def _pad_to_bucket(samples: Any, sample_rate: int) -> Any:
     return padded
 
 
+def _frame_dbfs(samples: Any, frame_samples: int) -> Any | None:
+    """Per-frame dBFS for float32 mono samples; None if less than one frame."""
+    import numpy as np
+
+    frame_count = len(samples) // frame_samples
+    if frame_count == 0:
+        return None
+    frames = samples[: frame_count * frame_samples].reshape(frame_count, frame_samples)
+    rms = np.sqrt(np.mean(frames * frames, axis=1))
+    return 20.0 * np.log10(rms + 1e-10)
+
+
+def _silence_threshold(dbfs: Any) -> float:
+    """Adaptive silence threshold: fixed floor, relaxed toward the noise floor."""
+    import numpy as np
+
+    relative_floor = min(
+        float(np.percentile(dbfs, 10)) + NOISE_FLOOR_MARGIN_DB,
+        float(np.percentile(dbfs, 90)) - SPEECH_GAP_DB,
+    )
+    return max(SILENCE_RMS_DBFS, relative_floor)
+
+
 def _find_commit_cut(
     snapshot: bytes,
     *,
@@ -216,18 +239,11 @@ def _find_commit_cut(
         return None, False
     frame_samples = sample_rate * FRAME_MS // 1000
     samples = np.frombuffer(snapshot[:eligible_bytes], dtype=np.int16).astype(np.float32) / 32768.0
-    frame_count = len(samples) // frame_samples
-    if frame_count == 0:
+    dbfs = _frame_dbfs(samples, frame_samples)
+    if dbfs is None:
         return None, False
-    frames = samples[: frame_count * frame_samples].reshape(frame_count, frame_samples)
-    rms = np.sqrt(np.mean(frames * frames, axis=1))
-    dbfs = 20.0 * np.log10(rms + 1e-10)
-    relative_floor = min(
-        float(np.percentile(dbfs, 10)) + NOISE_FLOOR_MARGIN_DB,
-        float(np.percentile(dbfs, 90)) - SPEECH_GAP_DB,
-    )
-    threshold = max(SILENCE_RMS_DBFS, relative_floor)
-    silent = dbfs < threshold
+    frame_count = len(dbfs)
+    silent = dbfs < _silence_threshold(dbfs)
     min_run = max(1, int(SILENCE_MIN_DUR_S * 1000 / FRAME_MS))
 
     run_end = None
