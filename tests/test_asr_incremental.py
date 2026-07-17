@@ -8,10 +8,12 @@ import numpy as np
 from transclip.asr import TranscriptionResult
 from transclip.asr_incremental import (
     BUCKET_S,
+    FORCED_CUT_WINDOW_S,
     IncrementalNarSession,
     _find_commit_cut,
     _pad_to_bucket,
     incremental_transcription_enabled,
+    plan_segments,
 )
 from transclip.settings import Settings
 
@@ -316,6 +318,92 @@ class EngineGatingTests(unittest.TestCase):
             self.assertIsInstance(session, IncrementalNarSession)
         finally:
             session.close()
+
+
+class PlanSegmentsTests(unittest.TestCase):
+    def test_cuts_at_silence_between_speech(self):
+        # 15s speech + 1s silence + 15s speech, max 20s: the cut must land in the silence.
+        pcm = tone_pcm16(15.0) + silence_pcm16(1.0) + tone_pcm16(15.0)
+        segs = plan_segments(pcm, sample_rate=SR, max_segment_s=20.0)
+        self.assertEqual(len(segs), 2)
+        cut_s = segs[0].end_sample / SR
+        self.assertGreater(cut_s, 15.0)
+        self.assertLess(cut_s, 16.0)
+        self.assertTrue(all(s.has_speech for s in segs))
+        # Contiguous, no gaps or overlaps:
+        self.assertEqual(segs[0].start_sample, 0)
+        self.assertEqual(segs[0].end_sample, segs[1].start_sample)
+        self.assertEqual(segs[1].end_sample, len(pcm) // 2)
+
+    def test_forced_cut_when_no_silence(self):
+        # 45s of continuous speech, max 20s: no qualifying silence anywhere -> forced
+        # cuts; no segment may exceed max, and every segment must be non-empty.
+        pcm = tone_pcm16(45.0)
+        segs = plan_segments(pcm, sample_rate=SR, max_segment_s=20.0)
+        self.assertGreaterEqual(len(segs), 3)
+        for s in segs:
+            self.assertGreater(s.end_sample, s.start_sample)
+            self.assertLessEqual((s.end_sample - s.start_sample) / SR, 20.0 + 1e-9)
+        # Forced cut lands in the final FORCED_CUT_WINDOW_S of the first window:
+        self.assertGreaterEqual(segs[0].end_sample / SR, 20.0 - FORCED_CUT_WINDOW_S - 0.1)
+
+    def test_forced_cut_lands_on_the_quietest_frame_not_merely_inside_the_window(self):
+        # Continuous speech with one short low-energy NOTCH (too brief to be a
+        # qualifying silence, so the forced-cut path fires) placed at ~18s inside
+        # the first 20s window's final FORCED_CUT_WINDOW_S. The cut must land ON
+        # the notch — this is what pins argmin (quietest); an argmax mutation
+        # would cut at the loud window edge (~16s) and fail.
+        pcm = tone_pcm16(18.0) + tone_pcm16(0.15, amplitude=0.05) + tone_pcm16(27.0)
+        segs = plan_segments(pcm, sample_rate=SR, max_segment_s=20.0)
+        cut_s = segs[0].end_sample / SR
+        self.assertGreater(cut_s, 17.8)
+        self.assertLess(cut_s, 18.3)
+
+    def test_cut_lands_on_the_latest_of_two_qualifying_silences(self):
+        # Two silences in one 20s window; the policy cuts at the LATEST one. An
+        # earliest-silence mutation would cut at ~4.5s and fail.
+        pcm = tone_pcm16(4.0) + silence_pcm16(1.0) + tone_pcm16(9.0) + silence_pcm16(1.0) + tone_pcm16(6.0)
+        segs = plan_segments(pcm, sample_rate=SR, max_segment_s=20.0)
+        cut_s = segs[0].end_sample / SR
+        self.assertGreater(cut_s, 14.0)
+        self.assertLess(cut_s, 15.0)
+
+    def test_mixed_file_flags_only_the_silent_segment_speechless(self):
+        # A pure-silence segment between speech segments (spanning >1 window) must
+        # be has_speech=False while its speech neighbours are True — this exercises
+        # the per-segment recompute, not just homogeneous all-speech/all-silence.
+        pcm = tone_pcm16(25.0) + silence_pcm16(25.0) + tone_pcm16(25.0)
+        segs = plan_segments(pcm, sample_rate=SR, max_segment_s=20.0)
+        self.assertTrue(any(s.has_speech for s in segs))
+        self.assertTrue(any(not s.has_speech for s in segs))
+
+    def test_silence_only_audio_is_flagged_speechless(self):
+        segs = plan_segments(silence_pcm16(30.0), sample_rate=SR, max_segment_s=20.0)
+        self.assertTrue(all(not s.has_speech for s in segs))
+
+    def test_short_audio_is_one_segment(self):
+        pcm = tone_pcm16(5.0)
+        segs = plan_segments(pcm, sample_rate=SR, max_segment_s=28.0)
+        self.assertEqual(len(segs), 1)
+        self.assertEqual((segs[0].start_sample, segs[0].end_sample), (0, len(pcm) // 2))
+
+    def test_rejects_window_that_cannot_fit_a_forced_cut(self):
+        # The forced-cut tail must fit inside the window; below that the planner
+        # would degenerate (confetti segments, or a stall at <= 0).
+        with self.assertRaises(ValueError):
+            plan_segments(tone_pcm16(10.0), sample_rate=SR, max_segment_s=FORCED_CUT_WINDOW_S)
+        with self.assertRaises(ValueError):
+            plan_segments(tone_pcm16(10.0), sample_rate=SR, max_segment_s=0.0)
+
+    def test_empty_input_plans_no_segments(self):
+        self.assertEqual(plan_segments(b"", sample_rate=SR), [])
+
+    def test_rejects_odd_byte_input_with_a_legible_error(self):
+        # The docstring's even-byte precondition must fail as a caller-oriented
+        # ValueError, not numpy's "buffer size must be a multiple of element
+        # size" (the regex is what discriminates the guard from the numpy error).
+        with self.assertRaisesRegex(ValueError, "even byte length"):
+            plan_segments(b"\x00", sample_rate=SR)
 
 
 if __name__ == "__main__":
