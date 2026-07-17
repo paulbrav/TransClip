@@ -1,5 +1,8 @@
+import http.client
+import io
 import json
 import threading
+import wave
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from urllib import request
@@ -227,6 +230,71 @@ def stop_server(server, thread: threading.Thread) -> None:
     server.shutdown()
     server.server_close()
     thread.join(timeout=5)
+
+
+def tiny_wav_bytes(frames: int = 1600, sample_rate: int = 16000) -> bytes:
+    """A minimal but genuinely decodable mono 16-bit PCM WAV (soundfile.info-valid)."""
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(sample_rate)
+        handle.writeframes(b"\x00\x00" * frames)
+    return buffer.getvalue()
+
+
+def build_multipart_body(
+    fields: dict[str, str] | None = None,
+    files: list[tuple[str, str | None, bytes]] | None = None,
+    boundary: bytes = b"----transcliptestboundary",
+) -> tuple[str, bytes]:
+    """Return (content_type, body) for a multipart/form-data payload.
+
+    ``files`` entries are (field_name, filename_or_None, content_bytes). This is
+    the raw multipart counterpart to ``http_json`` (which is JSON-only).
+    """
+    body = b""
+    for name, value in (fields or {}).items():
+        body += b"--" + boundary + b"\r\n"
+        body += b'Content-Disposition: form-data; name="' + name.encode("utf-8") + b'"\r\n\r\n'
+        body += value.encode("utf-8") + b"\r\n"
+    for name, filename, content in files or []:
+        body += b"--" + boundary + b"\r\n"
+        disposition = b'Content-Disposition: form-data; name="' + name.encode("utf-8") + b'"'
+        if filename is not None:
+            disposition += b'; filename="' + filename.encode("utf-8") + b'"'
+        body += disposition + b"\r\n"
+        body += b"Content-Type: application/octet-stream\r\n\r\n"
+        body += content + b"\r\n"
+    body += b"--" + boundary + b"--\r\n"
+    return "multipart/form-data; boundary=" + boundary.decode("ascii"), body
+
+
+def http_multipart(
+    host: str,
+    port: int,
+    path: str,
+    *,
+    content_type: str,
+    body: bytes,
+    extra_headers: dict[str, str] | None = None,
+) -> tuple[int, dict[str, str], bytes]:
+    """POST a raw multipart body and return (status, lower-cased headers, raw bytes).
+
+    Headers are passed verbatim, so a caller may spoof ``content-length`` (e.g. to
+    exercise the 413 boundary without sending a real oversize body).
+    """
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    try:
+        headers = {"content-type": content_type}
+        if extra_headers:
+            headers.update(extra_headers)
+        conn.request("POST", path, body=body, headers=headers)
+        response = conn.getresponse()
+        raw = response.read()
+        return response.status, {k.lower(): v for k, v in response.getheaders()}, raw
+    finally:
+        conn.close()
 
 
 def http_json(method: str, url: str, payload: dict | None = None) -> dict:
