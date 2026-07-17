@@ -5,6 +5,14 @@ audio in the background while the user is still speaking, so finish() only has
 to process a small residual tail. Committed text can never change because the
 committed audio is physically trimmed from the buffer (text-agreement commits
 were measured unsafe; see plans/2026-06-12-streaming-investigation-report.md).
+
+This module also exposes an OFFLINE segment planner, ``plan_segments`` — a pure
+function that cuts a whole PCM16 buffer into bounded segments. It lives here (not
+in a module of its own) so it can reuse the private silence-cut helpers
+``_find_commit_cut``/``_frame_dbfs``/``_silence_threshold`` the live path uses; a
+downstream meeting recorder drives it to segment finished recordings with the
+same cut policy dictation applies live. It has no in-tree caller and never runs
+during dictation.
 """
 
 from __future__ import annotations
@@ -13,6 +21,7 @@ import logging
 import math
 import threading
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from transclip.asr import GRANITE_NAR_BUCKET_SECONDS, TranscriptionResult
@@ -210,7 +219,14 @@ def _frame_dbfs(samples: Any, frame_samples: int) -> Any | None:
 
 
 def _silence_threshold(dbfs: Any) -> float:
-    """Adaptive silence threshold: fixed floor, relaxed toward the noise floor."""
+    """Adaptive silence threshold: fixed floor, relaxed toward the noise floor.
+
+    PURE function of the passed-in window — the offline ``plan_segments`` path
+    reproduces the live path's cuts by re-running this over the same content, so
+    do NOT introduce cross-call/session state here (a cached noise floor, an EMA,
+    hysteresis): it would keep every test green while silently breaking offline
+    cut parity with the live session.
+    """
     import numpy as np
 
     relative_floor = min(
@@ -266,3 +282,95 @@ def _find_commit_cut(
     # a wasted pass on noise is cheap, dropping real speech is not.
     has_speech = bool(np.any(~silent[:best_mid_frame]))
     return cut, has_speech
+
+
+# Offline segment planner (meeting mode / batch): same silence-cut policy as the
+# live session, driven iteratively over a whole file. Far-end speech may never
+# pause, so a forced cut at the quietest frame near the window end guarantees
+# bounded segments (dictation's pause assumption does not hold in meetings).
+FORCED_CUT_WINDOW_S = 4.0
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedSegment:
+    """One planned segment: half-open sample interval plus a speech flag."""
+
+    start_sample: int
+    end_sample: int
+    has_speech: bool
+
+
+# Default matches the downstream meeting recorder's batch segmentation window.
+def plan_segments(pcm16: bytes, *, sample_rate: int, max_segment_s: float = 28.0) -> list[PlannedSegment]:
+    """Plan bounded transcription segments over PCM16 mono audio.
+
+    ``pcm16`` must contain whole PCM16 samples (even byte length). Cuts at the
+    latest qualifying silence within each ``max_segment_s`` window (reusing the
+    live commit-cut policy); if none exists, forces a cut at the quietest frame
+    in the window's final ``FORCED_CUT_WINDOW_S``. Segments are contiguous,
+    non-empty, half-open sample intervals ``[start_sample, end_sample)`` that
+    partition the whole input, and no segment exceeds ``max_segment_s``.
+    ``has_speech`` uses the same adaptive RMS *threshold* as the live path,
+    applied over the whole segment (callers may refine it with a VAD).
+    """
+    if max_segment_s <= FORCED_CUT_WINDOW_S:
+        raise ValueError(f"max_segment_s ({max_segment_s}) must exceed FORCED_CUT_WINDOW_S ({FORCED_CUT_WINDOW_S})")
+    if len(pcm16) % 2:
+        # Fail the documented precondition legibly, not as numpy's buffer error.
+        raise ValueError(f"pcm16 must contain whole PCM16 samples (even byte length), got {len(pcm16)} bytes")
+    bytes_per_second = sample_rate * 2
+    max_bytes = (int(max_segment_s * bytes_per_second) // 2) * 2
+    min_cut_bytes = (int(MIN_COMMIT_S * bytes_per_second) // 2) * 2
+    segments: list[PlannedSegment] = []
+    cursor = 0
+    while len(pcm16) - cursor > max_bytes:
+        window = pcm16[cursor : cursor + max_bytes]
+        # tail_bytes=0: unlike the live path, offline has the whole file, so no
+        # trailing context must be reserved — each segment is bucket-padded
+        # independently downstream.
+        cut, _ = _find_commit_cut(window, sample_rate=sample_rate, tail_bytes=0, min_commit_bytes=min_cut_bytes)
+        if cut is None or cut <= 0:
+            cut = _forced_cut_offset(window, sample_rate)
+        segments.append(_planned(pcm16, cursor, cursor + cut, sample_rate))
+        cursor += cut
+    if len(pcm16) - cursor > 0:
+        segments.append(_planned(pcm16, cursor, len(pcm16), sample_rate))
+    return segments
+
+
+def _planned(pcm16: bytes, start_byte: int, end_byte: int, sample_rate: int) -> PlannedSegment:
+    return PlannedSegment(
+        start_sample=start_byte // 2,
+        end_sample=end_byte // 2,
+        has_speech=_segment_has_speech(pcm16[start_byte:end_byte], sample_rate),
+    )
+
+
+def _segment_has_speech(segment: bytes, sample_rate: int) -> bool:
+    import numpy as np
+
+    samples = np.frombuffer(segment, dtype=np.int16).astype(np.float32) / 32768.0
+    dbfs = _frame_dbfs(samples, sample_rate * FRAME_MS // 1000)
+    if dbfs is None:
+        return False
+    return bool(np.any(dbfs >= _silence_threshold(dbfs)))
+
+
+def _forced_cut_offset(window: bytes, sample_rate: int) -> int:
+    """Byte offset of the quietest frame boundary in the window's final stretch."""
+    import numpy as np
+
+    frame_samples = sample_rate * FRAME_MS // 1000
+    samples = np.frombuffer(window, dtype=np.int16).astype(np.float32) / 32768.0
+    dbfs = _frame_dbfs(samples, frame_samples)
+    if dbfs is None or len(dbfs) < 2:
+        # Defense-in-depth: unreachable via plan_segments (loop windows are always
+        # a full max_bytes, > 200 frames given the max_segment_s > 4 s guard), but
+        # a private helper with an unstated precondition should not argmin an
+        # empty tail if called directly.
+        return len(window)
+    tail_frames = max(1, int(FORCED_CUT_WINDOW_S * 1000 / FRAME_MS))
+    start = max(1, len(dbfs) - tail_frames)  # never frame 0: cut must advance
+    quietest = start + int(np.argmin(dbfs[start:]))
+    cut = quietest * frame_samples * 2
+    return cut if 0 < cut <= len(window) else len(window)
