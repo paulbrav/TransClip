@@ -22,6 +22,13 @@ from tests.service_helpers import (
 
 _PATH = "/v1/audio/transcriptions"
 
+try:  # pre-validation is best-effort: only installs with the model extras have soundfile
+    import soundfile as _soundfile  # noqa: F401
+
+    _HAVE_SOUNDFILE = True
+except ImportError:
+    _HAVE_SOUNDFILE = False
+
 
 class RaisingASR:
     name = "raising"
@@ -96,6 +103,7 @@ class OpenAiTranscriptionsRouteTest(unittest.TestCase):
         self.assertEqual(payload["error"]["type"], "invalid_request_error")
         self.assertEqual(payload["error"]["param"], "file")
 
+    @unittest.skipUnless(_HAVE_SOUNDFILE, "pre-validation (and its 400) requires soundfile")
     def test_garbage_audio_returns_openai_400_under_fake_backend(self):
         asr = FakeASR()
         settings = Settings(host="127.0.0.1", port=0)
