@@ -248,6 +248,16 @@ class InferenceEngine:
             record_history=record_history,
         )
 
+    def transcribe_raw(self, wav_path: Path) -> TranscriptionResult:
+        """Raw ASR for the OpenAI-compatible route: backend transcription only.
+
+        Deliberately bypasses the dictation ``transcribe()`` pipeline (keyword
+        restore, voice-mode routing, cleanup, history, debug capture). OpenAI
+        ``/v1/audio/transcriptions`` semantics are verbatim ASR text, so the
+        dictation-shaped path is not reused.
+        """
+        return self.asr_backend.transcribe(wav_path)
+
     def warm_asr(self) -> None:
         """Load and compile the ASR backend before the service reports ready."""
         sample_rate = max(1, self.settings.sample_rate)
